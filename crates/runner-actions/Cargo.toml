@@ -1,0 +1,14 @@
+[package]
+name = "runner-actions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "flexnetos_runner self-hosted GitHub Actions runner supervisor (JIT/ephemeral)"
+
+[[bin]]
+name = "fxrun-actions"
+path = "src/main.rs"
+
+[dependencies]
+runner-core = { path = "../runner-core" }

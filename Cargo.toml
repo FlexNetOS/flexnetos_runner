@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/runner-core", "crates/runner-actions", "crates/runner-dispatch", "crates/runner-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/FlexNetOS/flexnetos_runner"
+
+[profile.release]
+strip = true

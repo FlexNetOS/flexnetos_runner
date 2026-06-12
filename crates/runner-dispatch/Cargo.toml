@@ -1,0 +1,16 @@
+[package]
+name = "runner-dispatch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "flexnetos_runner meta-native dispatcher: verify signed job specs, route to kernels"
+
+[[bin]]
+name = "fxrun-dispatch"
+path = "src/main.rs"
+
+[dependencies]
+runner-core = { path = "../runner-core" }
+serde_json = "1"
+anyhow = "1"

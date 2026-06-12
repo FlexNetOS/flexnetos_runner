@@ -1,0 +1,16 @@
+[package]
+name = "runner-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "flexnetos_runner operator CLI (fxrun)"
+
+[[bin]]
+name = "fxrun"
+path = "src/main.rs"
+
+[dependencies]
+runner-core = { path = "../runner-core" }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
