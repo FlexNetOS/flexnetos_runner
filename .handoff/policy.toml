@@ -1,0 +1,13 @@
+# handoff.policy.v1 — flexnetos_runner (pilot rollout from FlexNetOS/handoff kernel)
+[remote]
+model        = "clone"
+origin       = "FlexNetOS/flexnetos_runner"
+base_branch  = "main"
+trunk_branch = "main"
+[loop]
+cycle_flush     = 4
+worktree_prefix = "runner-"
+[merge]
+require_review = true
+reviewer       = "cloud_ultra"
+permission_gate = true
