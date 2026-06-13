@@ -5,6 +5,7 @@
 //!   runs *where*, never *how* (it never reimplements a kernel).
 //! - [`safety`] — fork-PR isolation policy + runner rails (the §6 minimums).
 //! - [`lifecycle`] — JIT/ephemeral runner lifecycle (one job, then removed).
+//! - [`wire`] — the signed UDS dispatch frame (App → dispatcher) + reply.
 //!
 //! No process execution at this layer; `runner-actions` (Actions supervisor) and
 //! `runner-dispatch` (UDS server) drive these typed seams.
@@ -14,5 +15,7 @@ pub mod jobspec;
 pub mod lifecycle;
 pub mod router;
 pub mod safety;
+pub mod wire;
 
 pub use error::{CoreError, Result};
+pub use wire::{sign_frame, verify_frame, DispatchRequest, DispatchResponse, WireError};
