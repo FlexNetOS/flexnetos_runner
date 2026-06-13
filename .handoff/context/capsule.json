@@ -1,0 +1,6 @@
+{
+  "next_command": "hf resume",
+  "northstar": "A local runner+app to connect all of meta seamlessly (ADR-0008 execution plane).",
+  "project_name": "flexnetos_runner (ops/execution plane)",
+  "schema": "handoff.context_capsule.v1"
+}
