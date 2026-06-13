@@ -1,23 +1,30 @@
 //! `fxrun-dispatch` — the meta-native dispatcher (ADR-0008 §2/S7).
 //!
 //! Two modes:
-//! - **`--socket <path>` (P2):** bind a Unix-domain socket, accept signed [`DispatchRequest`]
-//!   frames from `flexnetos_github_app`, verify the HMAC, enforce fork-PR isolation, route to a
-//!   kernel via [`runner_core::router`], and delegate through the [`KernelInvoker`] seam —
-//!   **never reimplementing** loop_lib / atc / handoff / weave.
+//! - **`--socket <path>` (P2, Unix only):** bind a Unix-domain socket, accept signed
+//!   [`DispatchRequest`] frames from `flexnetos_github_app`, verify the HMAC, enforce fork-PR
+//!   isolation, route to a kernel via [`runner_core::router`], and delegate through the
+//!   [`KernelInvoker`] seam — **never reimplementing** loop_lib / atc / handoff / weave.
 //! - **stdin (P0):** read one JSON `JobSpec`, print the plan (dry-run smoke aid).
 //!
 //! Protocol: one request per connection — the client writes the JSON [`DispatchRequest`], shuts
 //! down its write half, then reads the JSON [`DispatchResponse`]. The HMAC key comes from
 //! envctl's vault in P3 (`FXRUN_DISPATCH_KEY` is the transitional source).
+//!
+//! The runner host is Unix (it supervises a self-hosted Actions runner); the UDS server is
+//! therefore `#[cfg(unix)]`. The decision core ([`handle_request`]) is platform-independent and
+//! unit-tested on every OS so the build stays green across the 3-OS matrix.
+
+// On non-Unix the binary degrades to the stdin dry-run: the decision core + invoker seam are
+// compiled and tested but not wired to a transport, so allow them to be "unused" there. The
+// real target (Unix) keeps full dead-code checking.
+#![cfg_attr(not(unix), allow(dead_code))]
 
 use runner_core::jobspec::JobSpec;
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
-use std::io::{Read, Write};
-use std::os::unix::net::UnixListener;
-use std::path::Path;
+use std::io::Read;
 
 /// The delegation seam: turn a routed [`KernelPlan`] into a real kernel invocation. The dispatcher
 /// NEVER reimplements a kernel — it shells out to the existing binary. Injected so the UDS path is
@@ -28,7 +35,10 @@ trait KernelInvoker {
 
 /// The default invoker: logs the delegation it *would* perform (no subprocess). The real
 /// kernel-spawn invoker (`loop`/`atc`/`hf`/`weave` + secret injection + provenance) lands in P3.
+/// Only wired into the Unix `serve` path; the decision core is exercised cross-platform via tests.
+#[cfg(unix)]
 struct DryRunInvoker;
+#[cfg(unix)]
 impl KernelInvoker for DryRunInvoker {
     fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<(), String> {
         eprintln!(
@@ -83,11 +93,13 @@ fn handle_request(key: &[u8], invoker: &dyn KernelInvoker, raw: &[u8]) -> Dispat
 
 /// Accept exactly one connection, handle its frame, and write the reply. Factored out so the loop
 /// (and tests) can drive a single round-trip.
+#[cfg(unix)]
 fn serve_once(
-    listener: &UnixListener,
+    listener: &std::os::unix::net::UnixListener,
     key: &[u8],
     invoker: &dyn KernelInvoker,
 ) -> std::io::Result<()> {
+    use std::io::Write;
     let (mut stream, _addr) = listener.accept()?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
@@ -101,7 +113,13 @@ fn serve_once(
 
 /// Bind `socket_path` and serve forever (one job per connection — the ephemeral-runner model).
 /// Removes a stale socket first; a per-connection error is logged and the loop continues.
-fn serve(socket_path: &Path, key: &[u8], invoker: &dyn KernelInvoker) -> std::io::Result<()> {
+#[cfg(unix)]
+fn serve(
+    socket_path: &std::path::Path,
+    key: &[u8],
+    invoker: &dyn KernelInvoker,
+) -> std::io::Result<()> {
+    use std::os::unix::net::UnixListener;
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
     }
@@ -151,17 +169,25 @@ fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     if let Some(i) = args.iter().position(|a| a == "--socket") {
-        let path = args
-            .get(i + 1)
-            .ok_or_else(|| anyhow::anyhow!("--socket requires a path"))?;
-        // Fail-closed: a server that can't verify frames must not start.
-        if key.is_empty() {
-            anyhow::bail!(
-                "refusing to serve without FXRUN_DISPATCH_KEY (P3: injected from envctl's vault)"
-            );
+        #[cfg(unix)]
+        {
+            let path = args
+                .get(i + 1)
+                .ok_or_else(|| anyhow::anyhow!("--socket requires a path"))?;
+            // Fail-closed: a server that can't verify frames must not start.
+            if key.is_empty() {
+                anyhow::bail!(
+                    "refusing to serve without FXRUN_DISPATCH_KEY (P3: injected from envctl's vault)"
+                );
+            }
+            serve(std::path::Path::new(path), key.as_bytes(), &DryRunInvoker)?;
+            return Ok(());
         }
-        serve(Path::new(path), key.as_bytes(), &DryRunInvoker)?;
-        return Ok(());
+        #[cfg(not(unix))]
+        {
+            let _ = i;
+            anyhow::bail!("--socket (UDS dispatch) is only supported on Unix");
+        }
     }
 
     stdin_dry_run(&key)
@@ -172,10 +198,7 @@ mod tests {
     use super::*;
     use runner_core::jobspec::{JobKind, JobSpec};
     use runner_core::wire::sign_frame;
-    use std::net::Shutdown;
-    use std::os::unix::net::UnixStream;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
 
     #[derive(Default)]
     struct RecordingInvoker {
@@ -203,12 +226,6 @@ mod tests {
                 head_sha: "abc123".into(),
             },
         }
-    }
-
-    fn unique_sock() -> std::path::PathBuf {
-        static N: AtomicUsize = AtomicUsize::new(0);
-        let n = N.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("fxrun-dispatch-{}-{n}.sock", std::process::id()))
     }
 
     #[test]
@@ -252,8 +269,20 @@ mod tests {
         assert_eq!(inv.calls(), 0);
     }
 
+    #[cfg(unix)]
     #[test]
     fn real_uds_roundtrip() {
+        use std::io::{Read, Write};
+        use std::net::Shutdown;
+        use std::os::unix::net::{UnixListener, UnixStream};
+        use std::sync::Arc;
+
+        fn unique_sock() -> std::path::PathBuf {
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed);
+            std::env::temp_dir().join(format!("fxrun-dispatch-{}-{n}.sock", std::process::id()))
+        }
+
         let key = b"dispatch-key".to_vec();
         let sock = unique_sock();
         let listener = UnixListener::bind(&sock).unwrap();
