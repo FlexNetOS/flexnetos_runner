@@ -1,5 +1,5 @@
-//! `fxrun` — operator CLI for `flexnetos_runner` (ADR-0008 §2). P0: show how a job kind
-//! routes (kernel + placement) and a `doctor` rails report.
+//! `fxrun` — operator CLI for `flexnetos_runner` (ADR-0008 §2). Shows how a job kind
+//! routes (kernel + placement) and reports runner seam wiring.
 
 use clap::{Parser, Subcommand};
 use runner_core::{
@@ -45,10 +45,10 @@ fn main() -> anyhow::Result<()> {
         }
         Cmd::Doctor => {
             let rails = safety::Rails::default();
-            println!("fxrun P0");
+            println!("fxrun");
             println!("  rails safe         : {}", rails.is_safe());
             println!("  labels             : {:?}", rails.labels);
-            println!("  actions supervisor : UNWIRED (P1 — generate-jitconfig)");
+            println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
             println!("  uds dispatch       : UNWIRED (P2)");
             println!("  secret injection   : UNWIRED (P3 — envctl relay-bearer)");
         }
