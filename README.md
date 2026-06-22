@@ -25,12 +25,15 @@ Two shapes, by design:
 | `runner-dispatch` | `fxrun-dispatch` | UDS server: verify signed job spec → route → invoke kernel. P2. |
 | `runner-cli` | `fxrun` | Operator CLI: `route`, `doctor`, `status`. |
 
-## Status — P0 (scaffold)
+## Status
 
 Implemented and tested: the signed job-spec contract + signature verification (S7), the kernel
-router (delegate map), the fork-PR isolation policy, and the JIT lifecycle state machine. The live
-Actions supervisor (P1), UDS dispatch + kernel invocation (P2), and envctl secret injection +
-SLSA/cosign provenance (P3) are typed seams that currently **fail closed / dry-run**.
+router (delegate map), the fork-PR isolation policy, and the JIT lifecycle state machine.
+
+The Actions supervisor is live: `fxrun-actions` can install the upstream GitHub Actions runner,
+mint short-lived registration tokens with `gh`, register repo/org-scoped runners, run one
+ephemeral job, or install a persistent service. The UDS dispatch + kernel invocation (P2), envctl
+secret injection, and SLSA/cosign provenance (P3) remain fail-closed typed seams.
 
 ## Build
 
