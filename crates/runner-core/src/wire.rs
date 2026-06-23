@@ -32,6 +32,11 @@ pub struct DispatchRequest {
     /// older App frames stay valid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<Approval>,
+    /// Optional per-job wall-clock deadline in seconds (see [`crate::deadline`]). An out-of-band
+    /// request the App attaches to the envelope; the runner takes the **tighter** of this and its
+    /// operator ceiling, so it can only shorten a job, never exceed the cap. Absent on older frames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_secs: Option<u64>,
 }
 
 /// A human-approval grant: HMAC proof, over the job's fingerprint, that an approver authorized this
@@ -128,6 +133,7 @@ pub fn sign_frame(key: &[u8], spec: &JobSpec) -> Result<DispatchRequest, WireErr
         spec_json,
         signature,
         approval: None,
+        deadline_secs: None,
     })
 }
 
@@ -211,6 +217,7 @@ mod tests {
             spec_json: body.to_string(),
             signature: sign_bytes(b"k", body.as_bytes()),
             approval: None,
+            deadline_secs: None,
         };
         assert!(matches!(
             verify_frame(b"k", &frame),
@@ -245,5 +252,26 @@ mod tests {
         assert!(!json.contains("approval"));
         let back: DispatchRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back, frame);
+    }
+
+    #[test]
+    fn deadline_secs_is_optional_omitted_when_absent_and_round_trips_when_present() {
+        // Default frame: no deadline field on the wire (older App frames stay byte-clean).
+        let frame = sign_frame(b"k", &spec()).unwrap();
+        assert_eq!(frame.deadline_secs, None);
+        assert!(!serde_json::to_string(&frame).unwrap().contains("deadline"));
+
+        // A frame that requests a deadline carries it and round-trips.
+        let mut with_deadline = sign_frame(b"k", &spec()).unwrap();
+        with_deadline.deadline_secs = Some(45);
+        let json = serde_json::to_string(&with_deadline).unwrap();
+        assert!(json.contains(r#""deadline_secs":45"#));
+        let back: DispatchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, with_deadline);
+
+        // An older frame JSON without the field still parses (serde default → None).
+        let legacy = r#"{"spec_json":"x","signature":"sha256=00"}"#;
+        let parsed: DispatchRequest = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.deadline_secs, None);
     }
 }
