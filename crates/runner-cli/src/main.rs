@@ -141,6 +141,10 @@ fn main() -> anyhow::Result<()> {
                  agent=owner → require envelope submitter provenance/tier before privileged routes)"
             );
             println!(
+                "  target allowlist   : off by default; set FXRUN_KERNEL_ALLOWLIST=loop,atc,hf,weave \
+                 to fail-closed kernel reachability (empty set = deny all)"
+            );
+            println!(
                 "  structural lint    : malformed jobs (bad repo / blank head_sha / pr_number 0) \
                  refused before the kernel"
             );

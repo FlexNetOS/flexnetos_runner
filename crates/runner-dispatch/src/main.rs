@@ -41,6 +41,7 @@ use runner_core::risk::{RiskLedger, RiskPolicy, RiskScore};
 use runner_core::router::{self, Kernel, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::scan::{self, ScanPolicy};
+use runner_core::targets::{TargetAllowlist, TargetDecision};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
 use runner_core::workspace::{JobWorkspace, WorkspaceProvider};
 use std::io::Read;
@@ -466,6 +467,7 @@ fn handle_request(
     constitution: &ConstitutionStatus,
     approval: &ApprovalPolicy,
     authority: &AuthorityPolicy,
+    target_allowlist: &TargetAllowlist,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -648,6 +650,28 @@ fn handle_request(
         return DispatchResponse::rejected(detail).with_recovery(directive);
     }
 
+    // Delegation-target allowlist (fail-closed kernel reachability): route the authenticated job to
+    // its kernel, then ensure that kernel endpoint is currently reachable by operator policy before
+    // it can consume rate slots, breaker window, budget, or a real subprocess. This is kernel
+    // reachability only (`loop`/`atc`/`hf`/`weave`), not model/vendor selection (weave owns that).
+    let plan = router::route(&job);
+    let program = plan.kernel.program();
+    if let TargetDecision::Denied { kernel, allowed } = target_allowlist.check(plan.kernel) {
+        let directive = policy.decide(retry, &fingerprint(&job), FailureKind::TargetDenied);
+        let detail = format!(
+            "delegation target `{}` denied by FXRUN_KERNEL_ALLOWLIST (allowed: {allowed}); refusing before kernel invocation | {}",
+            kernel.program(),
+            directive.summary()
+        );
+        sink.emit(
+            &DispatchEvent::for_job(Outcome::TargetDenied, &job)
+                .with_kernel(kernel.program())
+                .with_recovery(directive.clone())
+                .with_detail(&detail),
+        );
+        return DispatchResponse::rejected(detail).with_recovery(directive);
+    }
+
     // Dispatch rate limit + per-route failure cooldown (automaton hourly/daily caps + 5-min error
     // backoff): bound the *rate* of distinct, in-budget dispatches — the timing axis the breaker
     // (same-job loops), governor (lifetime budget), and quarantine (repeat-failure) don't cover.
@@ -711,8 +735,6 @@ fn handle_request(
         return DispatchResponse::rejected(detail);
     }
 
-    let plan = router::route(&job);
-    let program = plan.kernel.program();
     let fp = fingerprint(&job);
     // History-calibrated risk score for this fingerprint (advice-only) — computed from the record
     // *before* this dispatch's own outcome, so it predicts rather than reflects. `None` when risk
@@ -840,6 +862,7 @@ fn serve_once(
     constitution: &Constitution,
     approval: &ApprovalPolicy,
     authority: &AuthorityPolicy,
+    target_allowlist: &TargetAllowlist,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -867,6 +890,7 @@ fn serve_once(
         &status,
         approval,
         authority,
+        target_allowlist,
         guard,
         governor,
         policy,
@@ -904,6 +928,7 @@ fn serve(
     constitution: &Constitution,
     approval: &ApprovalPolicy,
     authority: &AuthorityPolicy,
+    target_allowlist: &TargetAllowlist,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -940,6 +965,11 @@ fn serve(
         format!("authority: {}", authority.describe())
     } else {
         "authority: off".to_string()
+    };
+    let target_note = if target_allowlist.is_active() {
+        format!("target allowlist: {}", target_allowlist.describe())
+    } else {
+        "target allowlist: off".to_string()
     };
     let quarantine_note = if quarantine_policy.is_active() {
         format!("quarantine: {} failures", quarantine_policy.threshold())
@@ -981,7 +1011,7 @@ fn serve(
         "risk score: off".to_string()
     };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -996,6 +1026,7 @@ fn serve(
         redaction_note,
         approval_note,
         authority_note,
+        target_note,
         constitution_note
     );
     loop {
@@ -1009,6 +1040,7 @@ fn serve(
             constitution,
             approval,
             authority,
+            target_allowlist,
             guard,
             governor,
             policy,
@@ -1264,6 +1296,13 @@ fn main() -> anyhow::Result<()> {
                 &std::env::var("FXRUN_AUTHORITY_RULES").unwrap_or_default(),
             )
             .map_err(|e| anyhow::anyhow!("invalid FXRUN_AUTHORITY_RULES: {e}"))?;
+            // Delegation-target allowlist: optional fail-closed kernel reachability registry.
+            // Unset → inert/backward compatible; set empty → active deny-all; set names (loop,atc,hf,
+            // weave) → only those kernels can be reached. This is target reachability, not model
+            // selection.
+            let target_allowlist =
+                TargetAllowlist::from_env(std::env::var("FXRUN_KERNEL_ALLOWLIST").ok().as_deref())
+                    .map_err(|e| anyhow::anyhow!("invalid FXRUN_KERNEL_ALLOWLIST: {e}"))?;
             // Audit trail: every event to FXRUN_EVENT_LOG (when set); admission/guardrail
             // (policy-category) events ALSO to a distinct FXRUN_POLICY_LOG stream — automaton's
             // separate `policy_decisions` table, so guardrail tampering is auditable on its own.
@@ -1354,6 +1393,7 @@ fn main() -> anyhow::Result<()> {
                 &constitution,
                 &approval,
                 &authority,
+                &target_allowlist,
                 &mut guard,
                 &mut governor,
                 &policy,
@@ -1508,6 +1548,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1541,6 +1582,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::from_rules("ci=maintainer").unwrap(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1585,6 +1627,82 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::from_rules("ci=maintainer").unwrap(),
+            &TargetAllowlist::disabled(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(resp.accepted);
+        assert_eq!(inv.calls(), 1);
+    }
+
+    #[test]
+    fn target_allowlist_denies_disallowed_kernel_before_delegation() {
+        let inv = RecordingInvoker::default();
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap(); // CI routes to loop
+        let raw = serde_json::to_vec(&frame).unwrap();
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
+            &TargetAllowlist::from_env(Some("atc,hf,weave")).unwrap(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!resp.accepted);
+        assert!(resp
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("delegation target `loop` denied"));
+        assert_eq!(
+            resp.recovery.as_ref().unwrap().action,
+            RecoveryVerb::Escalate
+        );
+        assert_eq!(
+            inv.calls(),
+            0,
+            "disallowed target must never reach a kernel"
+        );
+    }
+
+    #[test]
+    fn target_allowlist_allows_listed_kernel() {
+        let inv = RecordingInvoker::default();
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap(); // CI routes to loop
+        let raw = serde_json::to_vec(&frame).unwrap();
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
+            &TargetAllowlist::from_env(Some("loop")).unwrap(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1615,6 +1733,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1646,6 +1765,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1674,6 +1794,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1717,6 +1838,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1739,6 +1861,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1761,6 +1884,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1811,6 +1935,7 @@ mod tests {
             &violated,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1841,6 +1966,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1875,6 +2001,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1900,6 +2027,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1944,6 +2072,7 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut guard,
                 &mut governor,
                 &RecoveryPolicy::default(),
@@ -2005,6 +2134,7 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut guard,
                 &mut gov,
                 &RecoveryPolicy::default(),
@@ -2058,6 +2188,7 @@ mod tests {
                     &ConstitutionStatus::Intact,
                     &ApprovalPolicy::none(),
                     &AuthorityPolicy::disabled(),
+                    &TargetAllowlist::disabled(),
                     &mut guard,
                     &mut Governor::unlimited(),
                     &RecoveryPolicy::default(),
@@ -2119,6 +2250,7 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut guard,
                 gov,
                 &policy,
@@ -2182,6 +2314,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -2229,6 +2362,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &policy,
@@ -2258,6 +2392,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -2301,6 +2436,7 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &policy,
@@ -2338,6 +2474,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &policy,
@@ -2374,6 +2511,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &policy,
@@ -2411,6 +2549,7 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::new(5, 1),
@@ -2489,6 +2628,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -2540,6 +2680,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -2568,6 +2709,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -2598,6 +2740,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut tight,
             &mut gov,
             &policy,
@@ -2642,6 +2785,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &approval,
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &policy,
@@ -2678,6 +2822,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &approval,
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &policy,
@@ -2705,6 +2850,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &approval,
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(), // fresh guard so the breaker doesn't trip on the repeat
             &mut gov,
             &policy,
@@ -2786,6 +2932,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -2878,6 +3025,7 @@ mod tests {
                 &Constitution::default(),
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::default(),
@@ -2973,6 +3121,7 @@ mod tests {
                 &Constitution::default(),
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::new(0, 5), // 0 retries → escalate (still a rejection carrying detail)
@@ -3050,6 +3199,7 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut guard,
                 &mut gov,
                 &RecoveryPolicy::default(),
@@ -3074,6 +3224,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -3130,6 +3281,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -3155,6 +3307,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -3203,6 +3356,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -3228,6 +3382,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -3286,6 +3441,7 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
+                &TargetAllowlist::disabled(),
                 &mut LoopGuard::new(100, 100), // keep the breaker out of the way for this run
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::new(99, 1), // never escalate within this run (stay on the retry path)
@@ -3348,6 +3504,7 @@ mod tests {
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::new(5, 1),

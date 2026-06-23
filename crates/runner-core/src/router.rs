@@ -8,7 +8,7 @@ use crate::agent::Agent;
 use crate::jobspec::{JobKind, JobSpec};
 
 /// The existing kernels the runner delegates to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kernel {
     LoopLib,
     Atc,
@@ -17,6 +17,9 @@ pub enum Kernel {
 }
 
 impl Kernel {
+    /// All canonical kernels, in stable display order.
+    pub const ALL: [Kernel; 4] = [Kernel::LoopLib, Kernel::Atc, Kernel::Handoff, Kernel::Weave];
+
     /// The canonical binary name for this kernel.
     pub fn program(&self) -> &'static str {
         match self {
@@ -25,6 +28,23 @@ impl Kernel {
             Kernel::Handoff => "hf",
             Kernel::Weave => "weave",
         }
+    }
+
+    /// Parse an operator-facing kernel name / alias for target allowlists.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "loop" | "loop_lib" | "loop-lib" | "looplib" => Ok(Kernel::LoopLib),
+            "atc" => Ok(Kernel::Atc),
+            "hf" | "handoff" => Ok(Kernel::Handoff),
+            "weave" => Ok(Kernel::Weave),
+            other => Err(format!("unknown kernel target `{other}`")),
+        }
+    }
+}
+
+impl std::fmt::Display for Kernel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.program())
     }
 }
 
