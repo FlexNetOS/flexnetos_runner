@@ -111,6 +111,10 @@ fn main() -> anyhow::Result<()> {
                  FXRUN_DISPATCH_BUDGET / FXRUN_TOKEN_BUDGET / FXRUN_USD_MICROS_BUDGET"
             );
             println!(
+                "  survival tiers     : full → conserving (75%) → distress (90%) → halted; \
+                 debounced floor FXRUN_BUDGET_GRACE admits past a met cap (0 = strict cliff)"
+            );
+            println!(
                 "  cost seam          : atc→runner per-job JobCost (tokens+USD); charged to the budget"
             );
             let recovery = runner_core::RecoveryPolicy::default();

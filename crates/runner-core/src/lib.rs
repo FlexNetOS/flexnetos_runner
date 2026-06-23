@@ -45,7 +45,7 @@ pub use constitution::{Constitution, ConstitutionStatus};
 pub use cost::JobCost;
 pub use error::{CoreError, Result};
 pub use events::{DispatchEvent, EventSink, NullSink, Outcome};
-pub use governor::{Admission, Budget, Governor, Spend};
+pub use governor::{Admission, Budget, Governor, Spend, SurvivalTier};
 pub use lint::{is_structurally_valid, structural_errors, LintError};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};
 pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger};
