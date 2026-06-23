@@ -223,6 +223,12 @@ fn handle_request(
             if cost.is_measured() {
                 event = event.with_cost(cost);
             }
+            // Survival-tier signal: once a budget dimension passes 75% the operator/weave should
+            // see degradation in the audit trail *before* the hard halt (automaton's balance ladder).
+            let tier = governor.tier();
+            if tier.is_degraded() {
+                event = event.with_detail(format!("survival tier: {tier}"));
+            }
             sink.emit(&event);
             DispatchResponse {
                 accepted: true,
@@ -404,10 +410,13 @@ fn render_budget(b: &runner_core::governor::Budget) -> String {
         parts.push(format!("${:.4}", JobCost::new(0, u).usd()));
     }
     if parts.is_empty() {
-        "unlimited".to_string()
-    } else {
-        parts.join(" / ")
+        return "unlimited".to_string();
     }
+    let mut rendered = parts.join(" / ");
+    if b.grace > 0 {
+        rendered.push_str(&format!(" (grace {})", b.grace));
+    }
+    rendered
 }
 
 fn main() -> anyhow::Result<()> {
@@ -434,10 +443,13 @@ fn main() -> anyhow::Result<()> {
             let mut guard = LoopGuard::new(window, threshold);
             // Bounded-autonomy ceiling across jobs/tokens/USD: 0/unset → uncapped per dimension
             // (behaviour-preserving default). Token/USD caps only bite once atc reports cost.
+            // FXRUN_BUDGET_GRACE is the debounced floor (admits allowed past a met cap before halt;
+            // 0 = strict cliff, the default — preserves the pre-existing deny-at-cap behaviour).
             let mut governor = Governor::from_env(
                 env_usize("FXRUN_DISPATCH_BUDGET", 0),
                 env_u64("FXRUN_TOKEN_BUDGET"),
                 env_u64("FXRUN_USD_MICROS_BUDGET"),
+                env_usize("FXRUN_BUDGET_GRACE", 0),
             );
             // Declarative recovery: a failed dispatch is answered with retry-with-backoff (transient
             // kernel errors) or escalate-to-human advice the orchestrator acts on. Tunable via env
@@ -932,6 +944,78 @@ mod tests {
             );
         }
         assert_eq!(inv.calls(), 6);
+    }
+
+    #[test]
+    fn grace_floor_lets_jobs_past_the_cap_then_halts_and_audits_the_tier() {
+        use runner_core::events::DispatchEvent;
+        use runner_core::governor::Budget;
+        use std::cell::RefCell;
+        struct Rec(RefCell<Vec<DispatchEvent>>);
+        impl EventSink for Rec {
+            fn emit(&self, e: &DispatchEvent) {
+                self.0.borrow_mut().push(e.clone());
+            }
+        }
+        let sink = Rec(RefCell::new(Vec::new()));
+        let inv = RecordingInvoker::default();
+        let mut guard = LoopGuard::default();
+        // 1-job cap with a grace of 1: one normal admit, one distress (grace) admit, then halt.
+        let mut gov = Governor::with_budget(Budget {
+            jobs: Some(1),
+            grace: 1,
+            ..Default::default()
+        });
+        let policy = RecoveryPolicy::default();
+        let mut retry = RetryLedger::new();
+
+        let mut dispatch = |sha: &str, gov: &mut Governor| {
+            let spec = JobSpec {
+                id: format!("job-{sha}"),
+                correlation_id: "c".into(),
+                from_fork: false,
+                job: JobKind::Ci {
+                    repo: "FlexNetOS/meta".into(),
+                    head_sha: sha.into(),
+                },
+            };
+            let frame = sign_frame(b"k", &spec).unwrap();
+            handle_request(
+                b"k",
+                &inv,
+                &ConstitutionStatus::Intact,
+                &mut guard,
+                gov,
+                &policy,
+                &mut retry,
+                &sink,
+                &serde_json::to_vec(&frame).unwrap(),
+            )
+        };
+
+        assert!(dispatch("a", &mut gov).accepted); // 1/1 (under cap)
+        assert!(dispatch("b", &mut gov).accepted); // grace admit past the cap (distress)
+        assert!(!dispatch("c", &mut gov).accepted); // grace exhausted → halt
+        assert_eq!(
+            inv.calls(),
+            2,
+            "only the two admitted jobs reached the kernel"
+        );
+
+        // The grace (distress) delegation is audited with a survival-tier note (the cap is met).
+        let events = sink.0.into_inner();
+        let delegated: Vec<_> = events
+            .iter()
+            .filter(|e| e.outcome == Outcome::Delegated)
+            .collect();
+        assert_eq!(delegated.len(), 2);
+        assert!(
+            delegated[1]
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.contains("survival tier: halted")),
+            "the over-cap grace admit should carry a halted-tier audit note"
+        );
     }
 
     #[test]
