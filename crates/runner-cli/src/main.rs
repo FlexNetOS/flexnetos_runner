@@ -106,6 +106,9 @@ fn main() -> anyhow::Result<()> {
                 breaker.trip_threshold(),
                 breaker.window()
             );
+            println!(
+                "  dispatch budget    : unlimited by default (FXRUN_DISPATCH_BUDGET kill-switch)"
+            );
             println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
             println!("  uds dispatch       : UNWIRED (P2)");
             println!("  secret injection   : UNWIRED (P3 — envctl relay-bearer)");

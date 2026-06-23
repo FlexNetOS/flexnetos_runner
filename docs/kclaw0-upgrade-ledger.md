@@ -15,7 +15,21 @@ Background: `meta/DARK-FACTORY-RESEARCH.md` (the autonomous-loop landscape this 
 
 | # | kclaw0 source | Runner upgrade | Where | PR |
 |---|---------------|----------------|-------|----|
-| 1 | `scripts/loop-detection.js` (+ `fingerprint.js`) — "4 identical tool calls → loop" + SHA-256 keying | **`LoopGuard` circuit breaker**: trip fail-closed when the same *semantic* job (SHA-256 of `JobKind`, excluding volatile id) recurs ≥`threshold` within a `window` of dispatches. Dispatcher consults it before routing; tunable via `FXRUN_LOOP_WINDOW`/`FXRUN_LOOP_THRESHOLD`; default 4-in-8. | `runner-core::loopguard`, wired in `runner-dispatch` | feat/loop-breaker |
+| 1 | `scripts/loop-detection.js` (+ `fingerprint.js`) — "4 identical tool calls → loop" + SHA-256 keying | **`LoopGuard` circuit breaker**: trip fail-closed when the same *semantic* job (SHA-256 of `JobKind`, excluding volatile id) recurs ≥`threshold` within a `window` of dispatches. Dispatcher consults it before routing; tunable via `FXRUN_LOOP_WINDOW`/`FXRUN_LOOP_THRESHOLD`; default 4-in-8. | `runner-core::loopguard`, wired in `runner-dispatch` | #5 (merged) |
+| 2 | `scripts/dark-factory.js::enforceBudget` + `scripts/survival.js` — hard budget cap / halt-at-zero | **`Governor` dispatch budget**: a bounded-autonomy kill-switch admitting at most `FXRUN_DISPATCH_BUDGET` dispatches per server lifetime, then refusing fail-closed (re-arm to continue). Unlimited by default (behaviour-preserving). Volume complement of the breaker; checked after it so a refused-loop job costs no budget. | `runner-core::governor`, wired in `runner-dispatch` | feat/dispatch-budget |
+
+### Cycle-2 research note — kclaw0 `dark-factory.js` is a governance engine
+Admission sequence: **immutability → budget → state-machine → holdout**. Mapping to the runner plane:
+- **immutability** (SHA-256 of `MISSION.md`/`FACTORY_RULES.md`/`CLAUDE.md`; trip if changed) → the
+  "agent-immutable constitution/oracle". Partly the App's `is_protected()` denylist; a runner-side
+  *constitution-fingerprint* gate is a future candidate (needs the file set as a dispatch input).
+- **budget** → **applied this cycle** (the `Governor`).
+- **holdout** (`validateHoldout`: keyword-coverage of the issue vs the implementation) → the
+  *defining* dark-factory signature, but it's a CI/eval gate (loop_lib / required-check aggregation),
+  **not** runner-core. Track as a required-status the runner's autonomy gate consumes — not a
+  runner-core primitive.
+- `verify-commit.js` (tests-must-pass pre-commit) → backpressure; same "lives in CI/loop_lib, the
+  runner *requires* the green status" placement. Kept in *Surfaced*.
 
 ## Surfaced — candidates for future cycles (not yet applied)
 
