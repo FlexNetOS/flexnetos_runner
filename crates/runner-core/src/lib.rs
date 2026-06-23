@@ -70,7 +70,7 @@ pub mod scan;
 pub mod wire;
 pub mod workspace;
 
-pub use agent::{Agent, ApiStyle};
+pub use agent::{Agent, AgentSelection, AgentSelectionSource, ApiStyle};
 pub use approval::ApprovalPolicy;
 pub use constitution::{Constitution, ConstitutionStatus};
 pub use cost::JobCost;
