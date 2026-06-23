@@ -143,6 +143,10 @@ fn main() -> anyhow::Result<()> {
                 "  constitution       : off by default (FXRUN_CONSTITUTION → seal governing files; \
                  mid-run change halts dispatch)"
             );
+            println!(
+                "  workspace teardown : guaranteed on every exit path incl. failure (Archon \
+                 zero-residue); tmpfs worktree in P3"
+            );
             println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
             println!("  uds dispatch       : UNWIRED (P2)");
             println!("  secret injection   : UNWIRED (P3 — envctl relay-bearer)");

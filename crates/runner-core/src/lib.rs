@@ -22,6 +22,8 @@
 //! - [`events`] — structured dispatch audit log (NDJSON event trail; adapted from kclaw0
 //!   `event-system.js`).
 //! - [`lifecycle`] — JIT/ephemeral runner lifecycle (one job, then removed).
+//! - [`workspace`] — isolated-workspace teardown guarantee (cleanup runs on every exit path, fail
+//!   included; adapted from `Archon`'s "fail → delete the worktree, zero residue").
 //! - [`wire`] — the signed UDS dispatch frame (App → dispatcher) + reply.
 //!
 //! No process execution at this layer; `runner-actions` (Actions supervisor) and
@@ -42,6 +44,7 @@ pub mod recovery;
 pub mod router;
 pub mod safety;
 pub mod wire;
+pub mod workspace;
 
 pub use agent::{Agent, ApiStyle};
 pub use approval::ApprovalPolicy;
@@ -54,3 +57,4 @@ pub use lint::{is_structurally_valid, structural_errors, LintError};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};
 pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger};
 pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};
+pub use workspace::{JobWorkspace, NoopWorkspaceProvider, TeardownReport, WorkspaceProvider};
