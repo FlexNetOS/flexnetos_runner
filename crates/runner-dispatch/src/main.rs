@@ -25,7 +25,9 @@ use runner_core::cost::JobCost;
 use runner_core::events::{DispatchEvent, EventSink, NullSink, Outcome};
 use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
-use runner_core::loopguard::{LoopGuard, Verdict};
+use runner_core::lint;
+use runner_core::loopguard::{fingerprint, LoopGuard, Verdict};
+use runner_core::recovery::{FailureKind, RecoveryPolicy, RetryLedger};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
@@ -94,17 +96,23 @@ impl EventSink for FileSink {
     }
 }
 
-/// Handle one received frame end-to-end. Pure over its inputs (no socket), so the accept→verify→
-/// isolate→breaker→budget→route→delegate decision is unit-tested directly. Fail-closed: every
-/// non-happy path is a `DispatchResponse::rejected`. `guard` and `governor` persist across
-/// connections (the runaway-loop breaker and the dispatch budget are stateful by design); every
-/// terminal decision is also written to the audit `sink` (kclaw0 `event-system.js` lineage).
+/// Handle one received frame end-to-end. Pure over its inputs (no socket), so the
+/// accept→verify→lint→isolate→breaker→budget→route→delegate decision is unit-tested directly.
+/// Fail-closed: every non-happy path is a `DispatchResponse::rejected`. `guard`, `governor`, and
+/// `retry` persist across connections (the runaway-loop breaker, the dispatch budget, and the
+/// per-fingerprint retry ledger are stateful by design); every terminal decision is also written to
+/// the audit `sink` (kclaw0 `event-system.js` lineage). A failed dispatch carries a
+/// [`runner_core::recovery::RecoveryDirective`] back to the orchestrator (retry-with-backoff vs.
+/// escalate-to-human; `policy` configures it).
+#[allow(clippy::too_many_arguments)]
 fn handle_request(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     constitution: &ConstitutionStatus,
     guard: &mut LoopGuard,
     governor: &mut Governor,
+    policy: &RecoveryPolicy,
+    retry: &mut RetryLedger,
     sink: &dyn EventSink,
     raw: &[u8],
 ) -> DispatchResponse {
@@ -140,6 +148,27 @@ fn handle_request(
         }
     };
 
+    // Structural lint (attractor VALIDATE phase): the earliest safe gate — now that the bytes are
+    // authenticated, refuse a malformed job (bad repo / blank head_sha / pr_number 0) before any
+    // kernel is touched, rather than letting it fail opaquely at the kernel. A malformed job can
+    // never become valid by re-dispatch, so recovery escalates it to a human.
+    let structural = lint::structural_errors(&job);
+    if !structural.is_empty() {
+        let fp = fingerprint(&job);
+        let directive = policy.decide(retry, &fp, FailureKind::Malformed);
+        let detail = format!(
+            "structurally-invalid job: {} | {}",
+            lint::summarize(&structural),
+            directive.summary()
+        );
+        sink.emit(
+            &DispatchEvent::for_job(Outcome::Malformed, &job)
+                .with_recovery(directive.clone())
+                .with_detail(&detail),
+        );
+        return DispatchResponse::rejected(detail).with_recovery(directive);
+    }
+
     // Fork-PR isolation (ADR-0008 §6): untrusted fork code must NEVER run on self-hosted hardware.
     // Enforced HERE, before any kernel is touched, so a forged-but-signed fork job still can't run.
     let placement = safety::placement(&job);
@@ -154,12 +183,20 @@ fn handle_request(
     // and over is the #1 unattended-loop failure mode (cost blowups). Trip fail-closed before the
     // kernel is touched. Distinct work and normal retries pass; only a tight identical loop trips.
     if let Verdict::Trip { count } = guard.observe(&job) {
+        // A tripped loop is NOT retryable — retrying is exactly what's going wrong. Recovery
+        // escalates to a human (open a review PR) rather than advising another re-dispatch.
+        let directive = policy.decide(retry, &fingerprint(&job), FailureKind::LoopTripped);
         let detail = format!(
             "loop breaker tripped: identical job dispatched {count}x within the recent window \
-             (runaway-loop guard); back off or vary the work"
+             (runaway-loop guard) | {}",
+            directive.summary()
         );
-        sink.emit(&DispatchEvent::for_job(Outcome::LoopTripped, &job).with_detail(&detail));
-        return DispatchResponse::rejected(detail);
+        sink.emit(
+            &DispatchEvent::for_job(Outcome::LoopTripped, &job)
+                .with_recovery(directive.clone())
+                .with_detail(&detail),
+        );
+        return DispatchResponse::rejected(detail).with_recovery(directive);
     }
 
     // Dispatch budget (bounded autonomy): refuse once any operator-set ceiling (jobs/tokens/USD) is
@@ -174,10 +211,14 @@ fn handle_request(
 
     let plan = router::route(&job);
     let program = plan.kernel.program();
+    let fp = fingerprint(&job);
     match invoker.invoke(&plan, &job) {
         Ok(cost) => {
             // Charge the cost atc reported so the NEXT admit sees it (fail-open: ZERO is a no-op).
             governor.charge(cost);
+            // A clean delegation clears this fingerprint's retry budget, so a *later* transient
+            // failure of the same work starts its own fresh retry count.
+            retry.clear(&fp);
             let mut event = DispatchEvent::for_job(Outcome::Delegated, &job).with_kernel(program);
             if cost.is_measured() {
                 event = event.with_cost(cost);
@@ -189,16 +230,24 @@ fn handle_request(
                 placement: Some(format!("{placement:?}")),
                 intent: Some(plan.intent.clone()),
                 error: None,
+                recovery: None,
             }
         }
         Err(e) => {
-            let detail = format!("kernel `{program}` invocation failed: {e}");
+            // A kernel error is usually transient → recovery advises a backed-off retry of the same
+            // job, escalating to a human only once the retry ceiling is exceeded.
+            let directive = policy.decide(retry, &fp, FailureKind::KernelFailed);
+            let detail = format!(
+                "kernel `{program}` invocation failed: {e} | {}",
+                directive.summary()
+            );
             sink.emit(
                 &DispatchEvent::for_job(Outcome::KernelFailed, &job)
                     .with_kernel(program)
+                    .with_recovery(directive.clone())
                     .with_detail(&detail),
             );
-            DispatchResponse::rejected(detail)
+            DispatchResponse::rejected(detail).with_recovery(directive)
         }
     }
 }
@@ -214,6 +263,8 @@ fn serve_once(
     constitution: &Constitution,
     guard: &mut LoopGuard,
     governor: &mut Governor,
+    policy: &RecoveryPolicy,
+    retry: &mut RetryLedger,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::io::Write;
@@ -222,7 +273,9 @@ fn serve_once(
     stream.read_to_end(&mut raw)?;
     // Re-verify the runner's constitution against the files on disk right now (I/O lives here).
     let status = constitution.verify(|name| std::fs::read(name).ok());
-    let resp = handle_request(key, invoker, &status, guard, governor, sink, &raw);
+    let resp = handle_request(
+        key, invoker, &status, guard, governor, policy, retry, sink, &raw,
+    );
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
     stream.write_all(&bytes)?;
@@ -242,6 +295,8 @@ fn serve(
     constitution: &Constitution,
     guard: &mut LoopGuard,
     governor: &mut Governor,
+    policy: &RecoveryPolicy,
+    retry: &mut RetryLedger,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
@@ -255,15 +310,27 @@ fn serve(
         format!("constitution: {} sealed", constitution.len())
     };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
         render_budget(&governor.budget()),
+        policy.max_retries(),
+        policy.base_backoff_secs(),
         constitution_note
     );
     loop {
-        if let Err(e) = serve_once(&listener, key, invoker, constitution, guard, governor, sink) {
+        if let Err(e) = serve_once(
+            &listener,
+            key,
+            invoker,
+            constitution,
+            guard,
+            governor,
+            policy,
+            retry,
+            sink,
+        ) {
             eprintln!("fxrun-dispatch: connection error: {e}");
         }
     }
@@ -372,6 +439,21 @@ fn main() -> anyhow::Result<()> {
                 env_u64("FXRUN_TOKEN_BUDGET"),
                 env_u64("FXRUN_USD_MICROS_BUDGET"),
             );
+            // Declarative recovery: a failed dispatch is answered with retry-with-backoff (transient
+            // kernel errors) or escalate-to-human advice the orchestrator acts on. Tunable via env
+            // (FXRUN_MAX_RETRIES / FXRUN_RETRY_BACKOFF_SECS); defaults to 2 retries, 5s base backoff.
+            // `0` retries is a valid choice (escalate immediately) and is honored, not overridden.
+            let max_retries = std::env::var("FXRUN_MAX_RETRIES")
+                .ok()
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .unwrap_or(2);
+            let base_backoff = std::env::var("FXRUN_RETRY_BACKOFF_SECS")
+                .ok()
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .filter(|n| *n > 0)
+                .unwrap_or(5);
+            let policy = RecoveryPolicy::new(max_retries, base_backoff);
+            let mut retry = RetryLedger::new();
             // Constitution: seal the runner's own governing files (comma-separated paths in
             // FXRUN_CONSTITUTION) at startup; a mid-run change refuses all dispatch. Inert if unset.
             let constitution = {
@@ -409,6 +491,8 @@ fn main() -> anyhow::Result<()> {
                 &constitution,
                 &mut guard,
                 &mut governor,
+                &policy,
+                &mut retry,
                 sink.as_ref(),
             )?;
             return Ok(());
@@ -454,6 +538,23 @@ mod tests {
         }
     }
 
+    /// An invoker that always fails — exercises the kernel-failure → recovery path.
+    #[derive(Default)]
+    struct FailingInvoker {
+        calls: AtomicUsize,
+    }
+    impl FailingInvoker {
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::Relaxed)
+        }
+    }
+    impl KernelInvoker for FailingInvoker {
+        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Err("kernel exploded".into())
+        }
+    }
+
     fn ci_spec(from_fork: bool) -> JobSpec {
         JobSpec {
             id: "job-1".into(),
@@ -477,6 +578,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &NullSink,
             &raw,
         );
@@ -497,6 +600,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &NullSink,
             &raw,
         );
@@ -516,6 +621,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &NullSink,
             &raw,
         );
@@ -532,6 +639,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &NullSink,
             b"this is not json",
         );
@@ -563,6 +672,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut guard,
             &mut gov,
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &sink,
             &serde_json::to_vec(&ok).unwrap(),
         );
@@ -573,6 +684,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut guard,
             &mut gov,
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
         );
@@ -583,6 +696,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut guard,
             &mut gov,
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &sink,
             b"garbage",
         );
@@ -615,7 +730,17 @@ mod tests {
         let violated = ConstitutionStatus::Violated {
             changed: vec![".handoff/policy.toml".to_string()],
         };
-        let resp = handle_request(b"k", &inv, &violated, &mut guard, &mut gov, &NullSink, &raw);
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &violated,
+            &mut guard,
+            &mut gov,
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &NullSink,
+            &raw,
+        );
         assert!(!resp.accepted);
         assert!(resp.error.unwrap().contains("constitution violated"));
         assert_eq!(
@@ -631,6 +756,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut guard,
             &mut gov,
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &NullSink,
             &raw,
         );
@@ -653,6 +780,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut guard,
             &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &NullSink,
             &raw,
         );
@@ -666,6 +795,8 @@ mod tests {
             &ConstitutionStatus::Intact,
             &mut guard,
             &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
             &NullSink,
             &raw,
         );
@@ -698,6 +829,8 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &mut guard,
                 &mut governor,
+                &RecoveryPolicy::default(),
+                &mut RetryLedger::new(),
                 &NullSink,
                 &raw,
             )
@@ -747,6 +880,8 @@ mod tests {
                 &ConstitutionStatus::Intact,
                 &mut guard,
                 &mut gov,
+                &RecoveryPolicy::default(),
+                &mut RetryLedger::new(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
             )
@@ -788,6 +923,8 @@ mod tests {
                     &ConstitutionStatus::Intact,
                     &mut guard,
                     &mut Governor::unlimited(),
+                    &RecoveryPolicy::default(),
+                    &mut RetryLedger::new(),
                     &NullSink,
                     &raw
                 )
@@ -795,6 +932,161 @@ mod tests {
             );
         }
         assert_eq!(inv.calls(), 6);
+    }
+
+    #[test]
+    fn malformed_job_is_rejected_before_the_kernel_with_an_escalate_directive() {
+        use runner_core::recovery::RecoveryVerb;
+        let inv = RecordingInvoker::default();
+        // Structurally invalid: empty repo. Signed correctly so it passes auth, then fails the lint.
+        let spec = JobSpec {
+            id: "job-x".into(),
+            correlation_id: "c".into(),
+            from_fork: false,
+            job: JobKind::Ci {
+                repo: "".into(),
+                head_sha: "abc".into(),
+            },
+        };
+        let frame = sign_frame(b"k", &spec).unwrap();
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &NullSink,
+            &serde_json::to_vec(&frame).unwrap(),
+        );
+        assert!(!resp.accepted);
+        assert!(resp.error.unwrap().contains("structurally-invalid"));
+        let directive = resp
+            .recovery
+            .expect("malformed job carries a recovery directive");
+        assert_eq!(directive.action, RecoveryVerb::Escalate);
+        assert_eq!(inv.calls(), 0, "a malformed job must never reach a kernel");
+    }
+
+    #[test]
+    fn kernel_failure_advises_retry_then_escalates_after_the_ceiling() {
+        use runner_core::recovery::RecoveryVerb;
+        let inv = FailingInvoker::default();
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::unlimited();
+        // 1 retry, then escalate (5s base backoff). One shared ledger across the calls.
+        let policy = RecoveryPolicy::new(1, 5);
+        let mut retry = RetryLedger::new();
+
+        // Each call uses distinct work (varying sha) so the *loop breaker* never fires — we are
+        // exercising the kernel-failure recovery path, not the breaker. The retry ledger keys on
+        // fingerprint, so to see attempt-counting we re-dispatch the SAME work.
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        let raw = serde_json::to_vec(&frame).unwrap();
+
+        // 1st failure → retry (attempt 1)…
+        let r1 = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &mut guard,
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &raw,
+        );
+        let d1 = r1.recovery.expect("kernel failure carries recovery");
+        assert_eq!(d1.action, RecoveryVerb::Retry);
+        assert_eq!(d1.attempt, 1);
+        assert_eq!(d1.backoff_secs, 5);
+
+        // The breaker would trip on the 4th identical dispatch (default 4-in-8); use a fresh guard
+        // so only the retry ledger advances. 2nd failure of the same work → over the 1-retry
+        // ceiling → escalate.
+        let r2 = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &mut LoopGuard::default(),
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &raw,
+        );
+        let d2 = r2.recovery.expect("kernel failure carries recovery");
+        assert_eq!(d2.action, RecoveryVerb::Escalate);
+        assert_eq!(inv.calls(), 2, "both attempts actually reached the kernel");
+    }
+
+    #[test]
+    fn loop_trip_escalates_and_a_clean_delegation_resets_the_retry_budget() {
+        use runner_core::recovery::RecoveryVerb;
+        // A clean delegation must clear the fingerprint so a later transient failure starts fresh.
+        let mut retry = RetryLedger::new();
+        let mut gov = Governor::unlimited();
+        let policy = RecoveryPolicy::new(2, 1);
+
+        // First, a failing invoker bumps the fingerprint's retry count to 1.
+        let fail = FailingInvoker::default();
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        let raw = serde_json::to_vec(&frame).unwrap();
+        handle_request(
+            b"k",
+            &fail,
+            &ConstitutionStatus::Intact,
+            &mut LoopGuard::default(),
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &raw,
+        );
+        assert_eq!(
+            retry.attempts(&runner_core::fingerprint(&ci_spec(false))),
+            1
+        );
+
+        // Now the same work succeeds → the retry budget for that fingerprint is cleared.
+        let ok = RecordingInvoker::default();
+        let resp = handle_request(
+            b"k",
+            &ok,
+            &ConstitutionStatus::Intact,
+            &mut LoopGuard::default(),
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &raw,
+        );
+        assert!(resp.accepted);
+        assert_eq!(
+            retry.attempts(&runner_core::fingerprint(&ci_spec(false))),
+            0,
+            "a clean delegation clears the fingerprint's retry count"
+        );
+
+        // And a loop trip escalates immediately (independent of the retry ledger).
+        let mut tight = LoopGuard::new(2, 1); // trips on the 1st observation
+        let tripped = handle_request(
+            b"k",
+            &ok,
+            &ConstitutionStatus::Intact,
+            &mut tight,
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &raw,
+        );
+        assert!(!tripped.accepted);
+        assert_eq!(
+            tripped.recovery.expect("loop trip carries recovery").action,
+            RecoveryVerb::Escalate
+        );
     }
 
     #[cfg(unix)]
@@ -826,6 +1118,8 @@ mod tests {
                 &Constitution::default(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
+                &RecoveryPolicy::default(),
+                &mut RetryLedger::new(),
                 &NullSink,
             )
             .unwrap();

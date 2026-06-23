@@ -113,6 +113,17 @@ fn main() -> anyhow::Result<()> {
             println!(
                 "  cost seam          : atc→runner per-job JobCost (tokens+USD); charged to the budget"
             );
+            let recovery = runner_core::RecoveryPolicy::default();
+            println!(
+                "  structural lint    : malformed jobs (bad repo / blank head_sha / pr_number 0) \
+                 refused before the kernel"
+            );
+            println!(
+                "  recovery routing   : {} retries / {}s base backoff, then escalate-to-human \
+                 (FXRUN_MAX_RETRIES/_RETRY_BACKOFF_SECS)",
+                recovery.max_retries(),
+                recovery.base_backoff_secs()
+            );
             println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );

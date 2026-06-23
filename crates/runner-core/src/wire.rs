@@ -12,6 +12,7 @@
 //! key to sign. Verification is constant-time (`Mac::verify_slice`).
 
 use crate::jobspec::JobSpec;
+use crate::recovery::RecoveryDirective;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -41,6 +42,11 @@ pub struct DispatchResponse {
     pub intent: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// For a rejection, the runner's advice on what to do next — retry-with-backoff or escalate to a
+    /// human (the [`RecoveryDirective`]). The orchestrator (App / weave) owns the timer and the
+    /// escalation PR; the runner only recommends. Absent on acceptance and on pre-parse rejections.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<RecoveryDirective>,
 }
 
 impl DispatchResponse {
@@ -52,7 +58,14 @@ impl DispatchResponse {
             placement: None,
             intent: None,
             error: Some(error.into()),
+            recovery: None,
         }
+    }
+
+    /// Attach a recovery directive to a rejection (builder).
+    pub fn with_recovery(mut self, recovery: RecoveryDirective) -> Self {
+        self.recovery = Some(recovery);
+        self
     }
 }
 
