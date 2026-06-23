@@ -10,6 +10,8 @@
 //!   point; adapted from kclaw0 `loop-detection.js`).
 //! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch; adapted from kclaw0
 //!   `dark-factory.js::enforceBudget` + `survival.js`).
+//! - [`events`] — structured dispatch audit log (NDJSON event trail; adapted from kclaw0
+//!   `event-system.js`).
 //! - [`lifecycle`] — JIT/ephemeral runner lifecycle (one job, then removed).
 //! - [`wire`] — the signed UDS dispatch frame (App → dispatcher) + reply.
 //!
@@ -18,6 +20,7 @@
 
 pub mod agent;
 pub mod error;
+pub mod events;
 pub mod governor;
 pub mod jobspec;
 pub mod lifecycle;
@@ -28,6 +31,7 @@ pub mod wire;
 
 pub use agent::{Agent, ApiStyle};
 pub use error::{CoreError, Result};
+pub use events::{DispatchEvent, EventSink, NullSink, Outcome};
 pub use governor::{Admission, Governor};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};
 pub use wire::{sign_frame, verify_frame, DispatchRequest, DispatchResponse, WireError};

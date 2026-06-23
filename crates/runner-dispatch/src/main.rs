@@ -20,6 +20,7 @@
 // real target (Unix) keeps full dead-code checking.
 #![cfg_attr(not(unix), allow(dead_code))]
 
+use runner_core::events::{DispatchEvent, EventSink, NullSink, Outcome};
 use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
 use runner_core::loopguard::{LoopGuard, Verdict};
@@ -60,68 +61,120 @@ impl KernelInvoker for DryRunInvoker {
     }
 }
 
+/// Append-only NDJSON audit sink: one JSON object per line to `FXRUN_EVENT_LOG`. Best-effort —
+/// an I/O error is logged to stderr but never fails a dispatch (the audit log must not become a
+/// new failure mode). Opens in append mode per event, so the log survives restarts and concurrent
+/// readers can `tail -f` it. The runner-core `EventSink` keeps `runner-core` itself I/O-free.
+#[cfg(unix)]
+struct FileSink {
+    path: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+impl EventSink for FileSink {
+    fn emit(&self, event: &DispatchEvent) {
+        use std::io::Write;
+        let line = event.to_ndjson();
+        let write = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .and_then(|mut f| writeln!(f, "{line}"));
+        if let Err(e) = write {
+            eprintln!(
+                "fxrun-dispatch: audit log write failed ({}): {e}",
+                self.path.display()
+            );
+        }
+    }
+}
+
 /// Handle one received frame end-to-end. Pure over its inputs (no socket), so the accept→verify→
 /// isolate→breaker→budget→route→delegate decision is unit-tested directly. Fail-closed: every
 /// non-happy path is a `DispatchResponse::rejected`. `guard` and `governor` persist across
-/// connections (the runaway-loop breaker and the dispatch budget are stateful by design).
+/// connections (the runaway-loop breaker and the dispatch budget are stateful by design); every
+/// terminal decision is also written to the audit `sink` (kclaw0 `event-system.js` lineage).
 fn handle_request(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     guard: &mut LoopGuard,
     governor: &mut Governor,
+    sink: &dyn EventSink,
     raw: &[u8],
 ) -> DispatchResponse {
     let req: DispatchRequest = match serde_json::from_slice(raw) {
         Ok(r) => r,
-        Err(e) => return DispatchResponse::rejected(format!("unparseable dispatch frame: {e}")),
+        Err(e) => {
+            let detail = format!("unparseable dispatch frame: {e}");
+            sink.emit(&DispatchEvent::untied(Outcome::Unparseable, &detail));
+            return DispatchResponse::rejected(detail);
+        }
     };
     let job = match verify_frame(key, &req) {
         Ok(j) => j,
-        Err(e) => return DispatchResponse::rejected(format!("frame rejected: {e}")),
+        Err(e) => {
+            let detail = format!("frame rejected: {e}");
+            sink.emit(&DispatchEvent::untied(Outcome::VerifyFailed, &detail));
+            return DispatchResponse::rejected(detail);
+        }
     };
 
     // Fork-PR isolation (ADR-0008 §6): untrusted fork code must NEVER run on self-hosted hardware.
     // Enforced HERE, before any kernel is touched, so a forged-but-signed fork job still can't run.
     let placement = safety::placement(&job);
     if placement == Placement::HostedOnly {
-        return DispatchResponse::rejected(
-            "fork-triggered job must run on GitHub-hosted infra, not the self-hosted dispatcher",
-        );
+        let detail = "fork-triggered job must run on GitHub-hosted infra, not the self-hosted \
+                      dispatcher";
+        sink.emit(&DispatchEvent::for_job(Outcome::ForkRejected, &job).with_detail(detail));
+        return DispatchResponse::rejected(detail);
     }
 
     // Runaway-loop circuit breaker: a self-hosted autonomous loop dispatching the SAME work over
     // and over is the #1 unattended-loop failure mode (cost blowups). Trip fail-closed before the
     // kernel is touched. Distinct work and normal retries pass; only a tight identical loop trips.
     if let Verdict::Trip { count } = guard.observe(&job) {
-        return DispatchResponse::rejected(format!(
+        let detail = format!(
             "loop breaker tripped: identical job dispatched {count}x within the recent window \
              (runaway-loop guard); back off or vary the work"
-        ));
+        );
+        sink.emit(&DispatchEvent::for_job(Outcome::LoopTripped, &job).with_detail(&detail));
+        return DispatchResponse::rejected(detail);
     }
 
     // Dispatch budget (bounded autonomy): refuse once the operator-set lifetime ceiling is hit, so
     // an unattended loop can't run away. Checked after the breaker so a refused-loop job costs no
     // budget. Unlimited by default — only enforced when FXRUN_DISPATCH_BUDGET is set.
     if let Admission::Denied { spent, budget } = governor.admit() {
-        return DispatchResponse::rejected(format!(
+        let detail = format!(
             "dispatch budget exhausted: {spent}/{budget} jobs used this session \
              (bounded-autonomy kill-switch); re-arm the runner to continue"
-        ));
+        );
+        sink.emit(&DispatchEvent::for_job(Outcome::BudgetDenied, &job).with_detail(&detail));
+        return DispatchResponse::rejected(detail);
     }
 
     let plan = router::route(&job);
+    let program = plan.kernel.program();
     match invoker.invoke(&plan, &job) {
-        Ok(()) => DispatchResponse {
-            accepted: true,
-            kernel: Some(plan.kernel.program().to_string()),
-            placement: Some(format!("{placement:?}")),
-            intent: Some(plan.intent.clone()),
-            error: None,
-        },
-        Err(e) => DispatchResponse::rejected(format!(
-            "kernel `{}` invocation failed: {e}",
-            plan.kernel.program()
-        )),
+        Ok(()) => {
+            sink.emit(&DispatchEvent::for_job(Outcome::Delegated, &job).with_kernel(program));
+            DispatchResponse {
+                accepted: true,
+                kernel: Some(program.to_string()),
+                placement: Some(format!("{placement:?}")),
+                intent: Some(plan.intent.clone()),
+                error: None,
+            }
+        }
+        Err(e) => {
+            let detail = format!("kernel `{program}` invocation failed: {e}");
+            sink.emit(
+                &DispatchEvent::for_job(Outcome::KernelFailed, &job)
+                    .with_kernel(program)
+                    .with_detail(&detail),
+            );
+            DispatchResponse::rejected(detail)
+        }
     }
 }
 
@@ -134,12 +187,13 @@ fn serve_once(
     invoker: &dyn KernelInvoker,
     guard: &mut LoopGuard,
     governor: &mut Governor,
+    sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::io::Write;
     let (mut stream, _addr) = listener.accept()?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
-    let resp = handle_request(key, invoker, guard, governor, &raw);
+    let resp = handle_request(key, invoker, guard, governor, sink, &raw);
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
     stream.write_all(&bytes)?;
@@ -157,6 +211,7 @@ fn serve(
     invoker: &dyn KernelInvoker,
     guard: &mut LoopGuard,
     governor: &mut Governor,
+    sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
     if socket_path.exists() {
@@ -175,7 +230,7 @@ fn serve(
         budget
     );
     loop {
-        if let Err(e) = serve_once(&listener, key, invoker, guard, governor) {
+        if let Err(e) = serve_once(&listener, key, invoker, guard, governor, sink) {
             eprintln!("fxrun-dispatch: connection error: {e}");
         }
     }
@@ -250,12 +305,23 @@ fn main() -> anyhow::Result<()> {
             let mut guard = LoopGuard::new(window, threshold);
             // Bounded-autonomy ceiling: 0/unset → unlimited (behaviour-preserving default).
             let mut governor = Governor::from_env_budget(env_usize("FXRUN_DISPATCH_BUDGET", 0));
+            // Audit trail: NDJSON to FXRUN_EVENT_LOG when set, else a no-op sink (default).
+            let event_log = std::env::var("FXRUN_EVENT_LOG").unwrap_or_default();
+            let sink: Box<dyn EventSink> = if event_log.trim().is_empty() {
+                Box::new(NullSink)
+            } else {
+                eprintln!("fxrun-dispatch: audit log → {event_log}");
+                Box::new(FileSink {
+                    path: std::path::PathBuf::from(event_log),
+                })
+            };
             serve(
                 std::path::Path::new(path),
                 key.as_bytes(),
                 &DryRunInvoker,
                 &mut guard,
                 &mut governor,
+                sink.as_ref(),
             )?;
             return Ok(());
         }
@@ -314,6 +380,7 @@ mod tests {
             &inv,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &NullSink,
             &raw,
         );
         assert!(resp.accepted);
@@ -332,6 +399,7 @@ mod tests {
             &inv,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &NullSink,
             &raw,
         );
         assert!(!resp.accepted);
@@ -349,6 +417,7 @@ mod tests {
             &inv,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &NullSink,
             &raw,
         );
         assert!(!resp.accepted);
@@ -363,10 +432,65 @@ mod tests {
             &inv,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
+            &NullSink,
             b"this is not json",
         );
         assert!(!resp.accepted);
         assert_eq!(inv.calls(), 0);
+    }
+
+    #[test]
+    fn audit_log_records_the_outcome_of_each_decision() {
+        use runner_core::events::DispatchEvent;
+        use std::cell::RefCell;
+
+        struct Recorder(RefCell<Vec<DispatchEvent>>);
+        impl EventSink for Recorder {
+            fn emit(&self, e: &DispatchEvent) {
+                self.0.borrow_mut().push(e.clone());
+            }
+        }
+        let sink = Recorder(RefCell::new(Vec::new()));
+        let inv = RecordingInvoker::default();
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::unlimited();
+
+        // A delegated job and a fork-rejected job produce one audit event each.
+        let ok = sign_frame(b"k", &ci_spec(false)).unwrap();
+        handle_request(
+            b"k",
+            &inv,
+            &mut guard,
+            &mut gov,
+            &sink,
+            &serde_json::to_vec(&ok).unwrap(),
+        );
+        let forked = sign_frame(b"k", &ci_spec(true)).unwrap();
+        handle_request(
+            b"k",
+            &inv,
+            &mut guard,
+            &mut gov,
+            &sink,
+            &serde_json::to_vec(&forked).unwrap(),
+        );
+        // An unparseable frame is audited too — with no job fields.
+        handle_request(b"k", &inv, &mut guard, &mut gov, &sink, b"garbage");
+
+        let events = sink.0.into_inner();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].outcome, Outcome::Delegated);
+        assert_eq!(events[0].kernel.as_deref(), Some("loop"));
+        assert_eq!(
+            events[0].fingerprint,
+            Some(runner_core::fingerprint(&ci_spec(false)))
+        );
+        assert_eq!(events[1].outcome, Outcome::ForkRejected);
+        assert_eq!(events[2].outcome, Outcome::Unparseable);
+        assert!(
+            events[2].job_id.is_none(),
+            "pre-parse event carries no job id"
+        );
     }
 
     #[test]
@@ -378,12 +502,26 @@ mod tests {
         let raw = serde_json::to_vec(&frame).unwrap();
 
         // First identical dispatch is delegated…
-        let first = handle_request(b"k", &inv, &mut guard, &mut Governor::unlimited(), &raw);
+        let first = handle_request(
+            b"k",
+            &inv,
+            &mut guard,
+            &mut Governor::unlimited(),
+            &NullSink,
+            &raw,
+        );
         assert!(first.accepted);
         assert_eq!(inv.calls(), 1);
 
         // …the second identical dispatch trips the breaker and never reaches the kernel.
-        let second = handle_request(b"k", &inv, &mut guard, &mut Governor::unlimited(), &raw);
+        let second = handle_request(
+            b"k",
+            &inv,
+            &mut guard,
+            &mut Governor::unlimited(),
+            &NullSink,
+            &raw,
+        );
         assert!(!second.accepted);
         assert!(second.error.unwrap().contains("loop breaker"));
         assert_eq!(inv.calls(), 1, "tripped job must not be delegated");
@@ -407,7 +545,7 @@ mod tests {
             };
             let frame = sign_frame(b"k", &spec).unwrap();
             let raw = serde_json::to_vec(&frame).unwrap();
-            handle_request(b"k", &inv, &mut guard, &mut governor, &raw)
+            handle_request(b"k", &inv, &mut guard, &mut governor, &NullSink, &raw)
         };
 
         assert!(dispatch("a").accepted); // 1/2
@@ -436,7 +574,15 @@ mod tests {
             let frame = sign_frame(b"k", &spec).unwrap();
             let raw = serde_json::to_vec(&frame).unwrap();
             assert!(
-                handle_request(b"k", &inv, &mut guard, &mut Governor::unlimited(), &raw).accepted
+                handle_request(
+                    b"k",
+                    &inv,
+                    &mut guard,
+                    &mut Governor::unlimited(),
+                    &NullSink,
+                    &raw
+                )
+                .accepted
             );
         }
         assert_eq!(inv.calls(), 6);
@@ -470,6 +616,7 @@ mod tests {
                 &*rec_srv,
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
+                &NullSink,
             )
             .unwrap();
         });
