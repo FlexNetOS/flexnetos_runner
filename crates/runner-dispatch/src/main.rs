@@ -32,6 +32,7 @@ use runner_core::recovery::{FailureKind, RecoveryPolicy, RetryLedger};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
+use runner_core::workspace::{JobWorkspace, WorkspaceProvider};
 use std::io::Read;
 
 /// The delegation seam: turn a routed [`KernelPlan`] into a real kernel invocation. The dispatcher
@@ -43,29 +44,68 @@ trait KernelInvoker {
     fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String>;
 }
 
-/// The default invoker: logs the delegation it *would* perform (no subprocess). The real
-/// kernel-spawn invoker (`loop`/`atc`/`hf`/`weave` + secret injection + provenance) lands in P3.
+/// Creates an isolated per-job work area as a real temp directory and guarantees its teardown on
+/// every exit path (Archon "fail → zero residue"). The P3 invoker will create a tmpfs *worktree*
+/// here instead; the contract (a [`JobWorkspace`] guard whose `Drop` removes the tree) is identical.
+#[cfg(unix)]
+#[derive(Default)]
+struct TempDirProvider;
+
+#[cfg(unix)]
+impl WorkspaceProvider for TempDirProvider {
+    fn acquire(&self, label: &str) -> Result<JobWorkspace, String> {
+        // A unique, isolated directory per job. (P3: a tmpfs worktree under the rails' work dir.)
+        let safe: String = label
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let root = std::env::temp_dir().join(format!("fxrun-ws-{}-{safe}", std::process::id()));
+        std::fs::create_dir_all(&root).map_err(|e| format!("workspace create failed: {e}"))?;
+        let cleanup_root = root.clone();
+        Ok(JobWorkspace::new(root, move || {
+            std::fs::remove_dir_all(&cleanup_root).map_err(|e| e.to_string())
+        })
+        .with_residue_reporter(|root, reason| {
+            eprintln!(
+                "fxrun-dispatch: WORKSPACE RESIDUE — failed to remove {} ({reason})",
+                root.display()
+            );
+        }))
+    }
+}
+
+/// The default invoker: logs the delegation it *would* perform (no subprocess), inside an isolated
+/// workspace whose teardown is guaranteed on every exit. The real kernel-spawn invoker
+/// (`loop`/`atc`/`hf`/`weave` + secret injection + provenance) lands in P3.
 /// Only wired into the Unix `serve` path; the decision core is exercised cross-platform via tests.
 #[cfg(unix)]
-struct DryRunInvoker;
+struct DryRunInvoker<P: WorkspaceProvider> {
+    workspace: P,
+}
+
 #[cfg(unix)]
-impl KernelInvoker for DryRunInvoker {
+impl<P: WorkspaceProvider> KernelInvoker for DryRunInvoker<P> {
     fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String> {
+        // Acquire the isolated work area. Its guard tears the tree down when this scope ends — on a
+        // clean return AND on any `?` early-return below (Archon zero-residue on the fail path).
+        let _ws = self.workspace.acquire(&job.id)?;
         let agent = match plan.agent {
             Some(a) => format!(", agent {a}"),
             None => String::new(),
         };
         eprintln!(
-            "  delegate → `{}` : {} (job {}, corr {}, repo {}{})",
+            "  delegate → `{}` : {} (job {}, corr {}, repo {}{}, ws {})",
             plan.kernel.program(),
             plan.intent,
             job.id,
             job.correlation_id,
             plan.repo,
-            agent
+            agent,
+            _ws.root().display()
         );
         // P3: the real atc invoker reports the job's measured cost here. The dry-run measures none.
         Ok(JobCost::ZERO)
+        // `_ws` drops here → the workspace is torn down (guaranteed, every path).
     }
 }
 
@@ -581,7 +621,9 @@ fn main() -> anyhow::Result<()> {
             serve(
                 std::path::Path::new(path),
                 key.as_bytes(),
-                &DryRunInvoker,
+                &DryRunInvoker {
+                    workspace: TempDirProvider,
+                },
                 &constitution,
                 &approval,
                 &mut guard,
@@ -1355,6 +1397,70 @@ mod tests {
             "a mismatched grant must not unlock the job"
         );
         assert_eq!(inv.calls(), 1, "still only the one approved delegation");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_is_torn_down_even_when_the_kernel_fails() {
+        use runner_core::workspace::{JobWorkspace, WorkspaceProvider};
+        use std::cell::RefCell;
+
+        // A provider that creates a real temp dir and records the path it handed out, so the test
+        // can assert the directory is gone after the (failing) invocation returns.
+        struct RecordingProvider {
+            created: RefCell<Vec<std::path::PathBuf>>,
+        }
+        impl WorkspaceProvider for RecordingProvider {
+            fn acquire(&self, label: &str) -> Result<JobWorkspace, String> {
+                let root = std::env::temp_dir()
+                    .join(format!("fxrun-wstest-{}-{label}", std::process::id()));
+                std::fs::create_dir_all(&root).unwrap();
+                self.created.borrow_mut().push(root.clone());
+                let cleanup_root = root.clone();
+                Ok(JobWorkspace::new(root, move || {
+                    std::fs::remove_dir_all(&cleanup_root).map_err(|e| e.to_string())
+                }))
+            }
+        }
+
+        // An invoker that acquires a workspace and THEN fails — the fail path must still tear down.
+        struct FailAfterWorkspace {
+            provider: RecordingProvider,
+        }
+        impl KernelInvoker for FailAfterWorkspace {
+            fn invoke(&self, _plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String> {
+                let ws = self.provider.acquire(&job.id)?;
+                assert!(ws.root().exists(), "workspace exists during the job");
+                Err("kernel blew up mid-job".into())
+                // `ws` drops on this early return → cleanup runs (Archon zero-residue).
+            }
+        }
+
+        let inv = FailAfterWorkspace {
+            provider: RecordingProvider {
+                created: RefCell::new(Vec::new()),
+            },
+        };
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &NullSink,
+            &serde_json::to_vec(&frame).unwrap(),
+        );
+        assert!(!resp.accepted, "the kernel failed");
+        let created = inv.provider.created.into_inner();
+        assert_eq!(created.len(), 1);
+        assert!(
+            !created[0].exists(),
+            "the workspace must be torn down on the kernel-failure path (zero residue)"
+        );
     }
 
     #[cfg(unix)]
