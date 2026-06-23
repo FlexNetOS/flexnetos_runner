@@ -28,6 +28,7 @@ use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
 use runner_core::lint;
 use runner_core::loopguard::{fingerprint, LoopGuard, Verdict};
+use runner_core::quarantine::{QuarantineLedger, QuarantinePolicy};
 use runner_core::recovery::{FailureKind, RecoveryPolicy, RetryLedger};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
@@ -179,6 +180,8 @@ fn handle_request(
     governor: &mut Governor,
     policy: &RecoveryPolicy,
     retry: &mut RetryLedger,
+    quarantine_policy: &QuarantinePolicy,
+    quarantine: &mut QuarantineLedger,
     sink: &dyn EventSink,
     raw: &[u8],
 ) -> DispatchResponse {
@@ -270,6 +273,29 @@ fn handle_request(
         }
     }
 
+    // Quarantine gate (automaton child `→ dead` lifecycle): a fingerprint that has failed at the
+    // kernel `threshold` times is in a terminal quarantined state — refuse it fail-closed here, BEFORE
+    // the breaker/budget (so it pollutes neither the loop window nor the budget) and before the
+    // kernel. This is the enforcement teeth behind recovery's "escalate" advice: recovery only
+    // *recommends* a human look; quarantine *stops* re-dispatch of structurally-doomed work until an
+    // operator re-arms. Inert unless FXRUN_QUARANTINE_THRESHOLD is set.
+    if quarantine_policy.is_active() && quarantine.is_quarantined(&fingerprint(&job)) {
+        let directive = policy.decide(retry, &fingerprint(&job), FailureKind::Quarantined);
+        let detail = format!(
+            "job fingerprint is quarantined ({}x kernel failures ≥ threshold {}); refusing \
+             re-dispatch until the runner is re-armed | {}",
+            quarantine.failures(&fingerprint(&job)),
+            quarantine_policy.threshold(),
+            directive.summary()
+        );
+        sink.emit(
+            &DispatchEvent::for_job(Outcome::Quarantined, &job)
+                .with_recovery(directive.clone())
+                .with_detail(&detail),
+        );
+        return DispatchResponse::rejected(detail).with_recovery(directive);
+    }
+
     // Runaway-loop circuit breaker: a self-hosted autonomous loop dispatching the SAME work over
     // and over is the #1 unattended-loop failure mode (cost blowups). Trip fail-closed before the
     // kernel is touched. Distinct work and normal retries pass; only a tight identical loop trips.
@@ -307,9 +333,10 @@ fn handle_request(
         Ok(cost) => {
             // Charge the cost atc reported so the NEXT admit sees it (fail-open: ZERO is a no-op).
             governor.charge(cost);
-            // A clean delegation clears this fingerprint's retry budget, so a *later* transient
-            // failure of the same work starts its own fresh retry count.
+            // A clean delegation clears this fingerprint's retry budget AND its quarantine failure
+            // count, so a *later* transient failure of the same work starts its own fresh count.
             retry.clear(&fp);
+            quarantine.clear(&fp);
             let mut event = DispatchEvent::for_job(Outcome::Delegated, &job).with_kernel(program);
             if cost.is_measured() {
                 event = event.with_cost(cost);
@@ -334,9 +361,21 @@ fn handle_request(
             // A kernel error is usually transient → recovery advises a backed-off retry of the same
             // job, escalating to a human only once the retry ceiling is exceeded.
             let directive = policy.decide(retry, &fp, FailureKind::KernelFailed);
+            // Record the failure against the quarantine ledger: once a fingerprint reaches the
+            // failure threshold it latches into quarantine and the NEXT dispatch is refused outright.
+            let now_quarantined = quarantine_policy.on_failure(quarantine, &fp);
             let detail = format!(
-                "kernel `{program}` invocation failed: {e} | {}",
-                directive.summary()
+                "kernel `{program}` invocation failed: {e} | {}{}",
+                directive.summary(),
+                if now_quarantined {
+                    format!(
+                        " | fingerprint quarantined ({}x failures ≥ threshold {})",
+                        quarantine.failures(&fp),
+                        quarantine_policy.threshold()
+                    )
+                } else {
+                    String::new()
+                }
             );
             sink.emit(
                 &DispatchEvent::for_job(Outcome::KernelFailed, &job)
@@ -363,6 +402,8 @@ fn serve_once(
     governor: &mut Governor,
     policy: &RecoveryPolicy,
     retry: &mut RetryLedger,
+    quarantine_policy: &QuarantinePolicy,
+    quarantine: &mut QuarantineLedger,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::io::Write;
@@ -372,7 +413,18 @@ fn serve_once(
     // Re-verify the runner's constitution against the files on disk right now (I/O lives here).
     let status = constitution.verify(|name| std::fs::read(name).ok());
     let resp = handle_request(
-        key, invoker, &status, approval, guard, governor, policy, retry, sink, &raw,
+        key,
+        invoker,
+        &status,
+        approval,
+        guard,
+        governor,
+        policy,
+        retry,
+        quarantine_policy,
+        quarantine,
+        sink,
+        &raw,
     );
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
@@ -396,6 +448,8 @@ fn serve(
     governor: &mut Governor,
     policy: &RecoveryPolicy,
     retry: &mut RetryLedger,
+    quarantine_policy: &QuarantinePolicy,
+    quarantine: &mut QuarantineLedger,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
@@ -413,14 +467,20 @@ fn serve(
     } else {
         "approval: none".to_string()
     };
+    let quarantine_note = if quarantine_policy.is_active() {
+        format!("quarantine: {} failures", quarantine_policy.threshold())
+    } else {
+        "quarantine: off".to_string()
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
         render_budget(&governor.budget()),
         policy.max_retries(),
         policy.base_backoff_secs(),
+        quarantine_note,
         approval_note,
         constitution_note
     );
@@ -435,6 +495,8 @@ fn serve(
             governor,
             policy,
             retry,
+            quarantine_policy,
+            quarantine,
             sink,
         ) {
             eprintln!("fxrun-dispatch: connection error: {e}");
@@ -566,6 +628,15 @@ fn main() -> anyhow::Result<()> {
                 .unwrap_or(5);
             let policy = RecoveryPolicy::new(max_retries, base_backoff);
             let mut retry = RetryLedger::new();
+            // Quarantine: after FXRUN_QUARANTINE_THRESHOLD kernel failures of the same fingerprint,
+            // latch it terminal and refuse re-dispatch until the runner is re-armed. 0/unset = off
+            // (behaviour-preserving) — the enforcement teeth behind recovery's escalate advice.
+            let quarantine_threshold = std::env::var("FXRUN_QUARANTINE_THRESHOLD")
+                .ok()
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .unwrap_or(0);
+            let quarantine_policy = QuarantinePolicy::new(quarantine_threshold);
+            let mut quarantine = QuarantineLedger::new();
             // Constitution: seal the runner's own governing files (comma-separated paths in
             // FXRUN_CONSTITUTION) at startup; a mid-run change refuses all dispatch. Inert if unset.
             let constitution = {
@@ -630,6 +701,8 @@ fn main() -> anyhow::Result<()> {
                 &mut governor,
                 &policy,
                 &mut retry,
+                &quarantine_policy,
+                &mut quarantine,
                 sink.as_ref(),
             )?;
             return Ok(());
@@ -718,6 +791,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -741,6 +816,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -763,6 +840,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -782,6 +861,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             b"this is not json",
         );
@@ -816,6 +897,8 @@ mod tests {
             &mut gov,
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &sink,
             &serde_json::to_vec(&ok).unwrap(),
         );
@@ -829,6 +912,8 @@ mod tests {
             &mut gov,
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
         );
@@ -842,6 +927,8 @@ mod tests {
             &mut gov,
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &sink,
             b"garbage",
         );
@@ -883,6 +970,8 @@ mod tests {
             &mut gov,
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -904,6 +993,8 @@ mod tests {
             &mut gov,
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -929,6 +1020,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -945,6 +1038,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -980,6 +1075,8 @@ mod tests {
                 &mut governor,
                 &RecoveryPolicy::default(),
                 &mut RetryLedger::new(),
+                &QuarantinePolicy::disabled(),
+                &mut QuarantineLedger::new(),
                 &NullSink,
                 &raw,
             )
@@ -1032,6 +1129,8 @@ mod tests {
                 &mut gov,
                 &RecoveryPolicy::default(),
                 &mut RetryLedger::new(),
+                &QuarantinePolicy::disabled(),
+                &mut QuarantineLedger::new(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
             )
@@ -1076,6 +1175,8 @@ mod tests {
                     &mut Governor::unlimited(),
                     &RecoveryPolicy::default(),
                     &mut RetryLedger::new(),
+                    &QuarantinePolicy::disabled(),
+                    &mut QuarantineLedger::new(),
                     &NullSink,
                     &raw
                 )
@@ -1128,6 +1229,8 @@ mod tests {
                 gov,
                 &policy,
                 &mut retry,
+                &QuarantinePolicy::disabled(),
+                &mut QuarantineLedger::new(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
             )
@@ -1182,6 +1285,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -1220,6 +1325,8 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -1240,12 +1347,141 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
         let d2 = r2.recovery.expect("kernel failure carries recovery");
         assert_eq!(d2.action, RecoveryVerb::Escalate);
         assert_eq!(inv.calls(), 2, "both attempts actually reached the kernel");
+    }
+
+    #[test]
+    fn repeated_kernel_failures_quarantine_the_fingerprint_then_refuse_re_dispatch() {
+        use runner_core::quarantine::{QuarantineLedger, QuarantinePolicy};
+        use runner_core::recovery::RecoveryVerb;
+
+        // Quarantine after 2 kernel failures of the same fingerprint. Fresh guards each call so the
+        // *loop breaker* never fires — we are exercising quarantine, an independent gate.
+        let qpolicy = QuarantinePolicy::new(2);
+        let mut qledger = QuarantineLedger::new();
+        let policy = RecoveryPolicy::new(5, 1); // generous retry budget so recovery still advises retry
+        let mut retry = RetryLedger::new();
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        let raw = serde_json::to_vec(&frame).unwrap();
+        let fp = runner_core::fingerprint(&ci_spec(false));
+
+        let fail = FailingInvoker::default();
+        let fail_once = |q: &mut QuarantineLedger, r: &mut RetryLedger| {
+            handle_request(
+                b"k",
+                &fail,
+                &ConstitutionStatus::Intact,
+                &ApprovalPolicy::none(),
+                &mut LoopGuard::default(),
+                &mut Governor::unlimited(),
+                &policy,
+                r,
+                &qpolicy,
+                q,
+                &NullSink,
+                &raw,
+            )
+        };
+
+        // 1st failure: kernel reached, not yet quarantined.
+        let r1 = fail_once(&mut qledger, &mut retry);
+        assert!(!r1.accepted);
+        assert!(!qledger.is_quarantined(&fp));
+        assert_eq!(fail.calls(), 1);
+
+        // 2nd failure: reaches the kernel, then latches quarantine (2 ≥ threshold 2).
+        let r2 = fail_once(&mut qledger, &mut retry);
+        assert!(!r2.accepted);
+        assert!(qledger.is_quarantined(&fp));
+        assert_eq!(fail.calls(), 2);
+
+        // 3rd dispatch: refused at the quarantine gate — the kernel is NOT touched again.
+        let ok = RecordingInvoker::default();
+        let r3 = handle_request(
+            b"k",
+            &ok,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &policy,
+            &mut retry,
+            &qpolicy,
+            &mut qledger,
+            &NullSink,
+            &raw,
+        );
+        assert!(!r3.accepted);
+        assert!(r3.error.unwrap().contains("quarantined"));
+        assert_eq!(
+            r3.recovery.expect("quarantine carries recovery").action,
+            RecoveryVerb::Escalate
+        );
+        assert_eq!(
+            ok.calls(),
+            0,
+            "a quarantined fingerprint must never reach the kernel"
+        );
+
+        // A clean delegation of the same work (after an operator re-arm releases it) clears the
+        // quarantine, so the gate is not permanent once the underlying failure is resolved.
+        qledger.clear(&fp);
+        let r4 = handle_request(
+            b"k",
+            &ok,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &policy,
+            &mut retry,
+            &qpolicy,
+            &mut qledger,
+            &NullSink,
+            &raw,
+        );
+        assert!(r4.accepted);
+        assert_eq!(ok.calls(), 1);
+        assert!(!qledger.is_quarantined(&fp));
+    }
+
+    #[test]
+    fn quarantine_disabled_by_default_never_refuses() {
+        use runner_core::quarantine::{QuarantineLedger, QuarantinePolicy};
+        // With the gate disabled (default), even many kernel failures never latch a refusal — the
+        // behaviour-preserving guarantee.
+        let qpolicy = QuarantinePolicy::disabled();
+        let mut qledger = QuarantineLedger::new();
+        let fail = FailingInvoker::default();
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        let raw = serde_json::to_vec(&frame).unwrap();
+        for _ in 0..10 {
+            let r = handle_request(
+                b"k",
+                &fail,
+                &ConstitutionStatus::Intact,
+                &ApprovalPolicy::none(),
+                &mut LoopGuard::default(),
+                &mut Governor::unlimited(),
+                &RecoveryPolicy::new(5, 1),
+                &mut RetryLedger::new(),
+                &qpolicy,
+                &mut qledger,
+                &NullSink,
+                &raw,
+            );
+            // Each is a kernel failure (not a quarantine refusal).
+            assert!(r.error.unwrap().contains("kernel"));
+        }
+        assert_eq!(qledger.quarantined_count(), 0);
+        assert_eq!(fail.calls(), 10, "every dispatch still reached the kernel");
     }
 
     #[test]
@@ -1269,6 +1505,8 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -1288,6 +1526,8 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -1309,6 +1549,8 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &raw,
         );
@@ -1344,6 +1586,8 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -1371,6 +1615,8 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &serde_json::to_vec(&approved_frame).unwrap(),
         );
@@ -1389,6 +1635,8 @@ mod tests {
             &mut gov,
             &policy,
             &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &serde_json::to_vec(&forged).unwrap(),
         );
@@ -1451,6 +1699,8 @@ mod tests {
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
             &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -1534,6 +1784,8 @@ mod tests {
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::default(),
                 &mut RetryLedger::new(),
+                &QuarantinePolicy::disabled(),
+                &mut QuarantineLedger::new(),
                 &NullSink,
             )
             .unwrap();

@@ -16,6 +16,9 @@
 //!   adapted from `attractor`'s VALIDATE phase).
 //! - [`recovery`] — declarative recovery routing (retry-with-backoff vs. escalate-to-human advice
 //!   for a failed dispatch; adapted from `attractor`'s `retry_target` / `wait.human`).
+//! - [`quarantine`] — cross-dispatch quarantine of a repeatedly-failing job (terminal refuse after N
+//!   kernel failures of the same fingerprint; adapted from `automaton`'s child `→ dead` lifecycle —
+//!   the enforcement teeth behind recovery's escalate advice).
 //! - [`cost`] — per-job cost report (the `atc → runner` cost seam; tokens + USD).
 //! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch over jobs/tokens/USD;
 //!   adapted from kclaw0 `dark-factory.js::enforceBudget` + `survival.js`).
@@ -40,6 +43,7 @@ pub mod jobspec;
 pub mod lifecycle;
 pub mod lint;
 pub mod loopguard;
+pub mod quarantine;
 pub mod recovery;
 pub mod router;
 pub mod safety;
@@ -55,6 +59,7 @@ pub use events::{DispatchEvent, EventCategory, EventSink, NullSink, Outcome};
 pub use governor::{Admission, Budget, Governor, Spend, SurvivalTier};
 pub use lint::{is_structurally_valid, structural_errors, LintError};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};
+pub use quarantine::{QuarantineLedger, QuarantinePolicy};
 pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger};
 pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};
 pub use workspace::{JobWorkspace, NoopWorkspaceProvider, TeardownReport, WorkspaceProvider};
