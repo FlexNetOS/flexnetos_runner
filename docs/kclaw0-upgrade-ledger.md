@@ -41,23 +41,32 @@ Admission sequence: **immutability → budget → state-machine → holdout**. M
 
 ## Surfaced — candidates for future cycles (not yet applied)
 
-Ranked by runner-plane fit. Each names the kclaw0 source and the in-scope runner analogue.
+Ranked by runner-plane fit. Each names the kclaw0 source and the in-scope runner analogue. As of the
+cycle-6→10 batch, **every *unblocked, in-scope* runner-plane candidate has been applied** — the items
+below are now either applied (✓), blocked on another component, or out-of-scope (weave/CI).
 
-- **`verify-commit.js`** → a **verification/backpressure gate** the dispatcher requires before
-  reporting a job successful (the "oracle" of the dark-factory; research §5 "immutable oracle").
-  High fit — the runner is where a "merge only if verified" rule belongs.
-- **`cost-tracker.js`** → **per-job cost/turn telemetry** surfaced on the `DispatchResponse` (cost
-  is a first-class keep-rule in SICA; research §5). Medium fit — runner can *carry* the number atc
-  reports without owning model billing.
-- **`staleness.js`** → **stale-job detection** (a JobSpec whose `head_sha` is no longer the PR tip →
-  refuse as stale). Medium fit — needs a freshness input from the App.
-- **`steering-queue.js` / `followup-queue.js`** → operator **steering / follow-up** signals the
-  runner honors between jobs. Lower fit — closer to weave/atc orchestration; watch for a runner seam.
-- **`survival.js`** (credit tiers → cheaper models → halt) → a **budget kill-switch** at the dispatch
-  boundary (refuse new work past a budget). Medium fit — pairs with cost-tracker; halting is
-  runner-appropriate, model-downgrade is weave's.
-- **`checkpoint.js`** → mostly covered by the `handoff` kernel; revisit only if a *job-level*
-  checkpoint seam is missing.
+- ✓ **`cost-tracker.js`** → **APPLIED** as the `atc → runner` cost seam (cycle 4, row 4) — `JobCost`
+  on the invoker return, surfaced in the audit log + charged to the cost-aware governor.
+- ✓ **`survival.js`** (credit tiers → halt) → **APPLIED** as the `Governor` job/token/USD kill-switch
+  (cycle 2, row 2) and the `SurvivalTier` ladder + debounced halt floor (cycle 7, row 7). The
+  model-*downgrade* half stays weave's, as scoped.
+- ⛔ **`verify-commit.js`** (tests-must-pass before a job counts) → a "merge only if verified"
+  backpressure gate. **Out of runner-core:** the green status is produced by CI/loop_lib; the runner
+  *requires* it as a status input, it doesn't compute it. Revisit when the App exposes a required-check
+  aggregate the dispatcher can consume (same shape as the dark-factory holdout, research §5).
+- ⛔ **`staleness.js`** (refuse a JobSpec whose `head_sha` is no longer the PR tip) → **blocked on a
+  head-tip freshness seam from `flexnetos_github_app`.** The runner can't know the current tip without
+  the App telling it; apply once that input exists (then it's a cheap pre-`route` gate).
+- 🔀 **`steering-queue.js` / `followup-queue.js`** (operator steering / follow-up between jobs) →
+  **out of scope (weave/atc orchestration).** Watch for a runner seam if weave needs the runner to
+  honour an inter-job signal.
+- ✓/▢ **`checkpoint.js`** → job-level checkpointing is covered by the `handoff` kernel the runner
+  delegates to; no runner-core primitive needed unless a *dispatch-level* checkpoint seam is found
+  missing in P3.
+
+**Net:** the actionable backlog (prior-art batch #2–#6, below) is fully applied. What remains is gated
+on other components (`verify-commit`, `staleness`) or owned elsewhere (`steering-queue` → weave) — none
+is a runner-plane primitive that can be built today.
 
 ### Prior-art batch (widened beyond kclaw0 to the sources it names — ranked, runner-plane lens)
 From the phase-3 research sweep of kclaw0's named prior-art (cited in `meta/DARK-FACTORY-RESEARCH.md`):
