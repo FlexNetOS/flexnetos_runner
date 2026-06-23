@@ -23,7 +23,7 @@
 use runner_core::approval::ApprovalPolicy;
 use runner_core::constitution::{Constitution, ConstitutionStatus};
 use runner_core::cost::JobCost;
-use runner_core::events::{DispatchEvent, EventSink, NullSink, Outcome};
+use runner_core::events::{DispatchEvent, EventCategory, EventSink, NullSink, Outcome};
 use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
 use runner_core::lint;
@@ -93,6 +93,30 @@ impl EventSink for FileSink {
                 "fxrun-dispatch: audit log write failed ({}): {e}",
                 self.path.display()
             );
+        }
+    }
+}
+
+/// Routes each event to up to two NDJSON streams: `all` receives every event (the full audit log),
+/// while `policy` receives only admission/guardrail ([`EventCategory::Policy`]) events — a distinct
+/// `policy_decisions` stream (automaton) so the guardrail layer can be audited / tamper-checked on
+/// its own. Either stream may be absent; both absent is handled by using [`NullSink`] instead.
+#[cfg(unix)]
+struct RoutingSink {
+    all: Option<FileSink>,
+    policy: Option<FileSink>,
+}
+
+#[cfg(unix)]
+impl EventSink for RoutingSink {
+    fn emit(&self, event: &DispatchEvent) {
+        if let Some(sink) = &self.all {
+            sink.emit(event);
+        }
+        if event.category() == EventCategory::Policy {
+            if let Some(sink) = &self.policy {
+                sink.emit(event);
+            }
         }
     }
 }
@@ -527,14 +551,31 @@ fn main() -> anyhow::Result<()> {
             let approval = ApprovalPolicy::from_bands(
                 &std::env::var("FXRUN_APPROVAL_BANDS").unwrap_or_default(),
             );
-            // Audit trail: NDJSON to FXRUN_EVENT_LOG when set, else a no-op sink (default).
-            let event_log = std::env::var("FXRUN_EVENT_LOG").unwrap_or_default();
-            let sink: Box<dyn EventSink> = if event_log.trim().is_empty() {
+            // Audit trail: every event to FXRUN_EVENT_LOG (when set); admission/guardrail
+            // (policy-category) events ALSO to a distinct FXRUN_POLICY_LOG stream — automaton's
+            // separate `policy_decisions` table, so guardrail tampering is auditable on its own.
+            // Both unset → a no-op sink (default).
+            let env_path = |var: &str| {
+                std::env::var(var)
+                    .ok()
+                    .map(|v| v.trim().to_string())
+                    .filter(|v| !v.is_empty())
+                    .map(std::path::PathBuf::from)
+            };
+            let all_log = env_path("FXRUN_EVENT_LOG");
+            let policy_log = env_path("FXRUN_POLICY_LOG");
+            let sink: Box<dyn EventSink> = if all_log.is_none() && policy_log.is_none() {
                 Box::new(NullSink)
             } else {
-                eprintln!("fxrun-dispatch: audit log → {event_log}");
-                Box::new(FileSink {
-                    path: std::path::PathBuf::from(event_log),
+                if let Some(p) = &all_log {
+                    eprintln!("fxrun-dispatch: audit log (all) → {}", p.display());
+                }
+                if let Some(p) = &policy_log {
+                    eprintln!("fxrun-dispatch: policy-decision log → {}", p.display());
+                }
+                Box::new(RoutingSink {
+                    all: all_log.map(|path| FileSink { path }),
+                    policy: policy_log.map(|path| FileSink { path }),
                 })
             };
             serve(
@@ -1314,6 +1355,45 @@ mod tests {
             "a mismatched grant must not unlock the job"
         );
         assert_eq!(inv.calls(), 1, "still only the one approved delegation");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn routing_sink_tees_only_policy_events_to_the_policy_stream() {
+        let dir = std::env::temp_dir();
+        let n = format!("{}-{}", std::process::id(), line!());
+        let all_path = dir.join(format!("fxrun-all-{n}.ndjson"));
+        let policy_path = dir.join(format!("fxrun-policy-{n}.ndjson"));
+        let _ = std::fs::remove_file(&all_path);
+        let _ = std::fs::remove_file(&policy_path);
+
+        let sink = RoutingSink {
+            all: Some(FileSink {
+                path: all_path.clone(),
+            }),
+            policy: Some(FileSink {
+                path: policy_path.clone(),
+            }),
+        };
+        // One execution event and one policy event.
+        sink.emit(&DispatchEvent::for_job(Outcome::Delegated, &ci_spec(false)).with_kernel("loop"));
+        sink.emit(
+            &DispatchEvent::for_job(Outcome::ForkRejected, &ci_spec(true)).with_detail("fork"),
+        );
+
+        let all = std::fs::read_to_string(&all_path).unwrap();
+        let policy = std::fs::read_to_string(&policy_path).unwrap();
+        // The full log has both; the policy stream has only the policy event.
+        assert_eq!(all.lines().count(), 2);
+        assert_eq!(policy.lines().count(), 1);
+        assert!(policy.contains("fork_rejected"));
+        assert!(
+            !policy.contains("delegated"),
+            "execution events stay out of the policy stream"
+        );
+
+        let _ = std::fs::remove_file(&all_path);
+        let _ = std::fs::remove_file(&policy_path);
     }
 
     #[cfg(unix)]
