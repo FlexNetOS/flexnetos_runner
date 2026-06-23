@@ -29,8 +29,15 @@ use std::collections::HashMap;
 /// Why a dispatch failed — the input to the recovery decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
-    /// The kernel was invoked but returned an error — usually transient (retryable).
+    /// The kernel was invoked but returned an error classified as **transient** (retryable) — a
+    /// network blip, a momentarily-busy kernel, a flaky step. The default for an unrecognized error.
     KernelFailed,
+    /// The kernel returned an error classified as **fatal** (NOT retryable: auth/permission/config
+    /// failures where re-dispatching the same job can only fail the same way — a human must fix the
+    /// configuration). Distinguished from [`KernelFailed`](Self::KernelFailed) by
+    /// [`classify_kernel_error`], so a fatal failure escalates immediately instead of burning the
+    /// retry budget (and, with the quarantine ledger, latching a doomed fingerprint).
+    KernelFatal,
     /// The delegation exceeded its wall-clock deadline — treated as transient (the kernel hung or ran
     /// long once; a backed-off retry may complete). Persistent timeouts escalate via the retry
     /// ceiling and latch the quarantine ledger like any repeated failure.
@@ -58,6 +65,39 @@ impl FailureKind {
             self,
             FailureKind::KernelFailed | FailureKind::DeadlineExceeded
         )
+    }
+}
+
+/// FATAL substrings (case-insensitive) — auth / permission / configuration errors a retry can never
+/// fix. Checked **before** any transient signal (the precedence rule): a message like
+/// `"unauthorized: process exited with code 1"` carries both a fatal and a generic-exit signal, and
+/// must be classified fatal so it is *not* silently retried until the budget is exhausted.
+const FATAL_PATTERNS: &[&str] = &[
+    "unauthorized",
+    "forbidden",
+    "permission denied",
+    "access denied",
+    "authentication failed",
+    "invalid credentials",
+    "invalid api key",
+    "missing api key",
+    "no api key",
+    "401",
+    "403",
+];
+
+/// Classify a kernel error message into a [`FailureKind`] for recovery routing (adapted from Archon's
+/// `classifyError`, with the **FATAL-before-TRANSIENT precedence** that stops an auth error being
+/// retried). A message matching any [`FATAL_PATTERNS`] entry is [`FailureKind::KernelFatal`]
+/// (escalate immediately); everything else defaults to [`FailureKind::KernelFailed`] (transient,
+/// retry-with-backoff) — the conservative default, since the retry ceiling + quarantine ledger are
+/// the backstop for a *persistent* "transient". Pure / case-insensitive.
+pub fn classify_kernel_error(message: &str) -> FailureKind {
+    let lower = message.to_ascii_lowercase();
+    if FATAL_PATTERNS.iter().any(|p| lower.contains(p)) {
+        FailureKind::KernelFatal
+    } else {
+        FailureKind::KernelFailed
     }
 }
 
@@ -166,6 +206,10 @@ impl RecoveryPolicy {
                 FailureKind::Quarantined => {
                     "job fingerprint is quarantined after repeated kernel failures — re-dispatching \
                      cannot succeed; a human must investigate and re-arm the runner"
+                }
+                FailureKind::KernelFatal => {
+                    "kernel returned an unrecoverable error (auth / permission / configuration) — \
+                     re-dispatching the same job cannot succeed; a human must fix the configuration"
                 }
                 FailureKind::KernelFailed | FailureKind::DeadlineExceeded => {
                     unreachable!("retryable failures take the retry branch")
@@ -306,6 +350,51 @@ mod tests {
         let d = policy.decide(&mut ledger, FP, FailureKind::Malformed);
         assert_eq!(d.action, RecoveryVerb::Escalate);
         assert!(d.reason.contains("structurally invalid"));
+    }
+
+    #[test]
+    fn classifier_marks_auth_errors_fatal_and_others_transient() {
+        // Clear fatal signals → KernelFatal.
+        assert_eq!(
+            classify_kernel_error("HTTP 401 Unauthorized"),
+            FailureKind::KernelFatal
+        );
+        assert_eq!(
+            classify_kernel_error("permission denied (publickey)"),
+            FailureKind::KernelFatal
+        );
+        assert_eq!(
+            classify_kernel_error("invalid API key"),
+            FailureKind::KernelFatal
+        );
+        // FATAL-before-TRANSIENT precedence: a mixed message still classifies fatal.
+        assert_eq!(
+            classify_kernel_error("unauthorized: process exited with code 1"),
+            FailureKind::KernelFatal
+        );
+        // Anything unrecognized defaults to transient (retryable) — the conservative default.
+        assert_eq!(
+            classify_kernel_error("connection reset by peer"),
+            FailureKind::KernelFailed
+        );
+        assert_eq!(
+            classify_kernel_error("kernel exploded"),
+            FailureKind::KernelFailed
+        );
+    }
+
+    #[test]
+    fn kernel_fatal_escalates_immediately_without_consuming_retries() {
+        let policy = RecoveryPolicy::default();
+        let mut ledger = RetryLedger::new();
+        let d = policy.decide(&mut ledger, FP, FailureKind::KernelFatal);
+        assert_eq!(d.action, RecoveryVerb::Escalate);
+        assert_eq!(
+            d.attempt, 0,
+            "a fatal kernel error consumes no retry budget"
+        );
+        assert_eq!(ledger.attempts(FP), 0);
+        assert!(d.reason.contains("unrecoverable"));
     }
 
     #[test]

@@ -30,6 +30,7 @@ Background: `meta/DARK-FACTORY-RESEARCH.md` (the autonomous-loop landscape this 
 | 14 | **prior-art:** `Conway-Research/automaton` — hourly/daily call caps + a **"5-minute backoff on error"** per-endpoint penalty. | **Windowed dispatch rate limit + per-route failure cooldown.** The **timing** axis the other guards miss: the breaker catches *same-job loops*, the governor caps *lifetime* budget, quarantine latches *repeat-failure* — but a burst of *distinct, in-budget, non-looping* jobs in a few seconds sails through all three. New `runner-core::ratelimit::RateLimiter` (clock-injected, so `runner-core` stays clock-free — like `deadline`): a rolling **window cap** (≤`max_per_window` admits per `window_secs`) + a **per-route cooldown** (after a route — a job `class()` `ci`/`review`/`agent`/`cycle` — fails, hold that route for `route_cooldown_secs`; cleared early by a clean delegation). A rate refusal is **not** a job failure: it emits `Outcome::RateLimited` (Policy) + a `RecoveryVerb::Retry` directive at **attempt 0** carrying a **retry-after**, so it never touches the per-fingerprint retry ledger or escalates to a human (a busy runner must not escalate a job). Gate sits before the breaker/budget (a rate-refused job pollutes neither). The dispatcher reads a monotonic clock per connection and injects `now_secs`. Off by default (`FXRUN_RATE_MAX` / `FXRUN_RATE_WINDOW_SECS` / `FXRUN_ROUTE_COOLDOWN_SECS` all 0 → inert). Verified live: with `FXRUN_RATE_MAX=2`, a 3-job burst over a real UDS socket admits 2, refuses the 3rd with `attempt 0/2, back off 60s`. | `runner-core::ratelimit` (`RateLimiter`, `RateLimitPolicy`, `RateDecision`) + `JobKind::class()` + `Outcome::RateLimited`, wired in `runner-dispatch` (clock-injected gate) | #19 (merged) |
 | 15 | **prior-art:** `coleam00/Archon` `marketplace-security-scan.ts` — severity-graded regex **pattern banks**, a **scan/decide split**, **fail-closed on critical/high** + `kclaw0` `path-simulator.js` risk scoring. | **Pre-dispatch content / injection scan.** Structural [`lint`] (#6) proves a spec's *shape* (`owner/name`, non-blank); this checks the *safety* of its free-text fields — which the **P3 invoker will interpolate** into a kernel command line / workspace path / audit line. New `runner-core::scan`: a severity-graded pattern bank (`nul-byte`=Critical; `control-char`/`crlf-injection`/`command-substitution`/`path-traversal`=High; `shell-metacharacter`=Medium; `redirection`=Low — plain substring/char-class checks, **no regex dep**) over every string field (`id`, `correlation_id`, `repo`, `head_sha`, `prompt_ref`, `task_id`) → a `ScanReport{findings, max_severity}`. **Scan/decide split** (Archon): `scan()` only *detects* (pure); a separate `ScanPolicy` (`FXRUN_SCAN_BLOCK_SEVERITY=low|medium|high|critical`) decides — refuse fail-closed when the worst finding meets the threshold. Gate sits **after lint, before fork/route**. Hostile content can't be fixed by re-dispatch, so recovery **escalates** (`FailureKind::ContentRejected`, un-retryable — never retries). `Outcome::ContentRejected` (Policy). **Off by default** (seam-first: the acquisition-side guard for the P3 invoker's interpolation, defined before that interpolation exists). Delegate-only: the runner *refuses*; it never sanitizes/rewrites the job. Verified live: `FXRUN_SCAN_BLOCK_SEVERITY=high` admits `task_id=T-1`, refuses `T-1; rm -rf $(ls ~)` (`job.task_id [high] command-substitution`). | `runner-core::scan` (`scan`, `ScanReport`, `ScanPolicy`, `Severity`, `Finding`) + `Outcome`/`FailureKind::ContentRejected`, wired in `runner-dispatch` | #20 (merged) |
 | 16 | **prior-art:** `kclaw0` `path-simulator.js` — blends a **static base rate** with the **live failure rate observed from the event ledger** to predict how risky an action is *before* taking it. | **History-calibrated pre-route risk score** — the runner's one **advice-only** signal (every other guard is a hard gate). New `runner-core::risk`: a `RiskLedger` accumulates per-fingerprint `(successes, failures)` across dispatches (NOT cleared on success — calibration needs the whole record), and a `RiskModel` computes a Beta-smoothed failure probability `score = (failures + base·prior)/(total + prior)` — so with **no** history it is exactly the static `base_rate`, and as real evidence accrues it converges on the *observed* rate (the source's "static base blended with live evidence", made statistically honest). Banded Low/Elevated/High. Computed **before** the delegation outcome (predicts, not reflects) and surfaced on the delegated/failed audit event (a structured `risk` field + a `risk: …` detail note) for the orchestrator/weave to act on — it **never blocks** (the soft, continuous companion to the hard breaker/quarantine latches: the *gradient* that lets a consumer react before a latch fires). Pure / clock-free; `RiskPolicy` opt-in via `FXRUN_RISK_ANNOTATE` (off by default → audit stream unchanged). `DispatchEvent` dropped its `Eq` derive (the `f64` score is `PartialEq` only). Delegate-only, orthogonal to model routing. Verified live: with annotation on, a delegated job's real on-disk audit line carries `risk={score:0.10, samples:0, band:low}`; the decision-core test drives 6 failures and watches the band climb Low→High. | `runner-core::risk` (`RiskLedger`, `RiskModel`, `RiskPolicy`, `RiskScore`, `RiskBand`) + `DispatchEvent.risk`, wired in `runner-dispatch` | feat/dispatch-risk-score |
+| 17 | **prior-art:** `coleam00/Archon` `executor-shared.ts::classifyError` — a two-axis error classifier with **FATAL patterns checked before TRANSIENT** (so `"unauthorized: process exited with code 1"` is never silently retried); convergent with the retry loops in `kclaw0` + `strongdm/attractor` (surfaced independently by the cycle-16 sweep). | **FATAL-first kernel-error taxonomy.** Until now every kernel error was `FailureKind::KernelFailed` (retryable), so an **auth / permission / config** failure burned the whole retry budget before escalating — re-dispatching a job that could only fail the same way. New pure `recovery::classify_kernel_error(msg)` applies Archon's **FATAL-before-TRANSIENT precedence**: a message matching the fatal bank (`unauthorized`/`forbidden`/`permission denied`/`401`/`403`/`invalid api key`/…) → new un-retryable `FailureKind::KernelFatal` → **escalate-to-human immediately** (attempt 0, no retry-budget spend); anything unrecognized defaults to `KernelFailed` (transient, retry-with-backoff) — the conservative default, since the retry ceiling + quarantine ledger backstop a *persistent* "transient". The audit stream gains `Outcome::KernelFatal` (Execution category) — a **fixed-enum telemetry class** that records the failure *kind* without the (possibly secret-bearing) message text, pairing with redaction (#13). Front-ends the applied recovery routing (#6): the classifier *decides* the kind, recovery *acts* on it. Pure runner-core; behaviour-preserving for unrecognized errors (still retry). Delegate-only, orthogonal to model routing. Verified: a `FatalInvoker` returning `HTTP 401 Unauthorized` drives the real `handle_request` pipeline to escalate at attempt 0 (retry ledger untouched) and audits `KernelFatal`, where a transient error would have retried. | `runner-core::recovery` (`classify_kernel_error`, `FailureKind::KernelFatal`) + `Outcome::KernelFatal`, wired in `runner-dispatch` (classify the `Delegation::Failed` error) | feat/dispatch-error-taxonomy |
 | 13 | **prior-art:** `coleam00/Archon` `repo.ts` — **scrubs the auth token out of every error string before it is classified, logged, or returned** (a failing git op can never echo the credential it was handed). | **Audit-path secret redaction.** The dispatcher holds key material (the HMAC dispatch key; in P3 the envctl-injected bearer / approval tokens) and writes two operator-readable surfaces that could otherwise carry it verbatim — the NDJSON audit log (`detail` fields) and the UDS error reply (`DispatchResponse.error`). `Redactor` is the single choke point: it replaces every occurrence of a known secret with `«redacted»` *before* the text reaches either surface. Two egress points: a pure **`RedactingSink`** decorator scrubs each event's free-text `detail` before the file write (structured lineage ids untouched), and **`redact_response`** scrubs the reply `error` before it crosses the socket. The binary builds the redactor from the dispatch key + comma-separated `FXRUN_REDACT_SECRETS`; a `MIN_SECRET_LEN` floor (4) refuses pathological short stand-ins that would mangle incidental text (real envctl keys are 32 bytes). **Behaviour-preserving:** no/absent secret → input returned borrowed, byte-identical (defense-in-depth — today's messages don't splice secrets, the seam guarantees they never can). Pure `runner-core` (Cow-based compute + decorator); delegate-only, orthogonal to model routing. | `runner-core::redact` (`Redactor`, `RedactingSink`) + `Box<dyn EventSink>` impl, wired in `runner-dispatch` (sink wrap + `redact_response`) | #18 (merged) |
 
 ### Cycle-2 research note — kclaw0 `dark-factory.js` is a governance engine
@@ -162,6 +163,96 @@ selection → weave/atc) — none buildable today. Per the loop's method (and th
 empty backlog **triggers a fresh deep-research sweep** of the four targets (kclaw0 + Archon +
 attractor/automaton) to surface the *next* batch of runner-plane primitives. See the cycle-16 sweep
 below for the refilled backlog.
+
+### Cycle-16 deep-research sweep (backlog refill — 4 parallel agents, one per target)
+A fresh, deeper sweep of all four targets *past* the cycle-1→16 applied set. Each agent deep-read one
+source for runner-plane primitives not yet adopted; results cross-referenced for **convergence** (the
+same mechanism named independently by ≥2 sources — the signal it's real, not one repo's quirk). Ranked
+by convergence × buildable-now × non-redundancy. **Backlog is refilled.**
+
+**Tier 1 — convergent + buildable-now (top picks):**
+- ✓ **FATAL-first error taxonomy** (Archon `executor-shared.ts::classifyError`; convergent with kclaw0 +
+  attractor retry loops) → **APPLIED (cycle 17, `feat/dispatch-error-taxonomy`).** Shipped as pure
+  `recovery::classify_kernel_error` (FATAL-before-TRANSIENT precedence) + `FailureKind::KernelFatal`
+  (escalate immediately) + `Outcome::KernelFatal` (fixed-enum telemetry class). See *Applied* row 17.
+- ▷ **Dispatch provenance / authority gate** (automaton `policy-engine.ts::deriveAuthorityLevel`;
+  convergent with attractor access-broker + Archon human-vs-agent origin). Gate *privileged routes/verbs*
+  (recursive dispatch, recovery-reroute, governing-file ops) on the **submitter's authority tier**,
+  decided from the signed envelope's origin before content is examined — the orthogonal "*who* may ask
+  for this verb" axis (approval is per-job binary; risk is content/history). Needs a submitter-identity
+  seam on the envelope (like the approval grant). **Queued (seam: envelope submitter id).**
+- ▷ **Delegation-target allowlist** (automaton `createX402DomainAllowlistRule`, fail-closed empty=deny;
+  convergent with attractor egress allowlist). A fail-closed registry of which kernel endpoints a job
+  may be routed to (`loop_lib|atc|handoff|weave` + named UDS targets) — kernel *reachability*, NOT model
+  selection (stays in-scope). Lets an operator disable a kernel. **Queued.**
+- ▷ **Max-in-flight concurrency cap + per-target single-flight mutex** (Archon `getActiveWorkflowRunByPath`
+  older-wins lock + `ConversationLockManager`; convergent with kclaw0 `docker-exec` `maxContainers`).
+  A *simultaneity* bound (distinct from the rate/time bound of #14) + a per-mutable-target admission
+  mutex with a deterministic older-wins tiebreak. **Partly blocked:** the server serves one connection
+  at a time today, so a global concurrency cap is inert until P3 serves concurrently (same reasoning
+  that deferred `max_in_flight` in #14); the per-target mutex seam is definable now. **Queued (P3-gated
+  for the global cap).**
+
+**Tier 2 — buildable-now, secondary:**
+- ▷ **Idle / liveness watchdog** (Archon `idle-timeout.ts` — resets on each yielded message; "deadlock
+  detector, not a work limiter"; convergent with kclaw0 `docker-exec`). The *silence-based* timeout
+  axis the applied wall-clock deadline (#12) misses: a job inside its deadline but producing no output.
+  **Seam-first** (needs the P3 streaming/liveness contract). **Queued.**
+- ▷ **Deterministic route-selection contract** (attractor `select_edge` 5-step total order + `weight`).
+  When ≥2 kernels are co-eligible, resolve by a witnessed `(weight DESC, id ASC)` total order so routing
+  is reproducible/auditable. Buildable-now (today's `JobKind→kernel` map is 1:1, so partly inert until
+  multi-eligibility exists). **Queued (lower urgency).**
+- ▷ **State-gated route admission** (automaton `idle-only-tools.ts` × `AgentState`). A route-class ×
+  dispatcher-state matrix (quiescent-only routes — introspection/reconfig/drain — deferred under load),
+  consuming the applied survival tier (#7) as the gate input. Buildable-now extension of the ladder.
+  **Queued.**
+- ▷ **Intra-job fan-out / amplification cap** (automaton `MAX_TOOL_CALLS_PER_TURN` + per-class per-turn
+  cap). Bound how many sub-dispatches a single admitted job may emit — the gap the windowed rate-limit
+  (#14) can't close (a burst *inside* one window). Inert until a job can emit sub-dispatches (P3).
+  **Queued (P3-gated).**
+
+**Tier 3 — seam-first / structural (later):**
+- ▷ **Pre-dispatch outcome simulation** (kclaw0 `path-simulator.js::OutcomePredictor` — ex-ante
+  `P(success)` + projected cost forecast; convergent with automaton lookahead). The *prospective* dual
+  of the applied (retrospective) risk score (#16): forecast a path's terminal state + cost before
+  delegating, admit/defer/reject against a threshold. **Seam-first.**
+- ▷ **Holdout output-coverage gate** (kclaw0 `dark-factory.js::validateHoldout` — keyword coverage of
+  the *request* in the *result*). **Output** admission (vs every applied gate's input/process side): did
+  the kernel's result address the JobSpec's intent? **Seam-first** (needs an intent/result-summary seam).
+- ▷ **auto_status silence gate** (attractor §2.6 — kernel returns with no structured outcome → fail-closed
+  unless opted into a synthesized default). The third return case (distinct from timeout and error).
+  **Seam-first** (needs the status-presence contract).
+- ▷ **Reversibility classification + pre-action checkpoint** (automaton `audit-log.ts` `reversible` flag +
+  pre-mod git snapshot). Tag each dispatch reversible/irreversible in the audit stream + capture a
+  restore-point ref, upgrading recovery from *reroute* to *reroute-or-rollback*; feeds the provenance
+  gate (irreversible ⇒ higher authority). **Seam-first.**
+- ▷ **Pre/post dispatch hook middleware with veto** (attractor §9.7 `tool_hooks` — exit-non-zero = skip).
+  Generalize the applied content scan (#15) into a pluggable, ordered pre-hook chain + a symmetric
+  *post*-dispatch hook (the applied set has no post-hook beyond the audit log). **Seam-first refactor.**
+- ⊕ **Dispatch-lifecycle FSM** (kclaw0 `dark-factory.js::transitionState`; convergent with automaton's
+  name). A formal per-job state graph (`admit → delegate → return → verify`, terminal `blocked`) that
+  *sequences* the existing gates as transition guards. Structural unification, larger. **Backlog.**
+- ⊕ **Compensating rollback on partial admission** (Archon `resolver.ts` two-phase create + best-effort
+  compensating destroy, "never mask the original error"). Release already-acquired resources if a later
+  admission step fails. **Seam-first** (only bites once admission acquires >1 resource).
+
+**Blocked (gated on another component):**
+- ⛔ **Safe-reclamation reference-count gate** (Archon `cleanup-service.ts::getRemovalBlocker` — refuse
+  teardown while another job references the workspace / it has un-persisted output / its product isn't
+  provably landed). The same **worktree-reuse precondition** as the already-blocked adoption-ownership
+  item — both unblock together at the P3 tmpfs-worktree reuse path.
+
+**Convergence summary (cross-source signals, strongest first):** FATAL-first taxonomy (3 sources) ·
+provenance/authority gate (3) · target allowlist (2) · concurrency/single-flight cap (2) · idle
+watchdog (2) · outcome simulation (2). These six are the highest-confidence net-new primitives.
+
+**Net after the refill:** the backlog was refilled with **15 net-new candidates** (6 convergent).
+**Cycle 17 applied the top pick (FATAL-first error taxonomy).** The remaining Tier-1 backlog —
+**dispatch provenance/authority gate → delegation-target allowlist → max-in-flight concurrency cap
+(P3-gated)** — plus Tiers 2–3 stay queued. The next buildable-now pick is the **provenance/authority
+gate** (needs a submitter-identity seam on the envelope, like the approval grant) or the
+**delegation-target allowlist** (fail-closed kernel-reachability registry); both are convergent
+(3-source / 2-source) and in-scope.
 
 ## Deferred / out of scope (model-router — weave owns)
 

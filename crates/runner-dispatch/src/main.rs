@@ -32,7 +32,8 @@ use runner_core::loopguard::{fingerprint, LoopGuard, Verdict};
 use runner_core::quarantine::{QuarantineLedger, QuarantinePolicy};
 use runner_core::ratelimit::{RateDecision, RateLimitPolicy, RateLimiter};
 use runner_core::recovery::{
-    FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger,
+    classify_kernel_error, FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb,
+    RetryLedger,
 };
 use runner_core::redact::{RedactingSink, Redactor};
 use runner_core::risk::{RiskLedger, RiskPolicy, RiskScore};
@@ -566,6 +567,21 @@ fn handle_request(
         // human only once the retry ceiling is exceeded; the failure also feeds the quarantine ledger.
         Delegation::Failed(e) => {
             risk_ledger.record(&fp, false);
+            // Classify the kernel error (Archon FATAL-before-TRANSIENT precedence): an auth/permission/
+            // config failure is fatal → escalate immediately rather than burning the retry budget on a
+            // job that can only fail the same way; anything else is transient → retry-with-backoff.
+            let (kind, outcome, lead) = match classify_kernel_error(&e) {
+                FailureKind::KernelFatal => (
+                    FailureKind::KernelFatal,
+                    Outcome::KernelFatal,
+                    format!("kernel `{program}` returned a FATAL (unrecoverable) error: {e}"),
+                ),
+                _ => (
+                    FailureKind::KernelFailed,
+                    Outcome::KernelFailed,
+                    format!("kernel `{program}` invocation failed: {e}"),
+                ),
+            };
             handle_failure(
                 policy,
                 retry,
@@ -578,9 +594,9 @@ fn handle_request(
                 &job,
                 program,
                 &fp,
-                FailureKind::KernelFailed,
-                Outcome::KernelFailed,
-                format!("kernel `{program}` invocation failed: {e}"),
+                kind,
+                outcome,
+                lead,
             )
         }
         // A hung / over-long delegation: bounded by the wall-clock deadline, abandoned, and routed
@@ -1135,6 +1151,23 @@ mod tests {
         fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             Err("kernel exploded".into())
+        }
+    }
+
+    /// An invoker that returns a FATAL (auth) error — exercises the FATAL-first classifier path.
+    #[derive(Default)]
+    struct FatalInvoker {
+        calls: AtomicUsize,
+    }
+    impl FatalInvoker {
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::Relaxed)
+        }
+    }
+    impl KernelInvoker for FatalInvoker {
+        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Err("HTTP 401 Unauthorized: invalid credentials".into())
         }
     }
 
@@ -2862,5 +2895,62 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains("risk: high"));
+    }
+
+    #[test]
+    fn fatal_kernel_error_escalates_immediately_instead_of_retrying() {
+        use runner_core::events::DispatchEvent;
+        use std::cell::RefCell;
+
+        struct Recorder(RefCell<Vec<DispatchEvent>>);
+        impl EventSink for Recorder {
+            fn emit(&self, e: &DispatchEvent) {
+                self.0.borrow_mut().push(e.clone());
+            }
+        }
+
+        let inv = FatalInvoker::default();
+        let sink = Recorder(RefCell::new(Vec::new()));
+        let mut retry = RetryLedger::new();
+        // A generous retry budget — a TRANSIENT error would retry; a FATAL one must NOT.
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::new(5, 1),
+            &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &sink,
+            &serde_json::to_vec(&sign_frame(b"k", &ci_spec(false)).unwrap()).unwrap(),
+        );
+        assert!(!resp.accepted);
+        let rec = resp
+            .recovery
+            .expect("a failure carries a recovery directive");
+        assert_eq!(
+            rec.action,
+            RecoveryVerb::Escalate,
+            "a fatal (auth) error escalates immediately, never retries"
+        );
+        assert_eq!(rec.attempt, 0, "fatal failure consumes no retry budget");
+        assert_eq!(
+            retry.tracked(),
+            0,
+            "no fingerprint entered the retry ledger"
+        );
+        assert_eq!(inv.calls(), 1);
+        // The audit event is the fixed-enum KernelFatal class (the no-text telemetry seam).
+        let event = sink.0.into_inner().pop().unwrap();
+        assert_eq!(event.outcome, Outcome::KernelFatal);
     }
 }
