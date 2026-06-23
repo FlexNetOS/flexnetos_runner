@@ -37,6 +37,8 @@ pub enum Outcome {
     ApprovalRequired,
     /// Refused: this job's fingerprint is quarantined (it failed at the kernel too many times).
     Quarantined,
+    /// Refused for timing: the dispatch rate window is full, or the job's route is in failure cooldown.
+    RateLimited,
     /// Runaway-loop circuit breaker tripped.
     LoopTripped,
     /// Dispatch budget exhausted (bounded-autonomy kill-switch).
@@ -71,6 +73,7 @@ impl Outcome {
             | Outcome::ForkRejected
             | Outcome::ApprovalRequired
             | Outcome::Quarantined
+            | Outcome::RateLimited
             | Outcome::LoopTripped
             | Outcome::BudgetDenied => EventCategory::Policy,
         }
@@ -267,6 +270,7 @@ mod tests {
             Outcome::ForkRejected,
             Outcome::ApprovalRequired,
             Outcome::Quarantined,
+            Outcome::RateLimited,
             Outcome::LoopTripped,
             Outcome::BudgetDenied,
         ] {

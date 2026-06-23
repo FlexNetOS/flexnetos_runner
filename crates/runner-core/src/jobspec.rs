@@ -40,6 +40,20 @@ pub enum JobKind {
     LoopCycle { repo: String, task_id: String },
 }
 
+impl JobKind {
+    /// The job's **route** label (`ci`/`review`/`agent`/`cycle`) — the class of work, independent of
+    /// the repo/sha payload. Used as the per-route key for the dispatch rate limiter's failure
+    /// cooldown ([`crate::ratelimit`]) and as a stable human label in banners / the CLI.
+    pub fn class(&self) -> &'static str {
+        match self {
+            JobKind::Ci { .. } => "ci",
+            JobKind::ReviewGate { .. } => "review",
+            JobKind::AgentTask { .. } => "agent",
+            JobKind::LoopCycle { .. } => "cycle",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JobSpec {
     /// Unique job id (the runner's dedup key).
