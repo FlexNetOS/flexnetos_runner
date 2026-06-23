@@ -177,8 +177,16 @@ fn main() -> anyhow::Result<()> {
                  zero-residue); tmpfs worktree in P3"
             );
             println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
-            println!("  uds dispatch       : UNWIRED (P2)");
-            println!("  secret injection   : UNWIRED (P3 — envctl relay-bearer)");
+            println!("  uds dispatch       : WIRED (P2 — fxrun-dispatch --socket; signed frame → router → delegate)");
+            println!(
+                "  kernel execution   : WIRED (P3 — fxrun-dispatch spawns the kernel in the job \
+                 workspace, enforces the deadline by killing the child, relays the cost report; \
+                 enable with FXRUN_KERNEL_EXEC=1, point at binaries via FXRUN_KERNEL_CMD_{{LOOP,ATC,HF,WEAVE}})"
+            );
+            println!(
+                "  secret injection   : WIRED (P3 — envctl relay-bearer: FXRUN_INJECT_SECRETS names \
+                 env secrets relayed into the kernel child + registered with the redactor)"
+            );
         }
     }
     Ok(())

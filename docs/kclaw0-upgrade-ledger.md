@@ -254,6 +254,25 @@ gate** (needs a submitter-identity seam on the envelope, like the approval grant
 **delegation-target allowlist** (fail-closed kernel-reachability registry); both are convergent
 (3-source / 2-source) and in-scope.
 
+## P3 execution milestone — the kernel-spawn invoker is real (the seams above are now consumed)
+
+Many *Applied* rows defined a seam "the P3 invoker will consume" (workspace teardown #10, the
+deadline hard-kill #12, secret redaction #13, content-scan string interpolation #15). **P3 landed
+(`feat/p3-kernel-execution`, TDD):** `runner-dispatch` now ships a `SubprocessInvoker` that spawns the
+real kernel binary (`loop`/`atc`/`hf`/`weave`, resolvable via `FXRUN_KERNEL_CMD_*`) inside the job's
+isolated workspace (cwd), hands it the JobSpec on stdin + handoff env vars, **enforces the deadline by
+killing the child** at the wall-clock limit (the deadlock-prone watchdog thread is gone — the invoker
+owns the child, so it owns the kill), and relays the cost report the kernel writes to `FXRUN_COST_FILE`
+(`JobCost::from_report`, fail-open). **Secret injection** is the envctl relay-bearer:
+`FXRUN_INJECT_SECRETS` names env secrets relayed into the kernel child and registered with the
+redactor (#13) so they never leak. Off by default (`FXRUN_KERNEL_EXEC=1` opts in; the dry-run invoker
+remains the behaviour-preserving default so the runner still routes+governs+audits with no kernels
+installed). Backed by a TDD test suite: 7 `SubprocessInvoker` unit tests (stub kernel) + a 5-case
+**e2e/smoke** suite (`tests/e2e.rs`) that drives the **real binary over a real UDS socket** (real
+spawn, cost relay, deadline-kill, secret inject×redact, pre-exec auth). `fxrun doctor` now reports
+`uds dispatch` / `kernel execution` / `secret injection` all **WIRED**. The runner stays delegate-only:
+it spawns + bounds + reclaims + relays; the kernel owns *how* the work runs.
+
 ## Deferred / out of scope (model-router — weave owns)
 
 - `llm-client.js`, `subagent-profiles.js`, model selection/routing, provider switching (`cc-switch`).

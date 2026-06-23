@@ -37,7 +37,7 @@ use runner_core::recovery::{
 };
 use runner_core::redact::{RedactingSink, Redactor};
 use runner_core::risk::{RiskLedger, RiskPolicy, RiskScore};
-use runner_core::router::{self, KernelPlan};
+use runner_core::router::{self, Kernel, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::scan::{self, ScanPolicy};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
@@ -47,63 +47,46 @@ use std::io::Read;
 /// The delegation seam: turn a routed [`KernelPlan`] into a real kernel invocation. The dispatcher
 /// NEVER reimplements a kernel — it shells out to the existing binary. Injected so the UDS path is
 /// testable with a fake (no kernels spawned in CI).
+///
+/// **The invoker owns deadline enforcement.** A real subprocess invoker spawns the kernel and
+/// **hard-kills its child** at the effective wall-clock `deadline` (attractor's "interrupt"; Archon's
+/// `dockerStop`), returning [`Delegation::TimedOut`]; in-process invokers that cannot hang (the
+/// dry-run, the test fakes) ignore the deadline. Enforcement lives here — not in a watchdog thread —
+/// because only the entity that owns the child handle can kill it (a thread that merely *waits* on a
+/// hung `child.wait()` would itself block forever and could not reclaim the process).
 trait KernelInvoker {
-    /// Invoke the kernel and return the job's measured [`JobCost`] (the `atc → runner` cost seam).
-    /// Kernels that don't measure cost (the dry-run, or non-agent kernels) return [`JobCost::ZERO`].
-    fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String>;
+    /// Invoke the kernel under an optional wall-clock `deadline`, returning the typed outcome
+    /// (delivered-with-cost / failed / timed-out). The cost is the `atc → runner` seam; kernels that
+    /// don't measure cost return [`JobCost::ZERO`].
+    fn invoke(
+        &self,
+        plan: &KernelPlan,
+        job: &JobSpec,
+        deadline: Option<std::time::Duration>,
+    ) -> Delegation;
 }
 
-/// The outcome of one delegation attempt, after the optional wall-clock watchdog.
+/// The outcome of one delegation attempt.
 enum Delegation {
     /// The kernel completed within the deadline, reporting its cost.
     Delivered(JobCost),
-    /// The kernel returned an error.
+    /// The kernel returned an error (the string is the failure detail).
     Failed(String),
-    /// The kernel did not finish within the effective deadline — abandoned (see [`run_delegation`]).
+    /// The kernel did not finish within the effective deadline and was killed (the duration is the
+    /// limit that was exceeded). The runner-plane bound on a *hung* job — the time axis the breaker /
+    /// governor / quarantine don't cover.
     TimedOut(std::time::Duration),
 }
 
-/// Run one delegation, enforcing the effective wall-clock `deadline` when one is set.
-///
-/// With **no deadline** (the default) the invoker is called directly on this thread — byte-for-byte
-/// the prior behaviour, zero thread overhead. With a deadline, the invocation runs on a *scoped*
-/// worker thread and the dispatcher waits at most `limit`; if the kernel hasn't returned by then the
-/// delegation is reported as [`Delegation::TimedOut`] and the worker is abandoned. This is the
-/// runner-plane bound on a *hung* job (the breaker/governor/quarantine don't cover the time axis).
-///
-/// Note: `std::thread::scope` joins the worker before returning, so for an *in-process* fake that
-/// merely runs long the dispatcher still waits for it to finish after classifying the timeout (the
-/// classification is what matters — the late result is discarded). The **P3** invoker shells out to a
-/// real kernel subprocess and hard-kills it at the deadline (attractor's "interrupt"; Archon's
-/// `dockerStop`), so the worker returns promptly and the join does not linger. The runner stays
-/// delegate-only: it bounds and classifies the wait; the kernel owns *how* the work runs.
+/// Run one delegation under the effective `deadline`. The invoker owns enforcement (see
+/// [`KernelInvoker`]); this is a thin seam kept so the call site reads as "delegate this plan".
 fn run_delegation(
     invoker: &(dyn KernelInvoker + Sync),
     plan: &KernelPlan,
     job: &JobSpec,
     deadline: Option<std::time::Duration>,
 ) -> Delegation {
-    let Some(limit) = deadline else {
-        return match invoker.invoke(plan, job) {
-            Ok(cost) => Delegation::Delivered(cost),
-            Err(e) => Delegation::Failed(e),
-        };
-    };
-    use std::sync::mpsc;
-    std::thread::scope(|scope| {
-        let (tx, rx) = mpsc::channel();
-        scope.spawn(move || {
-            let _ = tx.send(invoker.invoke(plan, job));
-        });
-        match rx.recv_timeout(limit) {
-            Ok(Ok(cost)) => Delegation::Delivered(cost),
-            Ok(Err(e)) => Delegation::Failed(e),
-            Err(mpsc::RecvTimeoutError::Timeout) => Delegation::TimedOut(limit),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Delegation::Failed("kernel worker disconnected before reporting".into())
-            }
-        }
-    })
+    invoker.invoke(plan, job, deadline)
 }
 
 /// Shared handling for a failed/timed-out delegation: advise recovery (retry-with-backoff →
@@ -189,9 +172,10 @@ impl WorkspaceProvider for TempDirProvider {
     }
 }
 
-/// The default invoker: logs the delegation it *would* perform (no subprocess), inside an isolated
-/// workspace whose teardown is guaranteed on every exit. The real kernel-spawn invoker
-/// (`loop`/`atc`/`hf`/`weave` + secret injection + provenance) lands in P3.
+/// The dry-run invoker: logs the delegation it *would* perform (no subprocess), inside an isolated
+/// workspace whose teardown is guaranteed on every exit. Kept as the behaviour-preserving default
+/// when kernel execution is not enabled (the runner still routes + governs + audits without spawning
+/// real kernels), and so the full admission pipeline stays exercisable with no kernels installed.
 /// Only wired into the Unix `serve` path; the decision core is exercised cross-platform via tests.
 #[cfg(unix)]
 struct DryRunInvoker<P: WorkspaceProvider> {
@@ -200,16 +184,24 @@ struct DryRunInvoker<P: WorkspaceProvider> {
 
 #[cfg(unix)]
 impl<P: WorkspaceProvider> KernelInvoker for DryRunInvoker<P> {
-    fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String> {
-        // Acquire the isolated work area. Its guard tears the tree down when this scope ends — on a
-        // clean return AND on any `?` early-return below (Archon zero-residue on the fail path).
-        let _ws = self.workspace.acquire(&job.id)?;
+    fn invoke(
+        &self,
+        plan: &KernelPlan,
+        job: &JobSpec,
+        _deadline: Option<std::time::Duration>,
+    ) -> Delegation {
+        // Acquire the isolated work area. Its guard tears the tree down when this scope ends (Archon
+        // zero-residue). The dry-run never hangs, so it ignores the deadline.
+        let _ws = match self.workspace.acquire(&job.id) {
+            Ok(ws) => ws,
+            Err(e) => return Delegation::Failed(e),
+        };
         let agent = match plan.agent {
             Some(a) => format!(", agent {a}"),
             None => String::new(),
         };
         eprintln!(
-            "  delegate → `{}` : {} (job {}, corr {}, repo {}{}, ws {})",
+            "  delegate (dry-run) → `{}` : {} (job {}, corr {}, repo {}{}, ws {})",
             plan.kernel.program(),
             plan.intent,
             job.id,
@@ -218,9 +210,191 @@ impl<P: WorkspaceProvider> KernelInvoker for DryRunInvoker<P> {
             agent,
             _ws.root().display()
         );
-        // P3: the real atc invoker reports the job's measured cost here. The dry-run measures none.
-        Ok(JobCost::ZERO)
+        // The dry-run measures no cost (the seam is inert until a real kernel reports).
+        Delegation::Delivered(JobCost::ZERO)
         // `_ws` drops here → the workspace is torn down (guaranteed, every path).
+    }
+}
+
+/// Resolves a [`Kernel`] to the executable command the runner spawns. Default = the canonical
+/// program name on `PATH` ([`Kernel::program`]); overridable per kernel via
+/// `FXRUN_KERNEL_CMD_{LOOP,ATC,HF,WEAVE}` so an operator can point at the real installed binary (an
+/// absolute path or a wrapper) and the test suite can point at a stub kernel. Delegate-only: this is
+/// *which existing binary to shell out to*, never a reimplementation.
+#[cfg(unix)]
+#[derive(Debug, Clone)]
+struct KernelCommands {
+    loop_lib: String,
+    atc: String,
+    hf: String,
+    weave: String,
+}
+
+#[cfg(unix)]
+impl KernelCommands {
+    /// Read the per-kernel overrides from the environment, falling back to the canonical program name.
+    fn from_env() -> Self {
+        let resolve = |var: &str, default: &str| {
+            std::env::var(var)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| default.to_string())
+        };
+        Self {
+            loop_lib: resolve("FXRUN_KERNEL_CMD_LOOP", Kernel::LoopLib.program()),
+            atc: resolve("FXRUN_KERNEL_CMD_ATC", Kernel::Atc.program()),
+            hf: resolve("FXRUN_KERNEL_CMD_HF", Kernel::Handoff.program()),
+            weave: resolve("FXRUN_KERNEL_CMD_WEAVE", Kernel::Weave.program()),
+        }
+    }
+
+    /// The command to spawn for `kernel`.
+    fn for_kernel(&self, kernel: Kernel) -> &str {
+        match kernel {
+            Kernel::LoopLib => &self.loop_lib,
+            Kernel::Atc => &self.atc,
+            Kernel::Handoff => &self.hf,
+            Kernel::Weave => &self.weave,
+        }
+    }
+}
+
+/// The secret relay (the P3 "envctl relay-bearer" flow): envctl injects named secrets into the
+/// **runner's** environment; the runner relays the configured subset (`FXRUN_INJECT_SECRETS=A,B,C`)
+/// into each delegated kernel's child environment, and registers their *values* with the [`Redactor`]
+/// so they can never surface in the audit log or an error reply. Delegate-only: the runner only
+/// passes the secret through to the kernel that needs it; it never uses it itself.
+#[cfg(unix)]
+fn resolve_injected_secrets() -> Vec<(String, String)> {
+    std::env::var("FXRUN_INJECT_SECRETS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .filter_map(|name| std::env::var(name).ok().map(|val| (name.to_string(), val)))
+        .collect()
+}
+
+/// The **P3** invoker: spawns the real kernel binary as a child process inside the job's isolated
+/// workspace (cwd), hands it the JobSpec on stdin + handoff/secret env vars, **enforces the deadline
+/// by killing the child** at the wall-clock limit, and relays the cost report the kernel writes to
+/// `FXRUN_COST_FILE`. The runner stays delegate-only: it spawns + bounds + reclaims; the kernel owns
+/// *how* the work runs. Teardown of the workspace (incl. any orphaned child output) is guaranteed by
+/// the [`JobWorkspace`] guard on every exit path.
+#[cfg(unix)]
+struct SubprocessInvoker<P: WorkspaceProvider> {
+    workspace: P,
+    commands: KernelCommands,
+    /// Resolved (name, value) secrets to inject into the kernel child's env (see the relay above).
+    secrets: Vec<(String, String)>,
+}
+
+#[cfg(unix)]
+impl<P: WorkspaceProvider> KernelInvoker for SubprocessInvoker<P> {
+    fn invoke(
+        &self,
+        plan: &KernelPlan,
+        job: &JobSpec,
+        deadline: Option<std::time::Duration>,
+    ) -> Delegation {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let ws = match self.workspace.acquire(&job.id) {
+            Ok(ws) => ws,
+            Err(e) => return Delegation::Failed(e),
+        };
+        let cmd_path = self.commands.for_kernel(plan.kernel).to_string();
+        let cost_file = ws.root().join("fxrun-cost.json");
+        let stderr_file = ws.root().join("fxrun-stderr.log");
+        let spec_json = match serde_json::to_string(job) {
+            Ok(s) => s,
+            Err(e) => return Delegation::Failed(format!("jobspec encode failed: {e}")),
+        };
+        // stderr → a file in the workspace (avoids a pipe-buffer deadlock with a chatty kernel; read
+        // back on failure). stdout is inherited so the kernel's own progress is visible to the operator.
+        let stderr_sink = match std::fs::File::create(&stderr_file) {
+            Ok(f) => f,
+            Err(e) => return Delegation::Failed(format!("workspace stderr file failed: {e}")),
+        };
+        let mut cmd = Command::new(&cmd_path);
+        cmd.current_dir(ws.root())
+            .env("FXRUN_JOB_ID", &job.id)
+            .env("FXRUN_CORRELATION_ID", &job.correlation_id)
+            .env("FXRUN_KERNEL", plan.kernel.program())
+            .env("FXRUN_INTENT", &plan.intent)
+            .env("FXRUN_REPO", &plan.repo)
+            .env("FXRUN_COST_FILE", &cost_file)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::from(stderr_sink));
+        if let Some(agent) = plan.agent {
+            cmd.env("FXRUN_AGENT", agent.as_str());
+        }
+        for (k, v) in &self.secrets {
+            cmd.env(k, v);
+        }
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => return Delegation::Failed(format!("spawn `{cmd_path}` failed: {e}")),
+        };
+        // Hand the kernel its JobSpec on stdin, then close it (the spec is small — well under the pipe
+        // buffer — so this never blocks).
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(spec_json.as_bytes());
+        }
+
+        // Wait, enforcing the deadline by polling try_wait and killing the child on expiry.
+        let status = match deadline {
+            None => match child.wait() {
+                Ok(s) => s,
+                Err(e) => return Delegation::Failed(format!("wait on `{cmd_path}` failed: {e}")),
+            },
+            Some(limit) => {
+                let start = std::time::Instant::now();
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(s)) => break s,
+                        Ok(None) => {}
+                        Err(e) => {
+                            return Delegation::Failed(format!("wait on `{cmd_path}` failed: {e}"))
+                        }
+                    }
+                    if start.elapsed() >= limit {
+                        // Hard-kill the hung child (attractor "interrupt" / Archon dockerStop), reap it,
+                        // and report the timeout. The workspace guard reclaims its tree on return.
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Delegation::TimedOut(limit);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+            }
+        };
+
+        if status.success() {
+            let report = std::fs::read_to_string(&cost_file).unwrap_or_default();
+            Delegation::Delivered(JobCost::from_report(&report))
+        } else {
+            let stderr_tail = std::fs::read_to_string(&stderr_file)
+                .unwrap_or_default()
+                .lines()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("; ");
+            let code = status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".into());
+            Delegation::Failed(format!("kernel `{cmd_path}` exited {code}: {stderr_tail}"))
+        }
+        // `ws` drops here → workspace torn down (guaranteed), incl. the cost/stderr files.
     }
 }
 
@@ -902,6 +1076,19 @@ fn env_u64(var: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// Whether `var` is set to a truthy flag (`1`/`true`/`yes`/`on`, case-insensitive).
+#[cfg(unix)]
+fn env_flag(var: &str) -> bool {
+    std::env::var(var)
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// Render a [`Budget`] for the startup banner: the capped dimensions, or "unlimited".
 #[cfg(unix)]
 fn render_budget(b: &runner_core::governor::Budget) -> String {
@@ -1062,7 +1249,14 @@ fn main() -> anyhow::Result<()> {
             // audit-log `detail` and every error reply, so key material can never land on disk or
             // cross the socket (Archon repo.ts token scrub). The key is always set in serve mode
             // (fail-closed above), so redaction is active here; inert only if no qualifying secret.
-            let redactor = build_redactor(&key);
+            // The secrets relayed into each kernel child (envctl → runner env → kernel child env).
+            // Resolved here so their VALUES are registered with the redactor below (they must never
+            // surface in the audit log / error replies, just like the dispatch key).
+            let injected_secrets = resolve_injected_secrets();
+            let mut redactor = build_redactor(&key);
+            for (_name, value) in &injected_secrets {
+                redactor.register(value);
+            }
             if redactor.is_active() {
                 eprintln!(
                     "fxrun-dispatch: secret redaction active ({} secret(s) scrubbed from audit log + error replies)",
@@ -1072,12 +1266,45 @@ fn main() -> anyhow::Result<()> {
             // Wrap the audit sink so every emitted event's detail is scrubbed before the file write.
             let sink: Box<dyn EventSink> =
                 Box::new(RedactingSink::new(base_sink, redactor.clone()));
+            // P3: spawn real kernels when execution is enabled (FXRUN_KERNEL_EXEC truthy, or any
+            // FXRUN_KERNEL_CMD_* override set); otherwise keep the dry-run invoker so the runner still
+            // routes + governs + audits with no kernels installed (behaviour-preserving default).
+            let exec_enabled = env_flag("FXRUN_KERNEL_EXEC")
+                || [
+                    "FXRUN_KERNEL_CMD_LOOP",
+                    "FXRUN_KERNEL_CMD_ATC",
+                    "FXRUN_KERNEL_CMD_HF",
+                    "FXRUN_KERNEL_CMD_WEAVE",
+                ]
+                .iter()
+                .any(|v| {
+                    std::env::var(v)
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false)
+                });
+            let invoker: Box<dyn KernelInvoker + Sync> = if exec_enabled {
+                let commands = KernelCommands::from_env();
+                eprintln!(
+                    "fxrun-dispatch: kernel EXECUTION enabled — loop=`{}` atc=`{}` hf=`{}` weave=`{}`; {} secret(s) injected",
+                    commands.loop_lib, commands.atc, commands.hf, commands.weave, injected_secrets.len()
+                );
+                Box::new(SubprocessInvoker {
+                    workspace: TempDirProvider,
+                    commands,
+                    secrets: injected_secrets,
+                })
+            } else {
+                eprintln!(
+                    "fxrun-dispatch: kernel execution DISABLED (dry-run) — set FXRUN_KERNEL_EXEC=1 (or FXRUN_KERNEL_CMD_*) to spawn real kernels"
+                );
+                Box::new(DryRunInvoker {
+                    workspace: TempDirProvider,
+                })
+            };
             serve(
                 std::path::Path::new(path),
                 key.as_bytes(),
-                &DryRunInvoker {
-                    workspace: TempDirProvider,
-                },
+                invoker.as_ref(),
                 &constitution,
                 &approval,
                 &mut guard,
@@ -1131,9 +1358,14 @@ mod tests {
         }
     }
     impl KernelInvoker for RecordingInvoker {
-        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
+        fn invoke(
+            &self,
+            _plan: &KernelPlan,
+            _job: &JobSpec,
+            _deadline: Option<std::time::Duration>,
+        ) -> Delegation {
             self.calls.fetch_add(1, Ordering::Relaxed);
-            Ok(self.cost)
+            Delegation::Delivered(self.cost)
         }
     }
 
@@ -1148,9 +1380,14 @@ mod tests {
         }
     }
     impl KernelInvoker for FailingInvoker {
-        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
+        fn invoke(
+            &self,
+            _plan: &KernelPlan,
+            _job: &JobSpec,
+            _deadline: Option<std::time::Duration>,
+        ) -> Delegation {
             self.calls.fetch_add(1, Ordering::Relaxed);
-            Err("kernel exploded".into())
+            Delegation::Failed("kernel exploded".into())
         }
     }
 
@@ -1165,21 +1402,38 @@ mod tests {
         }
     }
     impl KernelInvoker for FatalInvoker {
-        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
+        fn invoke(
+            &self,
+            _plan: &KernelPlan,
+            _job: &JobSpec,
+            _deadline: Option<std::time::Duration>,
+        ) -> Delegation {
             self.calls.fetch_add(1, Ordering::Relaxed);
-            Err("HTTP 401 Unauthorized: invalid credentials".into())
+            Delegation::Failed("HTTP 401 Unauthorized: invalid credentials".into())
         }
     }
 
-    /// An invoker that blocks for `sleep` before succeeding — exercises the deadline watchdog (a
-    /// kernel that hangs / runs long). `Sync` (no interior mutability), as the watchdog requires.
+    /// An invoker that self-enforces the deadline (as a real subprocess invoker does): if a deadline
+    /// is set and shorter than its `sleep`, it reports [`Delegation::TimedOut`] (simulating a child
+    /// kill) without actually sleeping; otherwise it sleeps and delivers. Deterministic — exercises
+    /// the timeout → recovery → audit path with no wall-clock race.
     struct SlowInvoker {
         sleep: std::time::Duration,
     }
     impl KernelInvoker for SlowInvoker {
-        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
-            std::thread::sleep(self.sleep);
-            Ok(JobCost::ZERO)
+        fn invoke(
+            &self,
+            _plan: &KernelPlan,
+            _job: &JobSpec,
+            deadline: Option<std::time::Duration>,
+        ) -> Delegation {
+            match deadline {
+                Some(limit) if self.sleep > limit => Delegation::TimedOut(limit),
+                _ => {
+                    std::thread::sleep(self.sleep);
+                    Delegation::Delivered(JobCost::ZERO)
+                }
+            }
         }
     }
 
@@ -2352,10 +2606,18 @@ mod tests {
             provider: RecordingProvider,
         }
         impl KernelInvoker for FailAfterWorkspace {
-            fn invoke(&self, _plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String> {
-                let ws = self.provider.acquire(&job.id)?;
+            fn invoke(
+                &self,
+                _plan: &KernelPlan,
+                job: &JobSpec,
+                _deadline: Option<std::time::Duration>,
+            ) -> Delegation {
+                let ws = match self.provider.acquire(&job.id) {
+                    Ok(ws) => ws,
+                    Err(e) => return Delegation::Failed(e),
+                };
                 assert!(ws.root().exists(), "workspace exists during the job");
-                Err("kernel blew up mid-job".into())
+                Delegation::Failed("kernel blew up mid-job".into())
                 // `ws` drops on this early return → cleanup runs (Archon zero-residue).
             }
         }
@@ -2503,8 +2765,13 @@ mod tests {
         secret: String,
     }
     impl KernelInvoker for LeakyInvoker {
-        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
-            Err(format!("upstream auth failed using token {}", self.secret))
+        fn invoke(
+            &self,
+            _plan: &KernelPlan,
+            _job: &JobSpec,
+            _deadline: Option<std::time::Duration>,
+        ) -> Delegation {
+            Delegation::Failed(format!("upstream auth failed using token {}", self.secret))
         }
     }
 
@@ -2952,5 +3219,235 @@ mod tests {
         // The audit event is the fixed-enum KernelFatal class (the no-text telemetry seam).
         let event = sink.0.into_inner().pop().unwrap();
         assert_eq!(event.outcome, Outcome::KernelFatal);
+    }
+
+    // ---- P3: SubprocessInvoker (real kernel spawn) unit tests, driven by a stub kernel script ----
+    #[cfg(unix)]
+    mod subprocess {
+        use super::*;
+        use std::path::{Path, PathBuf};
+        use std::time::Duration;
+
+        /// A unique scratch dir OUTSIDE any job workspace, for the stub kernel to write assertions to
+        /// (the job workspace is torn down when `invoke` returns, so markers must live elsewhere).
+        fn scratch(stem: &str) -> PathBuf {
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed);
+            let d =
+                std::env::temp_dir().join(format!("fxrun-p3-{}-{stem}-{n}", std::process::id()));
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        }
+
+        /// Write an executable `/bin/sh` stub kernel with `body`, return its path.
+        fn stub(dir: &Path, body: &str) -> PathBuf {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("stub-kernel.sh");
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        }
+
+        fn commands_using(stub: &Path) -> KernelCommands {
+            let s = stub.display().to_string();
+            KernelCommands {
+                loop_lib: s.clone(),
+                atc: s.clone(),
+                hf: s.clone(),
+                weave: s,
+            }
+        }
+
+        /// A CI job with a process-unique id, so each test gets its own workspace dir (TempDirProvider
+        /// keys on pid + job id; a shared id would collide across the parallel test threads).
+        fn ci() -> JobSpec {
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed);
+            JobSpec {
+                id: format!("p3-job-{}-{n}", std::process::id()),
+                correlation_id: "p3-corr".into(),
+                from_fork: false,
+                job: JobKind::Ci {
+                    repo: "FlexNetOS/meta".into(),
+                    head_sha: "deadbeef".into(),
+                },
+            }
+        }
+
+        #[test]
+        fn spawns_the_kernel_and_relays_its_cost_report() {
+            let dir = scratch("ok");
+            // The kernel writes its cost report to FXRUN_COST_FILE and exits 0.
+            let k = stub(
+                &dir,
+                r#"echo '{"tokens":1500,"usd_micros":7500}' > "$FXRUN_COST_FILE""#,
+            );
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(&k),
+                secrets: vec![],
+            };
+            let job = ci();
+            match inv.invoke(&router::route(&job), &job, None) {
+                Delegation::Delivered(cost) => assert_eq!(cost, JobCost::new(1500, 7500)),
+                other => panic!("expected Delivered, got {:?}", DelegDbg(&other)),
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn a_nonzero_exit_is_a_failure_carrying_the_stderr_tail() {
+            let dir = scratch("fail");
+            let k = stub(&dir, "echo 'boom: the kernel broke' >&2\nexit 3");
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(&k),
+                secrets: vec![],
+            };
+            let job = ci();
+            match inv.invoke(&router::route(&job), &job, None) {
+                Delegation::Failed(msg) => {
+                    assert!(msg.contains("exited 3"), "msg: {msg}");
+                    assert!(
+                        msg.contains("boom: the kernel broke"),
+                        "stderr tail captured: {msg}"
+                    );
+                }
+                other => panic!("expected Failed, got {:?}", DelegDbg(&other)),
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn a_hung_kernel_is_killed_at_the_deadline() {
+            let dir = scratch("hang");
+            let k = stub(&dir, "sleep 30"); // would run far past the deadline
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(&k),
+                secrets: vec![],
+            };
+            let job = ci();
+            let start = std::time::Instant::now();
+            let outcome = inv.invoke(&router::route(&job), &job, Some(Duration::from_millis(300)));
+            let elapsed = start.elapsed();
+            match outcome {
+                Delegation::TimedOut(limit) => assert_eq!(limit, Duration::from_millis(300)),
+                other => panic!("expected TimedOut, got {:?}", DelegDbg(&other)),
+            }
+            // The child was actually killed — we returned promptly, not after the 30s sleep.
+            assert!(
+                elapsed < Duration::from_secs(3),
+                "should kill at the deadline, took {elapsed:?}"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn hands_the_kernel_its_jobspec_on_stdin_and_runs_in_the_workspace() {
+            let dir = scratch("handoff");
+            let marker = dir.join("seen.txt");
+            let stdin_copy = dir.join("stdin.json");
+            // Record the handoff env + cwd to an external marker, and capture stdin.
+            let k = stub(
+                &dir,
+                &format!(
+                    "echo \"$FXRUN_JOB_ID|$FXRUN_KERNEL|$FXRUN_REPO|$FXRUN_INTENT|$(pwd)\" > {m}\n\
+                     cat > {s}",
+                    m = marker.display(),
+                    s = stdin_copy.display(),
+                ),
+            );
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(&k),
+                secrets: vec![],
+            };
+            let job = ci();
+            assert!(matches!(
+                inv.invoke(&router::route(&job), &job, None),
+                Delegation::Delivered(_)
+            ));
+            let seen = std::fs::read_to_string(&marker).unwrap();
+            assert!(seen.contains("p3-job"), "FXRUN_JOB_ID handed off: {seen}");
+            assert!(seen.contains("loop"), "FXRUN_KERNEL handed off: {seen}");
+            assert!(
+                seen.contains("FlexNetOS/meta"),
+                "FXRUN_REPO handed off: {seen}"
+            );
+            assert!(
+                seen.contains("fxrun-ws-"),
+                "cwd is the isolated workspace: {seen}"
+            );
+            let spec_seen = std::fs::read_to_string(&stdin_copy).unwrap();
+            let parsed: JobSpec = serde_json::from_str(spec_seen.trim()).unwrap();
+            assert_eq!(parsed.id, job.id, "the JobSpec arrived on stdin");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn injects_secrets_into_the_kernel_environment() {
+            let dir = scratch("secret");
+            let marker = dir.join("secret-seen.txt");
+            let k = stub(
+                &dir,
+                &format!("printf '%s' \"$KERNEL_TOKEN\" > {}", marker.display()),
+            );
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(&k),
+                secrets: vec![("KERNEL_TOKEN".into(), "inject3d-s3cret".into())],
+            };
+            let job = ci();
+            assert!(matches!(
+                inv.invoke(&router::route(&job), &job, None),
+                Delegation::Delivered(_)
+            ));
+            assert_eq!(std::fs::read_to_string(&marker).unwrap(), "inject3d-s3cret");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn a_missing_cost_report_is_fail_open_zero() {
+            let dir = scratch("nocost");
+            let k = stub(&dir, "exit 0"); // succeeds but writes no cost file
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(&k),
+                secrets: vec![],
+            };
+            let job = ci();
+            match inv.invoke(&router::route(&job), &job, None) {
+                Delegation::Delivered(cost) => assert_eq!(cost, JobCost::ZERO),
+                other => panic!("expected Delivered ZERO, got {:?}", DelegDbg(&other)),
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn a_missing_kernel_binary_is_a_clean_failure_not_a_panic() {
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(Path::new("/nonexistent/fxrun-no-such-kernel")),
+                secrets: vec![],
+            };
+            let job = ci();
+            match inv.invoke(&router::route(&job), &job, None) {
+                Delegation::Failed(msg) => assert!(msg.contains("spawn"), "spawn failure: {msg}"),
+                other => panic!("expected Failed, got {:?}", DelegDbg(&other)),
+            }
+        }
+
+        /// Small debug shim so panic messages can print a Delegation (which isn't Debug).
+        struct DelegDbg<'a>(&'a Delegation);
+        impl std::fmt::Debug for DelegDbg<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0 {
+                    Delegation::Delivered(c) => write!(f, "Delivered({c})"),
+                    Delegation::Failed(e) => write!(f, "Failed({e})"),
+                    Delegation::TimedOut(d) => write!(f, "TimedOut({d:?})"),
+                }
+            }
+        }
     }
 }

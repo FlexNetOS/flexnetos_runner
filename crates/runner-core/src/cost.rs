@@ -42,6 +42,15 @@ impl JobCost {
         self.tokens != 0 || self.usd_micros != 0
     }
 
+    /// Parse a kernel's cost report (the JSON a delegated kernel writes to its `FXRUN_COST_FILE` in
+    /// P3): `{"tokens":N,"usd_micros":M}`, surrounding whitespace tolerated. **Fail-open** — anything
+    /// unparseable (empty, garbage, missing fields) yields [`JobCost::ZERO`], so a missing/malformed
+    /// report charges nothing rather than failing the dispatch (the same philosophy as the unmeasured
+    /// default). The runner never *measures* cost; it only relays what the kernel reports.
+    pub fn from_report(report: &str) -> JobCost {
+        serde_json::from_str(report.trim()).unwrap_or(JobCost::ZERO)
+    }
+
     /// Saturating component-wise sum (accumulating spend never overflows/panics).
     pub fn saturating_add(self, other: JobCost) -> JobCost {
         JobCost {
@@ -102,5 +111,28 @@ mod tests {
         let c = JobCost::new(42, 99);
         let s = serde_json::to_string(&c).unwrap();
         assert_eq!(serde_json::from_str::<JobCost>(&s).unwrap(), c);
+    }
+
+    #[test]
+    fn from_report_parses_a_kernel_cost_file() {
+        // The P3 contract: a kernel writes this JSON to its FXRUN_COST_FILE; the runner parses it.
+        assert_eq!(
+            JobCost::from_report(r#"{"tokens":1500,"usd_micros":7500}"#),
+            JobCost::new(1500, 7500)
+        );
+        // Surrounding whitespace / trailing newline (a kernel `echo`s the line) is tolerated.
+        assert_eq!(
+            JobCost::from_report("  {\"tokens\":10,\"usd_micros\":0}\n"),
+            JobCost::new(10, 0)
+        );
+    }
+
+    #[test]
+    fn from_report_is_fail_open_on_anything_unparseable() {
+        // Fail-open (matches the seam philosophy): a kernel that reports nothing / garbage charges
+        // nothing, rather than failing the dispatch on a malformed cost report.
+        assert_eq!(JobCost::from_report(""), JobCost::ZERO);
+        assert_eq!(JobCost::from_report("not json"), JobCost::ZERO);
+        assert_eq!(JobCost::from_report("{}"), JobCost::ZERO); // missing fields → default 0/0
     }
 }
