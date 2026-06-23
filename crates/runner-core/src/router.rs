@@ -51,6 +51,10 @@ impl std::fmt::Display for Kernel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KernelPlan {
     pub kernel: Kernel,
+    /// Stable route candidate id (auditable selector witness).
+    pub route_id: String,
+    /// Route candidate weight. Higher wins; `route_id` breaks ties ascending.
+    pub route_weight: i32,
     /// Human-readable intent; exact argv is finalized by the dispatcher in P2.
     pub intent: String,
     pub repo: String,
@@ -59,42 +63,115 @@ pub struct KernelPlan {
     pub agent: Option<Agent>,
 }
 
-/// Route a job to its kernel. Pure.
+/// One possible route for a job. The selector is total and deterministic: highest weight wins;
+/// ties resolve by lexicographically-smallest id (attractor-style witnessed route selection).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteCandidate {
+    pub id: String,
+    pub weight: i32,
+    pub plan: KernelPlan,
+}
+
+impl RouteCandidate {
+    pub fn new(id: impl Into<String>, weight: i32, mut plan: KernelPlan) -> Self {
+        let id = id.into();
+        plan.route_id = id.clone();
+        plan.route_weight = weight;
+        Self { id, weight, plan }
+    }
+}
+
+/// Select one candidate by a stable total order: `weight DESC, id ASC`.
+pub fn select_route(candidates: impl IntoIterator<Item = RouteCandidate>) -> Option<KernelPlan> {
+    candidates
+        .into_iter()
+        .min_by(|a, b| b.weight.cmp(&a.weight).then_with(|| a.id.cmp(&b.id)))
+        .map(|c| c.plan)
+}
+
+fn plan(
+    kernel: Kernel,
+    route_id: &str,
+    weight: i32,
+    intent: String,
+    repo: String,
+    agent: Option<Agent>,
+) -> KernelPlan {
+    KernelPlan {
+        kernel,
+        route_id: route_id.to_string(),
+        route_weight: weight,
+        intent,
+        repo,
+        agent,
+    }
+}
+
+/// Route a job to its kernel. Pure. Today each job kind has one candidate, but the selector contract
+/// is active and tested so future multi-eligible routes are reproducible/auditable.
 pub fn route(job: &JobSpec) -> KernelPlan {
     match &job.job {
-        JobKind::Ci { repo, head_sha } => KernelPlan {
-            kernel: Kernel::LoopLib,
-            intent: format!("ci build/test @ {head_sha}"),
-            repo: repo.clone(),
-            agent: None,
-        },
+        JobKind::Ci { repo, head_sha } => select_route([RouteCandidate::new(
+            "ci.loop",
+            100,
+            plan(
+                Kernel::LoopLib,
+                "ci.loop",
+                100,
+                format!("ci build/test @ {head_sha}"),
+                repo.clone(),
+                None,
+            ),
+        )])
+        .expect("one CI route candidate"),
         JobKind::ReviewGate {
             repo,
             pr_number,
             agent,
             ..
-        } => KernelPlan {
-            kernel: Kernel::Atc,
-            intent: format!("merge-gate review PR #{pr_number} via {agent}"),
-            repo: repo.clone(),
-            agent: Some(*agent),
-        },
+        } => select_route([RouteCandidate::new(
+            "review.atc",
+            100,
+            plan(
+                Kernel::Atc,
+                "review.atc",
+                100,
+                format!("merge-gate review PR #{pr_number} via {agent}"),
+                repo.clone(),
+                Some(*agent),
+            ),
+        )])
+        .expect("one review route candidate"),
         JobKind::AgentTask {
             repo,
             prompt_ref,
             agent,
-        } => KernelPlan {
-            kernel: Kernel::Atc,
-            intent: format!("agent task {prompt_ref} via {agent}"),
-            repo: repo.clone(),
-            agent: Some(*agent),
-        },
-        JobKind::LoopCycle { repo, task_id } => KernelPlan {
-            kernel: Kernel::Handoff,
-            intent: format!("loop cycle / ship {task_id}"),
-            repo: repo.clone(),
-            agent: None,
-        },
+        } => select_route([RouteCandidate::new(
+            "agent.atc",
+            100,
+            plan(
+                Kernel::Atc,
+                "agent.atc",
+                100,
+                format!("agent task {prompt_ref} via {agent}"),
+                repo.clone(),
+                Some(*agent),
+            ),
+        )])
+        .expect("one agent route candidate"),
+        JobKind::LoopCycle { repo, task_id } => select_route([RouteCandidate::new(
+            "cycle.handoff",
+            100,
+            plan(
+                Kernel::Handoff,
+                "cycle.handoff",
+                100,
+                format!("loop cycle / ship {task_id}"),
+                repo.clone(),
+                None,
+            ),
+        )])
+        .expect("one cycle route candidate"),
     }
 }
 
@@ -189,6 +266,36 @@ mod tests {
             .kernel,
             Kernel::Handoff
         );
+    }
+
+    #[test]
+    fn route_selection_is_weight_desc_then_id_asc() {
+        let mk = |id: &str, weight: i32, kernel: Kernel| {
+            RouteCandidate::new(
+                id,
+                weight,
+                plan(kernel, id, weight, format!("route {id}"), "r".into(), None),
+            )
+        };
+        let selected = select_route([
+            mk("b", 10, Kernel::Atc),
+            mk("a", 10, Kernel::LoopLib),
+            mk("z", 5, Kernel::Weave),
+        ])
+        .unwrap();
+        assert_eq!(selected.kernel, Kernel::LoopLib);
+        assert_eq!(selected.route_id, "a");
+        assert_eq!(selected.route_weight, 10);
+    }
+
+    #[test]
+    fn routed_plans_carry_selection_witness() {
+        let p = route(&job(JobKind::Ci {
+            repo: "r".into(),
+            head_sha: "s".into(),
+        }));
+        assert_eq!(p.route_id, "ci.loop");
+        assert_eq!(p.route_weight, 100);
     }
 
     #[test]

@@ -36,6 +36,7 @@ Background: `meta/DARK-FACTORY-RESEARCH.md` (the autonomous-loop landscape this 
 | 19 | **prior-art:** `Conway-Research/automaton` `createX402DomainAllowlistRule` fail-closed allowlist + attractor egress allowlist | **Delegation-target allowlist.** The dispatcher now has an optional kernel reachability registry (`FXRUN_KERNEL_ALLOWLIST`) for `loop`/`atc`/`hf`/`weave` targets. Unset is behaviour-preserving (all existing routes allowed); set-but-empty is active deny-all; named kernels allow only those endpoints. The gate routes the authenticated job, then refuses disallowed kernels before rate slots, breaker window, budget, or subprocess invocation are touched. Denials emit fixed telemetry (`Outcome::TargetDenied`) plus recovery escalation (`FailureKind::TargetDenied`). This is kernel reachability only — model/vendor selection remains weave/atc-owned. | `runner-core::targets` (`TargetAllowlist`, `TargetDecision`) + `router::Kernel::parse`/`ALL` + `Outcome::TargetDenied`/`FailureKind::TargetDenied`, wired in `runner-dispatch` and surfaced in `fxrun doctor` | local (cycle 19) |
 | 20 | **prior-art:** `coleam00/Archon` `getActiveWorkflowRunByPath` / `ConversationLockManager` older-wins locks + kclaw0 `docker-exec` `maxContainers` | **Per-target single-flight mutex.** The buildable half of the concurrency backlog is now typed: a `SingleFlight` ledger acquires a stable mutable-target key (today: normalized repo) and denies competing in-flight work with deterministic older-wins metadata. The dispatcher acquires the target after route/target allowlist and before rate slots, breaker window, budget, or kernel invocation; an RAII permit releases on every terminal path. Denials emit fixed telemetry (`Outcome::SingleFlightDenied`) plus recovery escalation (`FailureKind::SingleFlightDenied`). The global max-in-flight cap remains P3/concurrent-serve-gated because today's server accepts one connection at a time. | `runner-core::singleflight` (`TargetKey`, `SingleFlight`, `FlightLease`) + `Outcome::SingleFlightDenied`/`FailureKind::SingleFlightDenied`, wired in `runner-dispatch` and surfaced in `fxrun doctor` | local (cycle 20) |
 | 21 | **prior-art:** `coleam00/Archon` `idle-timeout.ts` + kclaw0 `docker-exec` liveness timeout | **Idle / liveness watchdog.** Wall-clock deadline bounds total runtime; liveness bounds silence. The dispatch envelope now carries optional `idle_timeout_secs`, and operators can set `FXRUN_IDLE_TIMEOUT_SECS`; the effective idle timeout is the tighter value. The subprocess invoker pipes stdout/stderr when liveness is active, refreshes activity on each yielded byte, and kills a silent child as `Delegation::IdleTimedOut`, routing it through retry/quarantine recovery as `Outcome::IdleTimeout` / `FailureKind::IdleTimeout`. Off by default, so legacy execution remains unchanged. | `runner-core::liveness` (`LivenessPolicy`) + `wire::DispatchRequest::idle_timeout_secs` + `Outcome::IdleTimeout`/`FailureKind::IdleTimeout`, enforced in `SubprocessInvoker` and surfaced in `fxrun doctor` | local (cycle 21) |
+| 22 | **prior-art:** attractor `select_edge` deterministic total order (`weight` + stable id) | **Deterministic route-selection contract.** Routing now goes through an explicit `RouteCandidate` selector with a stable total order: `weight DESC, route_id ASC`. Every `KernelPlan` carries the selected `route_id` and `route_weight` witness, and accepted audit details record the selected route. Today each job kind still has one candidate, so behavior is unchanged; the contract is ready for future multi-eligible kernels without nondeterminism. | `runner-core::router` (`RouteCandidate`, `select_route`, `KernelPlan::route_id`/`route_weight`), wired in `runner-dispatch` audit detail and surfaced in `fxrun doctor` | local (cycle 22) |
 
 ### Cycle-2 research note — kclaw0 `dark-factory.js` is a governance engine
 Admission sequence: **immutability → budget → state-machine → holdout**. Mapping to the runner plane:
@@ -203,10 +204,10 @@ by convergence × buildable-now × non-redundancy. **Backlog is refilled.**
   local)**. `FXRUN_IDLE_TIMEOUT_SECS` / envelope `idle_timeout_secs` now bound kernel silence; the
   subprocess invoker refreshes liveness from stdout/stderr bytes and kills silent children as
   `Outcome::IdleTimeout` / `FailureKind::IdleTimeout`. See *Applied* row 21.
-- ▷ **Deterministic route-selection contract** (attractor `select_edge` 5-step total order + `weight`).
-  When ≥2 kernels are co-eligible, resolve by a witnessed `(weight DESC, id ASC)` total order so routing
-  is reproducible/auditable. Buildable-now (today's `JobKind→kernel` map is 1:1, so partly inert until
-  multi-eligibility exists). **Queued (lower urgency).**
+- ✓ **Deterministic route-selection contract** (attractor `select_edge` 5-step total order + `weight`) →
+  **APPLIED (cycle 22, local)**. `RouteCandidate` selection is now `weight DESC, route_id ASC`, and
+  each `KernelPlan` carries a route witness (`route_id`, `route_weight`) that the dispatch audit detail
+  records on clean delegation. See *Applied* row 22.
 - ▷ **State-gated route admission** (automaton `idle-only-tools.ts` × `AgentState`). A route-class ×
   dispatcher-state matrix (quiescent-only routes — introspection/reconfig/drain — deferred under load),
   consuming the applied survival tier (#7) as the gate input. Buildable-now extension of the ladder.
@@ -254,9 +255,9 @@ watchdog (2) · outcome simulation (2). These six are the highest-confidence net
 **Net after the refill:** the backlog was refilled with **15 net-new candidates** (6 convergent).
 **Cycle 17 applied FATAL-first taxonomy, cycle 18 applied dispatch provenance/authority, cycle 19
 applied the delegation-target allowlist, cycle 20 applied the buildable per-target single-flight
-mutex, and cycle 21 applied the idle/liveness watchdog.** The only remaining Tier-1 slice is the
-**global max-in-flight cap**, which is still P3/concurrent-serve-gated; continue with the remaining
-Tier 2 buildable/seam-first backlog.
+mutex, cycle 21 applied the idle/liveness watchdog, and cycle 22 applied deterministic route
+selection.** The only remaining Tier-1 slice is the **global max-in-flight cap**, which is still
+P3/concurrent-serve-gated; continue with the remaining Tier 2 buildable/seam-first backlog.
 
 ## P3 execution milestone — the kernel-spawn invoker is real (the seams above are now consumed)
 
