@@ -128,7 +128,8 @@ fn main() -> anyhow::Result<()> {
             );
             println!(
                 "  recovery routing   : {} retries / {}s base backoff, then escalate-to-human \
-                 (FXRUN_MAX_RETRIES/_RETRY_BACKOFF_SECS)",
+                 (FXRUN_MAX_RETRIES/_RETRY_BACKOFF_SECS); kernel errors classified FATAL \
+                 (auth/permission/config → escalate at once) vs transient (retry)",
                 recovery.max_retries(),
                 recovery.base_backoff_secs()
             );

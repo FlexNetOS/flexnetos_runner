@@ -49,8 +49,11 @@ pub enum Outcome {
     BudgetDenied,
     /// Routed and delegated to a kernel.
     Delegated,
-    /// Delegation to the kernel failed.
+    /// Delegation to the kernel failed with a transient error (retryable).
     KernelFailed,
+    /// Delegation to the kernel failed with a fatal error (auth/permission/config — not retryable;
+    /// escalates immediately). Classified by [`crate::recovery::classify_kernel_error`].
+    KernelFatal,
     /// The delegation exceeded its wall-clock deadline and was abandoned (the kernel hung / ran long).
     DeadlineExceeded,
 }
@@ -67,9 +70,10 @@ impl Outcome {
     /// ([`EventCategory::Policy`]) — the stream where guardrail tampering is detectable by lineage.
     pub fn category(&self) -> EventCategory {
         match self {
-            Outcome::Delegated | Outcome::KernelFailed | Outcome::DeadlineExceeded => {
-                EventCategory::Execution
-            }
+            Outcome::Delegated
+            | Outcome::KernelFailed
+            | Outcome::KernelFatal
+            | Outcome::DeadlineExceeded => EventCategory::Execution,
             Outcome::ConstitutionViolated
             | Outcome::Unparseable
             | Outcome::VerifyFailed
@@ -277,6 +281,7 @@ mod tests {
         // Execution = the kernel actually ran (or was attempted).
         assert_eq!(Outcome::Delegated.category(), EventCategory::Execution);
         assert_eq!(Outcome::KernelFailed.category(), EventCategory::Execution);
+        assert_eq!(Outcome::KernelFatal.category(), EventCategory::Execution);
         assert_eq!(
             Outcome::DeadlineExceeded.category(),
             EventCategory::Execution
