@@ -152,6 +152,11 @@ fn main() -> anyhow::Result<()> {
                  the threshold; escalates, never retries)"
             );
             println!(
+                "  risk score         : off by default (FXRUN_RISK_ANNOTATE=1 → annotate each \
+                 delegated/failed audit event with a history-calibrated per-fingerprint failure \
+                 probability; advice-only, never blocks)"
+            );
+            println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
             println!(

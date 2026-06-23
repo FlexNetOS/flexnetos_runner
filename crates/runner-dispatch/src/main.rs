@@ -35,6 +35,7 @@ use runner_core::recovery::{
     FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger,
 };
 use runner_core::redact::{RedactingSink, Redactor};
+use runner_core::risk::{RiskLedger, RiskPolicy, RiskScore};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::scan::{self, ScanPolicy};
@@ -116,6 +117,7 @@ fn handle_failure(
     quarantine: &mut QuarantineLedger,
     rate_limiter: &mut RateLimiter,
     now_secs: u64,
+    risk: Option<RiskScore>,
     sink: &dyn EventSink,
     job: &JobSpec,
     program: &str,
@@ -130,7 +132,7 @@ fn handle_failure(
     // backoff), so a burst of the same route's work backs off. No-op unless a cooldown is configured.
     rate_limiter.record_failure(job.job.class(), now_secs);
     let detail = format!(
-        "{lead} | {}{}",
+        "{lead} | {}{}{}",
         directive.summary(),
         if now_quarantined {
             format!(
@@ -140,13 +142,18 @@ fn handle_failure(
             )
         } else {
             String::new()
+        },
+        match risk {
+            Some(r) => format!(" | {}", r.summary()),
+            None => String::new(),
         }
     );
     sink.emit(
         &DispatchEvent::for_job(outcome, job)
             .with_kernel(program)
             .with_recovery(directive.clone())
-            .with_detail(&detail),
+            .with_detail(&detail)
+            .with_risk(risk),
     );
     DispatchResponse::rejected(detail).with_recovery(directive)
 }
@@ -291,6 +298,8 @@ fn handle_request(
     rate_limiter: &mut RateLimiter,
     now_secs: u64,
     scan_policy: &ScanPolicy,
+    risk_policy: &RiskPolicy,
+    risk_ledger: &mut RiskLedger,
     deadline: &DeadlinePolicy,
     sink: &dyn EventSink,
     raw: &[u8],
@@ -502,6 +511,10 @@ fn handle_request(
     let plan = router::route(&job);
     let program = plan.kernel.program();
     let fp = fingerprint(&job);
+    // History-calibrated risk score for this fingerprint (advice-only) — computed from the record
+    // *before* this dispatch's own outcome, so it predicts rather than reflects. `None` when risk
+    // annotation is disabled (the default), leaving the audit line unchanged.
+    let risk = risk_policy.assess(risk_ledger, &fp);
     // Effective wall-clock deadline for THIS delegation: the tighter of the operator ceiling
     // (FXRUN_DEFAULT_DEADLINE_SECS) and the job's own envelope request. `None` → no bound (the
     // watchdog stays disengaged and the invoker is called directly — the default, unchanged path).
@@ -517,15 +530,27 @@ fn handle_request(
             // A healthy delegation also releases the route's failure cooldown early (one success
             // means the route is working again).
             rate_limiter.clear_route(job.job.class());
-            let mut event = DispatchEvent::for_job(Outcome::Delegated, &job).with_kernel(program);
+            // Record this clean outcome so the *next* dispatch's risk score reflects it.
+            risk_ledger.record(&fp, true);
+            let mut event = DispatchEvent::for_job(Outcome::Delegated, &job)
+                .with_kernel(program)
+                .with_risk(risk);
             if cost.is_measured() {
                 event = event.with_cost(cost);
             }
-            // Survival-tier signal: once a budget dimension passes 75% the operator/weave should
-            // see degradation in the audit trail *before* the hard halt (automaton's balance ladder).
+            // Advisory notes in the audit detail: the survival tier once a budget dimension passes 75%
+            // (automaton's balance ladder), and the history-calibrated risk score (kclaw0
+            // path-simulator) — both observability the operator/weave acts on, neither blocks.
             let tier = governor.tier();
+            let mut notes = Vec::new();
             if tier.is_degraded() {
-                event = event.with_detail(format!("survival tier: {tier}"));
+                notes.push(format!("survival tier: {tier}"));
+            }
+            if let Some(r) = risk {
+                notes.push(r.summary());
+            }
+            if !notes.is_empty() {
+                event = event.with_detail(notes.join(" | "));
             }
             sink.emit(&event);
             DispatchResponse {
@@ -539,42 +564,50 @@ fn handle_request(
         }
         // A kernel error is usually transient → recovery advises a backed-off retry, escalating to a
         // human only once the retry ceiling is exceeded; the failure also feeds the quarantine ledger.
-        Delegation::Failed(e) => handle_failure(
-            policy,
-            retry,
-            quarantine_policy,
-            quarantine,
-            rate_limiter,
-            now_secs,
-            sink,
-            &job,
-            program,
-            &fp,
-            FailureKind::KernelFailed,
-            Outcome::KernelFailed,
-            format!("kernel `{program}` invocation failed: {e}"),
-        ),
+        Delegation::Failed(e) => {
+            risk_ledger.record(&fp, false);
+            handle_failure(
+                policy,
+                retry,
+                quarantine_policy,
+                quarantine,
+                rate_limiter,
+                now_secs,
+                risk,
+                sink,
+                &job,
+                program,
+                &fp,
+                FailureKind::KernelFailed,
+                Outcome::KernelFailed,
+                format!("kernel `{program}` invocation failed: {e}"),
+            )
+        }
         // A hung / over-long delegation: bounded by the wall-clock deadline, abandoned, and routed
         // through the same recovery + quarantine path as a kernel error (the time axis the breaker /
         // governor / quarantine-by-failure don't otherwise cover).
-        Delegation::TimedOut(limit) => handle_failure(
-            policy,
-            retry,
-            quarantine_policy,
-            quarantine,
-            rate_limiter,
-            now_secs,
-            sink,
-            &job,
-            program,
-            &fp,
-            FailureKind::DeadlineExceeded,
-            Outcome::DeadlineExceeded,
-            format!(
-                "kernel `{program}` exceeded its {}s wall-clock deadline (hung / ran long) — abandoned",
-                limit.as_secs()
-            ),
-        ),
+        Delegation::TimedOut(limit) => {
+            risk_ledger.record(&fp, false);
+            handle_failure(
+                policy,
+                retry,
+                quarantine_policy,
+                quarantine,
+                rate_limiter,
+                now_secs,
+                risk,
+                sink,
+                &job,
+                program,
+                &fp,
+                FailureKind::DeadlineExceeded,
+                Outcome::DeadlineExceeded,
+                format!(
+                    "kernel `{program}` exceeded its {}s wall-clock deadline (hung / ran long) — abandoned",
+                    limit.as_secs()
+                ),
+            )
+        }
     }
 }
 
@@ -597,6 +630,8 @@ fn serve_once(
     rate_limiter: &mut RateLimiter,
     now_secs: u64,
     scan_policy: &ScanPolicy,
+    risk_policy: &RiskPolicy,
+    risk_ledger: &mut RiskLedger,
     deadline: &DeadlinePolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
@@ -621,6 +656,8 @@ fn serve_once(
         rate_limiter,
         now_secs,
         scan_policy,
+        risk_policy,
+        risk_ledger,
         deadline,
         sink,
         &raw,
@@ -654,6 +691,8 @@ fn serve(
     quarantine: &mut QuarantineLedger,
     rate_limiter: &mut RateLimiter,
     scan_policy: &ScanPolicy,
+    risk_policy: &RiskPolicy,
+    risk_ledger: &mut RiskLedger,
     deadline: &DeadlinePolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
@@ -710,8 +749,13 @@ fn serve(
         Some(s) => format!("content scan: block ≥ {s}"),
         None => "content scan: off".to_string(),
     };
+    let risk_note = if risk_policy.is_active() {
+        "risk score: on".to_string()
+    } else {
+        "risk score: off".to_string()
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -722,6 +766,7 @@ fn serve(
         deadline_note,
         rate_note,
         scan_note,
+        risk_note,
         redaction_note,
         approval_note,
         constitution_note
@@ -745,6 +790,8 @@ fn serve(
             rate_limiter,
             now_secs,
             scan_policy,
+            risk_policy,
+            risk_ledger,
             deadline,
             redactor,
             sink,
@@ -937,6 +984,12 @@ fn main() -> anyhow::Result<()> {
             let scan_policy = ScanPolicy::from_env(
                 &std::env::var("FXRUN_SCAN_BLOCK_SEVERITY").unwrap_or_default(),
             );
+            // History-calibrated risk score: when FXRUN_RISK_ANNOTATE is truthy, annotate each
+            // delegated/failed audit event with a smoothed per-fingerprint failure probability
+            // (advice-only; never blocks). Off by default — the audit stream is unchanged.
+            let risk_policy =
+                RiskPolicy::from_env(&std::env::var("FXRUN_RISK_ANNOTATE").unwrap_or_default());
+            let mut risk_ledger = RiskLedger::new();
             // Constitution: seal the runner's own governing files (comma-separated paths in
             // FXRUN_CONSTITUTION) at startup; a mid-run change refuses all dispatch. Inert if unset.
             let constitution = {
@@ -1019,6 +1072,8 @@ fn main() -> anyhow::Result<()> {
                 &mut quarantine,
                 &mut rate_limiter,
                 &scan_policy,
+                &risk_policy,
+                &mut risk_ledger,
                 &deadline,
                 &redactor,
                 sink.as_ref(),
@@ -1126,6 +1181,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1155,6 +1212,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1183,6 +1242,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1208,6 +1269,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             b"this is not json",
@@ -1248,6 +1311,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&ok).unwrap(),
@@ -1267,6 +1332,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
@@ -1286,6 +1353,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &sink,
             b"garbage",
@@ -1333,6 +1402,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1360,6 +1431,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1391,6 +1464,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1413,6 +1488,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1454,6 +1531,8 @@ mod tests {
                 &mut RateLimiter::disabled(),
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1512,6 +1591,8 @@ mod tests {
                 &mut RateLimiter::disabled(),
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
@@ -1562,6 +1643,8 @@ mod tests {
                     &mut RateLimiter::disabled(),
                     0,
                     &ScanPolicy::disabled(),
+                    &RiskPolicy::disabled(),
+                    &mut RiskLedger::new(),
                     &DeadlinePolicy::disabled(),
                     &NullSink,
                     &raw
@@ -1620,6 +1703,8 @@ mod tests {
                 &mut RateLimiter::disabled(),
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
@@ -1680,6 +1765,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -1724,6 +1811,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1750,6 +1839,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1790,6 +1881,8 @@ mod tests {
                 &mut RateLimiter::disabled(),
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1824,6 +1917,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1857,6 +1952,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1891,6 +1988,8 @@ mod tests {
                 &mut RateLimiter::disabled(),
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1966,6 +2065,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(), // no operator cap — the per-job envelope deadline applies
             &sink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -2014,6 +2115,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2039,6 +2142,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2066,6 +2171,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2107,6 +2214,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -2140,6 +2249,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&approved_frame).unwrap(),
@@ -2164,6 +2275,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&forged).unwrap(),
@@ -2234,6 +2347,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -2323,6 +2438,8 @@ mod tests {
                 &mut RateLimiter::disabled(),
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &Redactor::new(),
                 &NullSink,
@@ -2410,6 +2527,8 @@ mod tests {
                 &mut RateLimiter::disabled(),
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &redactor,
                 &sink,
@@ -2484,6 +2603,8 @@ mod tests {
                 &mut rl,
                 0,
                 &ScanPolicy::disabled(),
+                &RiskPolicy::disabled(),
+                &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -2505,6 +2626,8 @@ mod tests {
             &mut rl,
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2558,6 +2681,8 @@ mod tests {
             &mut rl,
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2580,6 +2705,8 @@ mod tests {
             &mut rl,
             5,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2625,6 +2752,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2647,6 +2776,8 @@ mod tests {
             &mut RateLimiter::disabled(),
             0,
             &ScanPolicy::block_at(Severity::High),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2665,5 +2796,71 @@ mod tests {
             1,
             "the blocked job never reached the kernel (still 1 from the gate-off case)"
         );
+    }
+
+    #[test]
+    fn risk_score_climbs_with_failure_history_and_rides_the_audit_event() {
+        use runner_core::events::DispatchEvent;
+        use runner_core::risk::{RiskBand, RiskModel, RiskPolicy};
+        use std::cell::RefCell;
+
+        struct Recorder(RefCell<Vec<DispatchEvent>>);
+        impl EventSink for Recorder {
+            fn emit(&self, e: &DispatchEvent) {
+                self.0.borrow_mut().push(e.clone());
+            }
+        }
+
+        let inv = FailingInvoker::default();
+        let sink = Recorder(RefCell::new(Vec::new()));
+        let risk_policy = RiskPolicy::enabled(RiskModel::standard());
+        let mut risk_ledger = RiskLedger::new();
+        let raw = serde_json::to_vec(&sign_frame(b"k", &ci_spec(false)).unwrap()).unwrap();
+
+        // Drive the same (always-failing) job several times; each failure feeds the risk ledger.
+        for _ in 0..6 {
+            handle_request(
+                b"k",
+                &inv,
+                &ConstitutionStatus::Intact,
+                &ApprovalPolicy::none(),
+                &mut LoopGuard::new(100, 100), // keep the breaker out of the way for this run
+                &mut Governor::unlimited(),
+                &RecoveryPolicy::new(99, 1), // never escalate within this run (stay on the retry path)
+                &mut RetryLedger::new(),
+                &QuarantinePolicy::disabled(),
+                &mut QuarantineLedger::new(),
+                &mut RateLimiter::disabled(),
+                0,
+                &ScanPolicy::disabled(),
+                &risk_policy,
+                &mut risk_ledger,
+                &DeadlinePolicy::disabled(),
+                &sink,
+                &raw,
+            );
+        }
+
+        let events = sink.0.into_inner();
+        // The FIRST event sees no history → score at the base rate (low band).
+        let first_risk = events[0].risk.expect("risk annotation is on");
+        assert_eq!(first_risk.band, RiskBand::Low);
+        assert_eq!(first_risk.samples, 0);
+        // By the LAST event the accumulated failures have driven the score into the high band.
+        let last_risk = events.last().unwrap().risk.expect("risk annotation is on");
+        assert_eq!(last_risk.band, RiskBand::High);
+        assert!(last_risk.score > first_risk.score);
+        assert_eq!(
+            last_risk.samples, 5,
+            "5 prior failures informed the 6th assessment"
+        );
+        // The detail line carries the human-readable risk summary too.
+        assert!(events
+            .last()
+            .unwrap()
+            .detail
+            .as_ref()
+            .unwrap()
+            .contains("risk: high"));
     }
 }
