@@ -43,6 +43,7 @@ use runner_core::router::{self, Kernel, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::scan::{self, ScanPolicy};
 use runner_core::singleflight::{FlightLease, SingleFlight};
+use runner_core::stategate::{StateGateDecision, StateGatePolicy};
 use runner_core::targets::{TargetAllowlist, TargetDecision};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
 use runner_core::workspace::{JobWorkspace, WorkspaceProvider};
@@ -570,6 +571,8 @@ fn handle_request(
     approval: &ApprovalPolicy,
     authority: &AuthorityPolicy,
     target_allowlist: &TargetAllowlist,
+    state_gate: &StateGatePolicy,
+    state_defer_secs: u64,
     singleflight: &mut SingleFlight,
     guard: &mut LoopGuard,
     governor: &mut Governor,
@@ -774,6 +777,37 @@ fn handle_request(
                 .with_detail(&detail),
         );
         return DispatchResponse::rejected(detail).with_recovery(directive);
+    }
+
+    // State-gated route admission (automaton idle-only tools × AgentState): when the governor's
+    // survival tier is degraded, optionally defer non-essential route classes before they consume
+    // single-flight locks, rate slots, loop-window entries, budget, or kernel time. This is
+    // back-pressure, not a job failure, so it returns an attempt-0 retry-after directive.
+    if state_gate.is_active() {
+        if let StateGateDecision::Deferred {
+            class,
+            current,
+            allowed_until,
+        } = state_gate.check(&job, governor.tier())
+        {
+            let reason = format!(
+                "route class `{class}` deferred by state gate: current tier {current} exceeds allowed tier {allowed_until}"
+            );
+            let directive = RecoveryDirective {
+                action: RecoveryVerb::Retry,
+                attempt: 0,
+                max_retries: policy.max_retries(),
+                backoff_secs: state_defer_secs,
+                reason: reason.clone(),
+            };
+            let detail = format!("{reason} | {}", directive.summary());
+            sink.emit(
+                &DispatchEvent::for_job(Outcome::StateDeferred, &job)
+                    .with_recovery(directive.clone())
+                    .with_detail(&detail),
+            );
+            return DispatchResponse::rejected(detail).with_recovery(directive);
+        }
     }
 
     // Per-target single-flight mutex (Archon older-wins locks + kclaw0 maxContainers prior art):
@@ -1021,6 +1055,8 @@ fn serve_once(
     approval: &ApprovalPolicy,
     authority: &AuthorityPolicy,
     target_allowlist: &TargetAllowlist,
+    state_gate: &StateGatePolicy,
+    state_defer_secs: u64,
     singleflight: &mut SingleFlight,
     guard: &mut LoopGuard,
     governor: &mut Governor,
@@ -1051,6 +1087,8 @@ fn serve_once(
         approval,
         authority,
         target_allowlist,
+        state_gate,
+        state_defer_secs,
         singleflight,
         guard,
         governor,
@@ -1091,6 +1129,8 @@ fn serve(
     approval: &ApprovalPolicy,
     authority: &AuthorityPolicy,
     target_allowlist: &TargetAllowlist,
+    state_gate: &StateGatePolicy,
+    state_defer_secs: u64,
     singleflight: &mut SingleFlight,
     guard: &mut LoopGuard,
     governor: &mut Governor,
@@ -1134,6 +1174,11 @@ fn serve(
         format!("target allowlist: {}", target_allowlist.describe())
     } else {
         "target allowlist: off".to_string()
+    };
+    let state_note = if state_gate.is_active() {
+        format!("state gate: {}", state_gate.describe())
+    } else {
+        "state gate: off".to_string()
     };
     let singleflight_note = "single-flight: per-target older-wins".to_string();
     let quarantine_note = if quarantine_policy.is_active() {
@@ -1180,7 +1225,7 @@ fn serve(
         "risk score: off".to_string()
     };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -1197,6 +1242,7 @@ fn serve(
         approval_note,
         authority_note,
         target_note,
+        state_note,
         singleflight_note,
         constitution_note
     );
@@ -1212,6 +1258,8 @@ fn serve(
             approval,
             authority,
             target_allowlist,
+            state_gate,
+            state_defer_secs,
             singleflight,
             guard,
             governor,
@@ -1503,6 +1551,16 @@ fn main() -> anyhow::Result<()> {
             let target_allowlist =
                 TargetAllowlist::from_env(std::env::var("FXRUN_KERNEL_ALLOWLIST").ok().as_deref())
                     .map_err(|e| anyhow::anyhow!("invalid FXRUN_KERNEL_ALLOWLIST: {e}"))?;
+            // State-gated route admission: defer selected route classes when the governor's survival
+            // tier is too degraded, e.g. `FXRUN_STATE_GATE=agent=full,cycle=conserving`. Deferrals
+            // carry an attempt-0 retry-after and consume no single-flight/rate/breaker/budget slot.
+            let state_gate =
+                StateGatePolicy::from_rules(&std::env::var("FXRUN_STATE_GATE").unwrap_or_default())
+                    .map_err(|e| anyhow::anyhow!("invalid FXRUN_STATE_GATE: {e}"))?;
+            let state_defer_secs = match env_u64("FXRUN_STATE_DEFER_SECS") {
+                0 => 60,
+                n => n,
+            };
             // Audit trail: every event to FXRUN_EVENT_LOG (when set); admission/guardrail
             // (policy-category) events ALSO to a distinct FXRUN_POLICY_LOG stream — automaton's
             // separate `policy_decisions` table, so guardrail tampering is auditable on its own.
@@ -1594,6 +1652,8 @@ fn main() -> anyhow::Result<()> {
                 &approval,
                 &authority,
                 &target_allowlist,
+                &state_gate,
+                state_defer_secs,
                 &mut singleflight,
                 &mut guard,
                 &mut governor,
@@ -1744,6 +1804,19 @@ mod tests {
         }
     }
 
+    fn agent_spec() -> JobSpec {
+        JobSpec {
+            id: "agent-1".into(),
+            correlation_id: "delivery-agent".into(),
+            from_fork: false,
+            job: JobKind::AgentTask {
+                repo: "FlexNetOS/meta".into(),
+                prompt_ref: "p".into(),
+                agent: Default::default(),
+            },
+        }
+    }
+
     #[test]
     fn accepts_signed_non_fork_job_and_delegates() {
         let inv = RecordingInvoker::default();
@@ -1756,6 +1829,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -1792,6 +1867,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::from_rules("ci=maintainer").unwrap(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -1839,6 +1916,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::from_rules("ci=maintainer").unwrap(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -1861,6 +1940,51 @@ mod tests {
     }
 
     #[test]
+    fn state_gate_defers_route_under_degraded_survival_tier_before_slots() {
+        let inv = RecordingInvoker::default();
+        let frame = sign_frame(b"k", &agent_spec()).unwrap();
+        let raw = serde_json::to_vec(&frame).unwrap();
+        let mut governor = Governor::from_env(4, 0, 0, 0);
+        for _ in 0..3 {
+            assert!(matches!(governor.admit(), Admission::Admit));
+        }
+        assert_eq!(governor.tier(), runner_core::SurvivalTier::Conserving);
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
+            &StateGatePolicy::from_rules("agent=full").unwrap(),
+            42,
+            &mut SingleFlight::new(),
+            &mut LoopGuard::default(),
+            &mut governor,
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!resp.accepted);
+        assert!(resp.error.as_deref().unwrap().contains("state gate"));
+        let rec = resp.recovery.unwrap();
+        assert_eq!(rec.action, RecoveryVerb::Retry);
+        assert_eq!(rec.attempt, 0);
+        assert_eq!(rec.backoff_secs, 42);
+        assert_eq!(inv.calls(), 0, "deferred route must not reach kernel");
+    }
+
+    #[test]
     fn singleflight_denies_competing_same_target_before_delegation() {
         let inv = RecordingInvoker::default();
         let mut singleflight = SingleFlight::new();
@@ -1880,6 +2004,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut singleflight,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -1929,6 +2055,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut singleflight,
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
@@ -1967,6 +2095,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::from_env(Some("atc,hf,weave")).unwrap(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2013,6 +2143,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::from_env(Some("loop")).unwrap(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2046,6 +2178,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2080,6 +2214,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2111,6 +2247,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2157,6 +2295,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -2182,6 +2322,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -2207,6 +2349,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -2260,6 +2404,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -2293,6 +2439,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -2330,6 +2478,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut Governor::unlimited(),
@@ -2358,6 +2508,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut Governor::unlimited(),
@@ -2405,6 +2557,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut guard,
                 &mut governor,
@@ -2469,6 +2623,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut guard,
                 &mut gov,
@@ -2525,6 +2681,8 @@ mod tests {
                     &ApprovalPolicy::none(),
                     &AuthorityPolicy::disabled(),
                     &TargetAllowlist::disabled(),
+                    &StateGatePolicy::disabled(),
+                    60,
                     &mut SingleFlight::new(),
                     &mut guard,
                     &mut Governor::unlimited(),
@@ -2589,6 +2747,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut guard,
                 gov,
@@ -2655,6 +2815,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2705,6 +2867,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -2737,6 +2901,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut gov,
@@ -2783,6 +2949,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
@@ -2823,6 +2991,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2862,6 +3032,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -2902,6 +3074,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
@@ -2997,6 +3171,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -3051,6 +3227,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut gov,
@@ -3082,6 +3260,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut gov,
@@ -3115,6 +3295,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut tight,
             &mut gov,
@@ -3162,6 +3344,8 @@ mod tests {
             &approval,
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -3201,6 +3385,8 @@ mod tests {
             &approval,
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -3231,6 +3417,8 @@ mod tests {
             &approval,
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(), // fresh guard so the breaker doesn't trip on the repeat
             &mut gov,
@@ -3316,6 +3504,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -3411,6 +3601,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
@@ -3510,6 +3702,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
@@ -3590,6 +3784,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut guard,
                 &mut gov,
@@ -3617,6 +3813,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -3676,6 +3874,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -3704,6 +3904,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut guard,
             &mut gov,
@@ -3755,6 +3957,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -3783,6 +3987,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
@@ -3844,6 +4050,8 @@ mod tests {
                 &ApprovalPolicy::none(),
                 &AuthorityPolicy::disabled(),
                 &TargetAllowlist::disabled(),
+                &StateGatePolicy::disabled(),
+                60,
                 &mut SingleFlight::new(),
                 &mut LoopGuard::new(100, 100), // keep the breaker out of the way for this run
                 &mut Governor::unlimited(),
@@ -3909,6 +4117,8 @@ mod tests {
             &ApprovalPolicy::none(),
             &AuthorityPolicy::disabled(),
             &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
             &mut SingleFlight::new(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),

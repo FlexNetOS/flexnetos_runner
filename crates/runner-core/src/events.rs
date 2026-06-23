@@ -45,6 +45,8 @@ pub enum Outcome {
     TargetDenied,
     /// Refused: this job's fingerprint is quarantined (it failed at the kernel too many times).
     Quarantined,
+    /// Deferred: current dispatcher survival state is too degraded for this route class.
+    StateDeferred,
     /// Refused: another in-flight job already owns this mutable target (older-wins single-flight).
     SingleFlightDenied,
     /// Refused for timing: the dispatch rate window is full, or the job's route is in failure cooldown.
@@ -93,6 +95,7 @@ impl Outcome {
             | Outcome::AuthorityDenied
             | Outcome::TargetDenied
             | Outcome::Quarantined
+            | Outcome::StateDeferred
             | Outcome::SingleFlightDenied
             | Outcome::RateLimited
             | Outcome::LoopTripped
@@ -311,6 +314,7 @@ mod tests {
             Outcome::AuthorityDenied,
             Outcome::TargetDenied,
             Outcome::Quarantined,
+            Outcome::StateDeferred,
             Outcome::SingleFlightDenied,
             Outcome::RateLimited,
             Outcome::LoopTripped,
