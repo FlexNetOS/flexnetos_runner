@@ -41,13 +41,18 @@ struct DryRunInvoker;
 #[cfg(unix)]
 impl KernelInvoker for DryRunInvoker {
     fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<(), String> {
+        let agent = match plan.agent {
+            Some(a) => format!(", agent {a}"),
+            None => String::new(),
+        };
         eprintln!(
-            "  delegate → `{}` : {} (job {}, corr {}, repo {})",
+            "  delegate → `{}` : {} (job {}, corr {}, repo {}{})",
             plan.kernel.program(),
             plan.intent,
             job.id,
             job.correlation_id,
-            plan.repo
+            plan.repo,
+            agent
         );
         Ok(())
     }
@@ -154,8 +159,12 @@ fn stdin_dry_run(key: &str) -> anyhow::Result<()> {
     };
     let plan = router::route(&job);
     let place = safety::placement(&job);
+    let agent = match plan.agent {
+        Some(a) => format!(" agent={a}"),
+        None => String::new(),
+    };
     println!(
-        "verified={verified} placement={place:?} kernel={:?} program={} intent='{}'",
+        "verified={verified} placement={place:?} kernel={:?} program={}{agent} intent='{}'",
         plan.kernel,
         plan.kernel.program(),
         plan.intent

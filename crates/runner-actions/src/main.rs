@@ -180,6 +180,17 @@ fn install(cli: &Cli, version: Option<&str>, arch: &str) -> Result<()> {
         Some(version) => version.trim_start_matches('v').to_string(),
         None => latest_runner_version()?,
     };
+    // GitHub enforces a minimum self-hosted runner version: registration is refused and job
+    // queuing pauses below it, and pre-floor runners carry the "Runner-Escape" host-env/SSH-key
+    // exposure (github.blog changelog 2026-06-12). Fail closed on an explicitly-pinned stale
+    // version rather than installing a runner GitHub will reject.
+    if !meets_min_runner_version(&version) {
+        bail!(
+            "actions/runner v{version} is below the enforced minimum v{MIN_RUNNER_VERSION} \
+             (GitHub refuses registration / pauses job queuing below it; pre-floor runners are \
+             exposed to the Runner-Escape host-secret leak). Omit --version to fetch the latest."
+        );
+    }
     let archive = format!("actions-runner-linux-{arch}-{version}.tar.gz");
     let url = format!("https://github.com/actions/runner/releases/download/v{version}/{archive}");
 
@@ -383,6 +394,39 @@ fn install_service_home_dropin(unit: &str, service_home: &Path) -> Result<()> {
     Ok(())
 }
 
+/// GitHub-enforced minimum self-hosted `actions/runner` version (changelog 2026-06-12). Below
+/// this, GitHub refuses registration and pauses job queuing, and the runner is exposed to the
+/// Runner-Escape host-secret leak. The supervisor will not install a version under this floor.
+const MIN_RUNNER_VERSION: &str = "2.329.0";
+
+/// Parse a dotted `major.minor.patch` (extra/non-numeric components ignored) for comparison.
+/// Fail-open on an unparseable version (treated as "meets floor") so a future tag format we
+/// don't recognize never blocks a legitimately-latest runner — the floor exists to catch
+/// *explicitly-pinned stale* versions, not to second-guess GitHub's own latest tag.
+fn parse_version(v: &str) -> Option<(u64, u64, u64)> {
+    let mut it = v.trim().trim_start_matches('v').split('.');
+    let major = it.next()?.parse().ok()?;
+    let minor = it.next().unwrap_or("0").parse().ok()?;
+    let patch = it
+        .next()
+        .unwrap_or("0")
+        .split(|c: char| !c.is_ascii_digit())
+        .next()
+        .unwrap_or("0")
+        .parse()
+        .ok()?;
+    Some((major, minor, patch))
+}
+
+/// Whether `version` meets [`MIN_RUNNER_VERSION`]. Unparseable inputs fail open (see
+/// [`parse_version`]).
+fn meets_min_runner_version(version: &str) -> bool {
+    match (parse_version(version), parse_version(MIN_RUNNER_VERSION)) {
+        (Some(v), Some(min)) => v >= min,
+        _ => true,
+    }
+}
+
 fn latest_runner_version() -> Result<String> {
     require_cmd("gh")?;
     let out = Command::new("gh")
@@ -496,4 +540,34 @@ fn default_name() -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "localhost".to_string());
     format!("fxrun-{host}-{}", std::process::id())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn min_version_floor_is_enforced() {
+        // At or above the floor → allowed.
+        assert!(meets_min_runner_version(MIN_RUNNER_VERSION));
+        assert!(meets_min_runner_version("2.329.0"));
+        assert!(meets_min_runner_version("2.330.1"));
+        assert!(meets_min_runner_version("v2.329.0")); // leading-v tolerated
+        assert!(meets_min_runner_version("3.0.0"));
+
+        // Below the floor → refused.
+        assert!(!meets_min_runner_version("2.328.0"));
+        assert!(!meets_min_runner_version("2.300.0"));
+        assert!(!meets_min_runner_version("1.999.999"));
+    }
+
+    #[test]
+    fn parse_version_is_tolerant_and_fails_open() {
+        assert_eq!(parse_version("2.329.0"), Some((2, 329, 0)));
+        assert_eq!(parse_version("2.329"), Some((2, 329, 0)));
+        assert_eq!(parse_version("2.329.0-rc1"), Some((2, 329, 0)));
+        // Garbage is unparseable → floor check fails open (never blocks a real latest tag).
+        assert_eq!(parse_version("not-a-version"), None);
+        assert!(meets_min_runner_version("not-a-version"));
+    }
 }

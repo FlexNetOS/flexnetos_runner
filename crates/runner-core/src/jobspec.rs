@@ -3,6 +3,7 @@
 //! HMAC-SHA256 signed with a key sealed in envctl's vault; the runner verifies (constant
 //! time) before routing. Serde-serializable so it rides the UDS frame as JSON.
 
+use crate::agent::Agent;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -17,14 +18,24 @@ type HmacSha256 = Hmac<Sha256>;
 pub enum JobKind {
     /// Build/test a ref → loop_lib fan-out.
     Ci { repo: String, head_sha: String },
-    /// Run the merge-gate review for a PR → atc reviewer.
+    /// Run the merge-gate review for a PR → atc reviewer, driven by [`agent`](Self::ReviewGate::agent).
     ReviewGate {
         repo: String,
         pr_number: u64,
         head_sha: String,
+        /// Which agent backend `atc` reviews with. Absent on the wire → Claude (the default),
+        /// so older App frames stay valid.
+        #[serde(default)]
+        agent: Agent,
     },
-    /// A generic agent task → atc.
-    AgentTask { repo: String, prompt_ref: String },
+    /// A generic agent task → atc, driven by [`agent`](Self::AgentTask::agent).
+    AgentTask {
+        repo: String,
+        prompt_ref: String,
+        /// Which agent backend `atc` runs the task with. Absent on the wire → Claude.
+        #[serde(default)]
+        agent: Agent,
+    },
     /// A loop cycle (ship) → handoff `hf`.
     LoopCycle { repo: String, task_id: String },
 }
@@ -125,5 +136,49 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: JobSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
+    }
+
+    #[test]
+    fn app_review_gate_frame_without_agent_decodes_to_claude() {
+        // The EXACT JobSpec JSON `flexnetos_github_app::dispatch::build_frame` emits for a PR:
+        // it carries no `agent` field (the App doesn't know about agent selection yet). The
+        // runner must accept it and treat it as Claude — the backward-compat guarantee that
+        // keeps every existing FlexNetOS PR flowing through the runner.
+        let app_frame = r#"{
+            "id": "job-1",
+            "correlation_id": "delivery-9",
+            "from_fork": false,
+            "job": { "kind": "review_gate", "repo": "FlexNetOS/meta", "pr_number": 7, "head_sha": "deadbeef" }
+        }"#;
+        let spec: JobSpec = serde_json::from_str(app_frame).expect("app frame parses");
+        match spec.job {
+            JobKind::ReviewGate {
+                agent, pr_number, ..
+            } => {
+                assert_eq!(pr_number, 7);
+                assert_eq!(agent, Agent::Claude, "absent agent → Claude (default)");
+            }
+            other => panic!("expected ReviewGate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn agent_selection_survives_sign_verify_roundtrip() {
+        // An explicit non-default backend is part of the signed bytes — tampering with it
+        // breaks the signature, so the agent choice is integrity-protected end to end.
+        let s = JobSpec {
+            id: "job-1".into(),
+            correlation_id: "c".into(),
+            from_fork: false,
+            job: JobKind::AgentTask {
+                repo: "FlexNetOS/x".into(),
+                prompt_ref: "p".into(),
+                agent: Agent::Kimi,
+            },
+        };
+        let sig = s.sign(b"key");
+        assert!(s.verify(b"key", &sig).is_ok());
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"agent\":\"kimi\""));
     }
 }
