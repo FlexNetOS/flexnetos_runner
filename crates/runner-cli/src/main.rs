@@ -169,6 +169,10 @@ fn main() -> anyhow::Result<()> {
                  request envelope)"
             );
             println!(
+                "  liveness watchdog  : off by default (FXRUN_IDLE_TIMEOUT_SECS / envelope \
+                 idle_timeout_secs caps silent kernels; idle timeout → recovery + quarantine)"
+            );
+            println!(
                 "  rate limit         : off by default (FXRUN_RATE_MAX per FXRUN_RATE_WINDOW_SECS \
                  rolling window + FXRUN_ROUTE_COOLDOWN_SECS per-route failure backoff; refusals carry \
                  a retry-after, never escalate)"

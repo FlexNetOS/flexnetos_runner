@@ -62,6 +62,8 @@ pub enum Outcome {
     KernelFatal,
     /// The delegation exceeded its wall-clock deadline and was abandoned (the kernel hung / ran long).
     DeadlineExceeded,
+    /// The delegation produced no output/progress within its idle/liveness timeout.
+    IdleTimeout,
 }
 
 impl Outcome {
@@ -79,7 +81,8 @@ impl Outcome {
             Outcome::Delegated
             | Outcome::KernelFailed
             | Outcome::KernelFatal
-            | Outcome::DeadlineExceeded => EventCategory::Execution,
+            | Outcome::DeadlineExceeded
+            | Outcome::IdleTimeout => EventCategory::Execution,
             Outcome::ConstitutionViolated
             | Outcome::Unparseable
             | Outcome::VerifyFailed
@@ -295,6 +298,7 @@ mod tests {
             Outcome::DeadlineExceeded.category(),
             EventCategory::Execution
         );
+        assert_eq!(Outcome::IdleTimeout.category(), EventCategory::Execution);
         // Everything else is an admission/guardrail (policy) decision.
         for o in [
             Outcome::ConstitutionViolated,

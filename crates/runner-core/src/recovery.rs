@@ -42,6 +42,9 @@ pub enum FailureKind {
     /// long once; a backed-off retry may complete). Persistent timeouts escalate via the retry
     /// ceiling and latch the quarantine ledger like any repeated failure.
     DeadlineExceeded,
+    /// The delegation stayed alive but silent beyond its idle/liveness timeout — treated as transient
+    /// like a wall-clock timeout, with retry ceiling/quarantine as backstops.
+    IdleTimeout,
     /// The runaway-loop breaker tripped — the same work is already looping (NOT retryable: retrying
     /// is exactly what's going wrong; a human must look).
     LoopTripped,
@@ -72,7 +75,7 @@ impl FailureKind {
     fn is_retryable(self) -> bool {
         matches!(
             self,
-            FailureKind::KernelFailed | FailureKind::DeadlineExceeded
+            FailureKind::KernelFailed | FailureKind::DeadlineExceeded | FailureKind::IdleTimeout
         )
     }
 }
@@ -232,7 +235,7 @@ impl RecoveryPolicy {
                     "kernel returned an unrecoverable error (auth / permission / configuration) — \
                      re-dispatching the same job cannot succeed; a human must fix the configuration"
                 }
-                FailureKind::KernelFailed | FailureKind::DeadlineExceeded => {
+                FailureKind::KernelFailed | FailureKind::DeadlineExceeded | FailureKind::IdleTimeout => {
                     unreachable!("retryable failures take the retry branch")
                 }
             };
@@ -247,6 +250,7 @@ impl RecoveryPolicy {
 
         let cause = match failure {
             FailureKind::DeadlineExceeded => "deadline exceeded",
+            FailureKind::IdleTimeout => "idle timeout exceeded",
             _ => "kernel failed",
         };
         let attempt = ledger.bump(fingerprint);
