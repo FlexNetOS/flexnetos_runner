@@ -53,6 +53,9 @@ pub enum FailureKind {
     /// The job's class requires a human approval grant that was absent/invalid (NOT retryable by the
     /// runner: a human must approve, then the orchestrator re-dispatches *with* a grant).
     ApprovalRequired,
+    /// The envelope submitter lacks the route's required authority tier (NOT retryable by the runner:
+    /// a higher-authority actor must submit/approve the privileged route).
+    AuthorityDenied,
     /// The job's fingerprint is quarantined after repeated kernel failures (NOT retryable: the same
     /// work keeps failing the same way; a human must investigate and re-arm the runner).
     Quarantined,
@@ -202,6 +205,10 @@ impl RecoveryPolicy {
                 FailureKind::ApprovalRequired => {
                     "job class requires human approval — a human must approve, then re-dispatch \
                      with an approval grant"
+                }
+                FailureKind::AuthorityDenied => {
+                    "submitter authority is below the route floor — a higher-authority actor must \
+                     submit or approve this privileged dispatch"
                 }
                 FailureKind::Quarantined => {
                     "job fingerprint is quarantined after repeated kernel failures — re-dispatching \

@@ -49,6 +49,7 @@
 
 pub mod agent;
 pub mod approval;
+pub mod authority;
 pub mod constitution;
 pub mod cost;
 pub mod deadline;
@@ -72,6 +73,7 @@ pub mod workspace;
 
 pub use agent::{Agent, AgentSelection, AgentSelectionSource, ApiStyle};
 pub use approval::ApprovalPolicy;
+pub use authority::{AuthorityDecision, AuthorityPolicy, AuthorityTier, Submitter};
 pub use constitution::{Constitution, ConstitutionStatus};
 pub use cost::JobCost;
 pub use deadline::DeadlinePolicy;
