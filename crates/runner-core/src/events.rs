@@ -50,6 +50,36 @@ impl Outcome {
     pub fn is_rejection(&self) -> bool {
         !matches!(self, Outcome::Delegated)
     }
+
+    /// Which audit stream this outcome belongs to (adapted from `automaton`'s separate
+    /// `policy_decisions` table). [`EventCategory::Execution`] is the *result of running the kernel*
+    /// (delegated / kernel-failed); everything else is an **admission/guardrail decision**
+    /// ([`EventCategory::Policy`]) — the stream where guardrail tampering is detectable by lineage.
+    pub fn category(&self) -> EventCategory {
+        match self {
+            Outcome::Delegated | Outcome::KernelFailed => EventCategory::Execution,
+            Outcome::ConstitutionViolated
+            | Outcome::Unparseable
+            | Outcome::VerifyFailed
+            | Outcome::Malformed
+            | Outcome::ForkRejected
+            | Outcome::ApprovalRequired
+            | Outcome::LoopTripped
+            | Outcome::BudgetDenied => EventCategory::Policy,
+        }
+    }
+}
+
+/// Which audit stream an event belongs to — separates **admission/guardrail decisions** from the
+/// **execution** of the work, so the policy layer can be audited (and tamper-checked) on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventCategory {
+    /// An admission / guardrail decision (constitution, frame auth, lint, fork, approval, breaker,
+    /// budget) — the runner-plane analogue of automaton's `policy_decisions` stream.
+    Policy,
+    /// The result of actually running the kernel (delegated or kernel-failed).
+    Execution,
 }
 
 /// One audit record. Serializes to a single JSON object (one NDJSON line). Job-identifying fields
@@ -131,6 +161,11 @@ impl DispatchEvent {
         self
     }
 
+    /// The audit stream this event belongs to (policy vs. execution) — see [`Outcome::category`].
+    pub fn category(&self) -> EventCategory {
+        self.outcome.category()
+    }
+
     /// Render as a single NDJSON line (no trailing newline; the sink adds it).
     pub fn to_ndjson(&self) -> String {
         serde_json::to_string(self).expect("DispatchEvent serializes")
@@ -197,6 +232,39 @@ mod tests {
         assert!(Outcome::LoopTripped.is_rejection());
         assert!(Outcome::BudgetDenied.is_rejection());
         assert!(!Outcome::Delegated.is_rejection());
+    }
+
+    #[test]
+    fn category_splits_policy_from_execution() {
+        // Execution = the kernel actually ran (or was attempted).
+        assert_eq!(Outcome::Delegated.category(), EventCategory::Execution);
+        assert_eq!(Outcome::KernelFailed.category(), EventCategory::Execution);
+        // Everything else is an admission/guardrail (policy) decision.
+        for o in [
+            Outcome::ConstitutionViolated,
+            Outcome::Unparseable,
+            Outcome::VerifyFailed,
+            Outcome::Malformed,
+            Outcome::ForkRejected,
+            Outcome::ApprovalRequired,
+            Outcome::LoopTripped,
+            Outcome::BudgetDenied,
+        ] {
+            assert_eq!(
+                o.category(),
+                EventCategory::Policy,
+                "{o:?} should be policy"
+            );
+        }
+        // The convenience on DispatchEvent agrees.
+        assert_eq!(
+            DispatchEvent::for_job(Outcome::Delegated, &job()).category(),
+            EventCategory::Execution
+        );
+        assert_eq!(
+            DispatchEvent::untied(Outcome::VerifyFailed, "x").category(),
+            EventCategory::Policy
+        );
     }
 
     #[test]

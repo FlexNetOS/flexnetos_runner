@@ -136,6 +136,10 @@ fn main() -> anyhow::Result<()> {
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
             println!(
+                "  policy stream      : off by default (FXRUN_POLICY_LOG → admission/guardrail \
+                 decisions only, for tamper-lineage)"
+            );
+            println!(
                 "  constitution       : off by default (FXRUN_CONSTITUTION → seal governing files; \
                  mid-run change halts dispatch)"
             );
