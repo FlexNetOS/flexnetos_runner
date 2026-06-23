@@ -116,6 +116,10 @@ fn main() -> anyhow::Result<()> {
             println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
+            println!(
+                "  constitution       : off by default (FXRUN_CONSTITUTION → seal governing files; \
+                 mid-run change halts dispatch)"
+            );
             println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
             println!("  uds dispatch       : UNWIRED (P2)");
             println!("  secret injection   : UNWIRED (P3 — envctl relay-bearer)");

@@ -18,7 +18,8 @@ Background: `meta/DARK-FACTORY-RESEARCH.md` (the autonomous-loop landscape this 
 | 1 | `scripts/loop-detection.js` (+ `fingerprint.js`) — "4 identical tool calls → loop" + SHA-256 keying | **`LoopGuard` circuit breaker**: trip fail-closed when the same *semantic* job (SHA-256 of `JobKind`, excluding volatile id) recurs ≥`threshold` within a `window` of dispatches. Dispatcher consults it before routing; tunable via `FXRUN_LOOP_WINDOW`/`FXRUN_LOOP_THRESHOLD`; default 4-in-8. | `runner-core::loopguard`, wired in `runner-dispatch` | #5 (merged) |
 | 2 | `scripts/dark-factory.js::enforceBudget` + `scripts/survival.js` — hard budget cap / halt-at-zero | **`Governor` dispatch budget**: a bounded-autonomy kill-switch admitting at most `FXRUN_DISPATCH_BUDGET` dispatches per server lifetime, then refusing fail-closed (re-arm to continue). Unlimited by default (behaviour-preserving). Volume complement of the breaker; checked after it so a refused-loop job costs no budget. | `runner-core::governor`, wired in `runner-dispatch` | #6 (merged) |
 | 3 | `scripts/event-system.js` — structured NDJSON action log (fixed event vocabulary, unique ids) | **`EventSink` dispatch audit trail**: every terminal decision (verified/fork-rejected/loop-tripped/budget-denied/delegated/kernel-failed) emitted as a one-line NDJSON [`DispatchEvent`] keyed by job fingerprint + correlation id — the audit/lineage requirement (research Goal G). `runner-core` stays I/O-free (trait + NDJSON + `NullSink`); a `FileSink` over `FXRUN_EVENT_LOG` lives in the binary. Off by default. | `runner-core::events`, `FileSink` in `runner-dispatch` | #7 (merged) |
-| 4 | `scripts/cost-tracker.js` + `dark-factory.js::enforceBudget` (caps `usedTokens` **and** `usedUsd`) | **`atc → runner` cost seam + cost-aware `Governor`**: `KernelInvoker::invoke` now returns the job's [`JobCost`] (tokens + micro-USD) that `atc` measured; `Governor` became multi-dimensional (jobs **/** tokens **/** USD caps) with `admit()` (pre-dispatch gate) + `charge()` (post-dispatch, from the report). Caps via `FXRUN_DISPATCH_BUDGET` / `FXRUN_TOKEN_BUDGET` / `FXRUN_USD_MICROS_BUDGET`. **Fail-open**: unmeasured jobs ([`JobCost::ZERO`], today's dry-run) charge nothing, so cost caps are inert until `atc` reports — defining the seam without needing `atc` yet. Cost also lands in the audit log. | `runner-core::cost` + `runner-core::governor`, wired in `runner-dispatch` | feat/cost-aware-governor |
+| 4 | `scripts/cost-tracker.js` + `dark-factory.js::enforceBudget` (caps `usedTokens` **and** `usedUsd`) | **`atc → runner` cost seam + cost-aware `Governor`**: `KernelInvoker::invoke` now returns the job's [`JobCost`] (tokens + micro-USD) that `atc` measured; `Governor` became multi-dimensional (jobs **/** tokens **/** USD caps) with `admit()` (pre-dispatch gate) + `charge()` (post-dispatch, from the report). Caps via `FXRUN_DISPATCH_BUDGET` / `FXRUN_TOKEN_BUDGET` / `FXRUN_USD_MICROS_BUDGET`. **Fail-open**: unmeasured jobs ([`JobCost::ZERO`], today's dry-run) charge nothing, so cost caps are inert until `atc` reports — defining the seam without needing `atc` yet. Cost also lands in the audit log. | `runner-core::cost` + `runner-core::governor`, wired in `runner-dispatch` | #8 (merged) |
+| 5 | **prior-art:** `Conway-Research/automaton` (protected, `chmod 0444`, git-versioned constitution files; "no override") + `dark-factory.js::verifyImmutability` (SHA-256 of `MISSION.md`/`FACTORY_RULES.md`/`CLAUDE.md`) | **`Constitution` immutability gate**: the dispatcher seals SHA-256 of its own governing files (`FXRUN_CONSTITUTION`) at startup and re-checks them **before every dispatch**; a mid-run change/deletion refuses **all** dispatch — the FIRST gate (above `verify`), so an agent can't weaken its own guardrails (the Darwin-Gödel Machine *deleted its own reward markers*; research §5). `runner-core` I/O-free (closure-injected reader); off by default. | `runner-core::constitution`, wired in `runner-dispatch` | feat/constitution-gate |
 
 ### Cycle-2 research note — kclaw0 `dark-factory.js` is a governance engine
 Admission sequence: **immutability → budget → state-machine → holdout**. Mapping to the runner plane:
@@ -52,6 +53,32 @@ Ranked by runner-plane fit. Each names the kclaw0 source and the in-scope runner
   runner-appropriate, model-downgrade is weave's.
 - **`checkpoint.js`** → mostly covered by the `handoff` kernel; revisit only if a *job-level*
   checkpoint seam is missing.
+
+### Prior-art batch (widened beyond kclaw0 to the sources it names — ranked, runner-plane lens)
+From the phase-3 research sweep of kclaw0's named prior-art (cited in `meta/DARK-FACTORY-RESEARCH.md`):
+- **#2 Goal-gate + retry-target rollback routing** (`strongdm/attractor` `goal_gate`/`retry_target`/
+  `fallback_retry_target`) → turn breaker/kernel-fail outcomes into **declarative recovery** (re-dispatch
+  with backoff → fallback = open a fork PR for human review), plus a **pre-`verify` JobSpec structural
+  lint** (attractor's VALIDATE phase: refuse on any structural ERROR before signature work). High fit.
+- **#3 Survival-tier debounced halt** (`automaton` 5-tier balance ladder + 60-min-at-$0 grace before
+  `dead`) → extend the `Governor` with **graduated degradation** (full → throttled → distress-only →
+  halt) and a **debounced floor** (require the budget-exhausted condition to persist a grace window
+  before refusing all dispatch — avoids boundary thrash). Medium-high. Model-*downgrade* action stays
+  weave's; the runner takes the tier→admission-state ladder + halt floor only.
+- **#4 Human-approval gate** (`coleam00/Archon` `ApprovalNode`/`interactive:true`; attractor `wait.human`
+  hexagon) → a `requires_approval` admission state between budget and route — hold + surface an approval
+  request when a JobSpec is flagged interactive or trips a policy band; resolve on approve/reject. Pairs
+  with fork-PR isolation. Medium.
+- **#5 Isolation-cleanup-on-fail** (`Archon` "fail → delete the worktree, zero residue") → make total
+  teardown of the isolated worktree a **guaranteed post-condition** of the fail/breaker path. Low —
+  mostly already covered by fork-PR isolation; a refinement, not a new primitive.
+- **#6 `policy_decisions` audit stream** (`automaton` separate `policy_decisions` table + git lineage) →
+  a **distinct admission-decision stream** (separate from job-execution events) so guardrail-tampering is
+  detectable by lineage. Low-medium — extends the cycle-3 audit log; pairs with the constitution gate (#5 applied).
+
+**Out of scope (weave/atc/CI), confirmed by the sweep:** `pi-subagents` reviewer-loop + per-agent model
+overrides (atc/weave); `Conway-Research/skills` progressive disclosure (context-engineering);
+`Understand-Anything` / `mempalace` / `chroma` / `second-brain-starter` (memory/KG/vector — weave/atc).
 
 ## Deferred / out of scope (model-router — weave owns)
 
