@@ -145,6 +145,10 @@ fn main() -> anyhow::Result<()> {
                  to fail-closed kernel reachability (empty set = deny all)"
             );
             println!(
+                "  route selection    : deterministic selector witness on every plan \
+                 (weight desc, route id asc; today one candidate per job kind)"
+            );
+            println!(
                 "  single-flight      : per-target older-wins mutex serializes same-repo mutable work; \
                  global max-in-flight cap waits for concurrent serve"
             );

@@ -900,7 +900,10 @@ fn handle_request(
             // (automaton's balance ladder), and the history-calibrated risk score (kclaw0
             // path-simulator) — both observability the operator/weave acts on, neither blocks.
             let tier = governor.tier();
-            let mut notes = Vec::new();
+            let mut notes = vec![format!(
+                "route selected: {} weight {}",
+                plan.route_id, plan.route_weight
+            )];
             if tier.is_degraded() {
                 notes.push(format!("survival tier: {tier}"));
             }

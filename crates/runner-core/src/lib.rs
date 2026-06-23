@@ -4,7 +4,7 @@
 //!   coding agent `atc` drives for an agent-class job — orthogonal to the kernel choice.
 //! - [`jobspec`] — the HMAC-signed job spec the App dispatches over UDS (S7).
 //! - [`router`] — delegate-only kernel router (loop_lib/atc/handoff/weave); decides *what*
-//!   runs *where*, never *how* (it never reimplements a kernel).
+//!   runs *where*, never *how* (it never reimplements a kernel), with deterministic route selection.
 //! - [`safety`] — fork-PR isolation policy + runner rails (the §6 minimums).
 //! - [`loopguard`] — loop-detection circuit breaker (runaway-loop guard at the dispatch choke
 //!   point; adapted from kclaw0 `loop-detection.js`).
@@ -94,6 +94,7 @@ pub use ratelimit::{RateDecision, RateLimitPolicy, RateLimiter};
 pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger};
 pub use redact::{RedactingSink, Redactor};
 pub use risk::{RiskBand, RiskLedger, RiskModel, RiskPolicy, RiskScore};
+pub use router::{select_route, RouteCandidate};
 pub use scan::{scan, Finding, ScanPolicy, ScanReport, Severity};
 pub use singleflight::{FlightLease, SingleFlight, SingleFlightDenied, TargetKey};
 pub use targets::{TargetAllowlist, TargetDecision};
