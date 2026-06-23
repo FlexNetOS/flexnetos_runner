@@ -142,6 +142,11 @@ fn main() -> anyhow::Result<()> {
                  request envelope)"
             );
             println!(
+                "  rate limit         : off by default (FXRUN_RATE_MAX per FXRUN_RATE_WINDOW_SECS \
+                 rolling window + FXRUN_ROUTE_COOLDOWN_SECS per-route failure backoff; refusals carry \
+                 a retry-after, never escalate)"
+            );
+            println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
             println!(

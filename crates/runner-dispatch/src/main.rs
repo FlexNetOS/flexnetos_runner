@@ -30,7 +30,10 @@ use runner_core::jobspec::JobSpec;
 use runner_core::lint;
 use runner_core::loopguard::{fingerprint, LoopGuard, Verdict};
 use runner_core::quarantine::{QuarantineLedger, QuarantinePolicy};
-use runner_core::recovery::{FailureKind, RecoveryPolicy, RetryLedger};
+use runner_core::ratelimit::{RateDecision, RateLimitPolicy, RateLimiter};
+use runner_core::recovery::{
+    FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger,
+};
 use runner_core::redact::{RedactingSink, Redactor};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
@@ -110,6 +113,8 @@ fn handle_failure(
     retry: &mut RetryLedger,
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
+    rate_limiter: &mut RateLimiter,
+    now_secs: u64,
     sink: &dyn EventSink,
     job: &JobSpec,
     program: &str,
@@ -120,6 +125,9 @@ fn handle_failure(
 ) -> DispatchResponse {
     let directive = policy.decide(retry, fp, kind);
     let now_quarantined = quarantine_policy.on_failure(quarantine, fp);
+    // A kernel failure / timeout also starts this route's failure cooldown (automaton's error
+    // backoff), so a burst of the same route's work backs off. No-op unless a cooldown is configured.
+    rate_limiter.record_failure(job.job.class(), now_secs);
     let detail = format!(
         "{lead} | {}{}",
         directive.summary(),
@@ -279,6 +287,8 @@ fn handle_request(
     retry: &mut RetryLedger,
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
+    rate_limiter: &mut RateLimiter,
+    now_secs: u64,
     deadline: &DeadlinePolicy,
     sink: &dyn EventSink,
     raw: &[u8],
@@ -394,6 +404,39 @@ fn handle_request(
         return DispatchResponse::rejected(detail).with_recovery(directive);
     }
 
+    // Dispatch rate limit + per-route failure cooldown (automaton hourly/daily caps + 5-min error
+    // backoff): bound the *rate* of distinct, in-budget dispatches — the timing axis the breaker
+    // (same-job loops), governor (lifetime budget), and quarantine (repeat-failure) don't cover.
+    // Placed before the breaker/budget so a rate-refused job pollutes neither the loop window nor the
+    // budget. A rate refusal is NOT a job failure: it carries a retry-after the orchestrator honours,
+    // and it never touches the recovery retry budget (a busy runner must not escalate a job to a
+    // human). Inert unless FXRUN_RATE_MAX / FXRUN_ROUTE_COOLDOWN_SECS is set.
+    if rate_limiter.policy().is_active() {
+        let route = job.job.class();
+        if let RateDecision::Denied {
+            reason,
+            retry_after_secs,
+        } = rate_limiter.check(route, now_secs)
+        {
+            // Advise a plain retry-after — attempt 0 so it never consumes the per-fingerprint retry
+            // ledger (this is back-pressure, not a failing job).
+            let directive = RecoveryDirective {
+                action: RecoveryVerb::Retry,
+                attempt: 0,
+                max_retries: policy.max_retries(),
+                backoff_secs: retry_after_secs,
+                reason: reason.clone(),
+            };
+            let detail = format!("{reason} | {}", directive.summary());
+            sink.emit(
+                &DispatchEvent::for_job(Outcome::RateLimited, &job)
+                    .with_recovery(directive.clone())
+                    .with_detail(&detail),
+            );
+            return DispatchResponse::rejected(detail).with_recovery(directive);
+        }
+    }
+
     // Runaway-loop circuit breaker: a self-hosted autonomous loop dispatching the SAME work over
     // and over is the #1 unattended-loop failure mode (cost blowups). Trip fail-closed before the
     // kernel is touched. Distinct work and normal retries pass; only a tight identical loop trips.
@@ -439,6 +482,9 @@ fn handle_request(
             // count, so a *later* transient failure of the same work starts its own fresh count.
             retry.clear(&fp);
             quarantine.clear(&fp);
+            // A healthy delegation also releases the route's failure cooldown early (one success
+            // means the route is working again).
+            rate_limiter.clear_route(job.job.class());
             let mut event = DispatchEvent::for_job(Outcome::Delegated, &job).with_kernel(program);
             if cost.is_measured() {
                 event = event.with_cost(cost);
@@ -466,6 +512,8 @@ fn handle_request(
             retry,
             quarantine_policy,
             quarantine,
+            rate_limiter,
+            now_secs,
             sink,
             &job,
             program,
@@ -482,6 +530,8 @@ fn handle_request(
             retry,
             quarantine_policy,
             quarantine,
+            rate_limiter,
+            now_secs,
             sink,
             &job,
             program,
@@ -512,6 +562,8 @@ fn serve_once(
     retry: &mut RetryLedger,
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
+    rate_limiter: &mut RateLimiter,
+    now_secs: u64,
     deadline: &DeadlinePolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
@@ -533,6 +585,8 @@ fn serve_once(
         retry,
         quarantine_policy,
         quarantine,
+        rate_limiter,
+        now_secs,
         deadline,
         sink,
         &raw,
@@ -564,6 +618,7 @@ fn serve(
     retry: &mut RetryLedger,
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
+    rate_limiter: &mut RateLimiter,
     deadline: &DeadlinePolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
@@ -572,6 +627,9 @@ fn serve(
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
     }
+    // Monotonic clock for the rate limiter: seconds since the server started. Read per connection in
+    // the loop below (clock I/O lives in the binary; runner-core's RateLimiter stays clock-free).
+    let started = std::time::Instant::now();
     let listener = UnixListener::bind(socket_path)?;
     let constitution_note = if constitution.is_empty() {
         "constitution: none".to_string()
@@ -597,8 +655,24 @@ fn serve(
     } else {
         "redaction: off".to_string()
     };
+    let rate_note = {
+        let p = rate_limiter.policy();
+        match (p.max_per_window(), p.route_cooldown_secs()) {
+            (None, None) => "rate limit: off".to_string(),
+            (max, cooldown) => {
+                let mut parts = Vec::new();
+                if let Some(m) = max {
+                    parts.push(format!("{m}/{}s", p.window_secs()));
+                }
+                if let Some(c) = cooldown {
+                    parts.push(format!("{c}s route cooldown"));
+                }
+                format!("rate limit: {}", parts.join(" + "))
+            }
+        }
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -607,11 +681,15 @@ fn serve(
         policy.base_backoff_secs(),
         quarantine_note,
         deadline_note,
+        rate_note,
         redaction_note,
         approval_note,
         constitution_note
     );
     loop {
+        // Read the monotonic clock just before each connection is served. Under load `accept`
+        // returns promptly so this is fresh; under idle the staleness is irrelevant (no rate pressure).
+        let now_secs = started.elapsed().as_secs();
         if let Err(e) = serve_once(
             &listener,
             key,
@@ -624,6 +702,8 @@ fn serve(
             retry,
             quarantine_policy,
             quarantine,
+            rate_limiter,
+            now_secs,
             deadline,
             redactor,
             sink,
@@ -801,6 +881,15 @@ fn main() -> anyhow::Result<()> {
             // delegation (the time axis the breaker/governor/quarantine don't cover). 0/unset = no
             // cap (behaviour-preserving) — a job may still request a tighter deadline on its envelope.
             let deadline = DeadlinePolicy::from_secs(env_u64("FXRUN_DEFAULT_DEADLINE_SECS"));
+            // Dispatch rate limit + per-route failure cooldown: at most FXRUN_RATE_MAX dispatches per
+            // FXRUN_RATE_WINDOW_SECS (default 60s), and FXRUN_ROUTE_COOLDOWN_SECS of backoff for a
+            // route after it fails. The timing axis the other guards don't cover. 0/unset = off
+            // (behaviour-preserving).
+            let mut rate_limiter = RateLimiter::new(RateLimitPolicy::from_env(
+                env_usize("FXRUN_RATE_MAX", 0) as u32,
+                env_u64("FXRUN_RATE_WINDOW_SECS"),
+                env_u64("FXRUN_ROUTE_COOLDOWN_SECS"),
+            ));
             // Constitution: seal the runner's own governing files (comma-separated paths in
             // FXRUN_CONSTITUTION) at startup; a mid-run change refuses all dispatch. Inert if unset.
             let constitution = {
@@ -881,6 +970,7 @@ fn main() -> anyhow::Result<()> {
                 &mut retry,
                 &quarantine_policy,
                 &mut quarantine,
+                &mut rate_limiter,
                 &deadline,
                 &redactor,
                 sink.as_ref(),
@@ -985,6 +1075,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1011,6 +1103,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1036,6 +1130,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1058,6 +1154,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             b"this is not json",
@@ -1095,6 +1193,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&ok).unwrap(),
@@ -1111,6 +1211,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
@@ -1127,6 +1229,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &sink,
             b"garbage",
@@ -1171,6 +1275,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1195,6 +1301,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1223,6 +1331,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1242,6 +1352,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1280,6 +1392,8 @@ mod tests {
                 &mut RetryLedger::new(),
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &mut RateLimiter::disabled(),
+                0,
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1335,6 +1449,8 @@ mod tests {
                 &mut RetryLedger::new(),
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &mut RateLimiter::disabled(),
+                0,
                 &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
@@ -1382,6 +1498,8 @@ mod tests {
                     &mut RetryLedger::new(),
                     &QuarantinePolicy::disabled(),
                     &mut QuarantineLedger::new(),
+                    &mut RateLimiter::disabled(),
+                    0,
                     &DeadlinePolicy::disabled(),
                     &NullSink,
                     &raw
@@ -1437,6 +1555,8 @@ mod tests {
                 &mut retry,
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &mut RateLimiter::disabled(),
+                0,
                 &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
@@ -1494,6 +1614,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -1535,6 +1657,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1558,6 +1682,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1595,6 +1721,8 @@ mod tests {
                 r,
                 &qpolicy,
                 q,
+                &mut RateLimiter::disabled(),
+                0,
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1626,6 +1754,8 @@ mod tests {
             &mut retry,
             &qpolicy,
             &mut qledger,
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1656,6 +1786,8 @@ mod tests {
             &mut retry,
             &qpolicy,
             &mut qledger,
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1687,6 +1819,8 @@ mod tests {
                 &mut RetryLedger::new(),
                 &qpolicy,
                 &mut qledger,
+                &mut RateLimiter::disabled(),
+                0,
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1759,6 +1893,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(), // no operator cap — the per-job envelope deadline applies
             &sink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -1804,6 +1940,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1826,6 +1964,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1850,6 +1990,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1888,6 +2030,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -1918,6 +2062,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&approved_frame).unwrap(),
@@ -1939,6 +2085,8 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&forged).unwrap(),
@@ -2006,6 +2154,8 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -2092,6 +2242,8 @@ mod tests {
                 &mut RetryLedger::new(),
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &mut RateLimiter::disabled(),
+                0,
                 &DeadlinePolicy::disabled(),
                 &Redactor::new(),
                 &NullSink,
@@ -2176,6 +2328,8 @@ mod tests {
                 &mut RetryLedger::new(),
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &mut RateLimiter::disabled(),
+                0,
                 &DeadlinePolicy::disabled(),
                 &redactor,
                 &sink,
@@ -2220,5 +2374,138 @@ mod tests {
 
         let _ = std::fs::remove_file(&sock);
         let _ = std::fs::remove_file(&log_path);
+    }
+
+    #[test]
+    fn rate_limit_denies_a_burst_past_the_window_cap_without_consuming_retries() {
+        let inv = RecordingInvoker::default();
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::unlimited();
+        let mut retry = RetryLedger::new();
+        let mut q = QuarantineLedger::new();
+        // 2 dispatches per 60s window; all calls share now=0 so they fall in one window.
+        let mut rl = RateLimiter::new(RateLimitPolicy::new(2, 60, 0));
+        let raw = serde_json::to_vec(&sign_frame(b"k", &ci_spec(false)).unwrap()).unwrap();
+
+        // The first two within the window admit and delegate (2 reach the kernel — under the 4/8
+        // breaker threshold, so the breaker does not trip).
+        for _ in 0..2 {
+            let r = handle_request(
+                b"k",
+                &inv,
+                &ConstitutionStatus::Intact,
+                &ApprovalPolicy::none(),
+                &mut guard,
+                &mut gov,
+                &RecoveryPolicy::default(),
+                &mut retry,
+                &QuarantinePolicy::disabled(),
+                &mut q,
+                &mut rl,
+                0,
+                &DeadlinePolicy::disabled(),
+                &NullSink,
+                &raw,
+            );
+            assert!(r.accepted);
+        }
+        // The third dispatch in the same window is rate-limited (and never reaches the kernel).
+        let denied = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut guard,
+            &mut gov,
+            &RecoveryPolicy::default(),
+            &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut q,
+            &mut rl,
+            0,
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!denied.accepted);
+        assert!(denied.error.unwrap().contains("rate limit"));
+        let rec = denied
+            .recovery
+            .expect("a rate-limit refusal carries a retry-after directive");
+        assert_eq!(rec.action, RecoveryVerb::Retry);
+        assert_eq!(
+            rec.attempt, 0,
+            "back-pressure must not consume the retry budget"
+        );
+        assert!(rec.backoff_secs > 0, "retry-after hint is set");
+        assert_eq!(
+            inv.calls(),
+            2,
+            "the rate-limited job never reached the kernel"
+        );
+        assert_eq!(
+            retry.tracked(),
+            0,
+            "no fingerprint entered the retry ledger"
+        );
+    }
+
+    #[test]
+    fn route_failure_cooldown_holds_the_route_after_a_kernel_failure() {
+        let inv = FailingInvoker::default();
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::unlimited();
+        let mut retry = RetryLedger::new();
+        let mut q = QuarantineLedger::new();
+        // No window cap; a 30s per-route cooldown after a failure.
+        let mut rl = RateLimiter::new(RateLimitPolicy::new(0, 1, 30));
+        let raw = serde_json::to_vec(&sign_frame(b"k", &ci_spec(false)).unwrap()).unwrap();
+
+        // First dispatch reaches the kernel, fails, and starts the "ci" route cooldown.
+        let first = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut guard,
+            &mut gov,
+            &RecoveryPolicy::default(),
+            &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut q,
+            &mut rl,
+            0,
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!first.accepted);
+        assert_eq!(inv.calls(), 1);
+
+        // A second "ci" dispatch 5s later is held by the cooldown — it never reaches the kernel again.
+        let cooled = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut guard,
+            &mut gov,
+            &RecoveryPolicy::default(),
+            &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut q,
+            &mut rl,
+            5,
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!cooled.accepted);
+        assert!(cooled.error.unwrap().contains("cooldown"));
+        assert_eq!(
+            inv.calls(),
+            1,
+            "the cooling route must not reach the kernel again"
+        );
     }
 }
