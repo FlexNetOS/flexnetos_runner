@@ -37,6 +37,7 @@ use runner_core::recovery::{
 use runner_core::redact::{RedactingSink, Redactor};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
+use runner_core::scan::{self, ScanPolicy};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
 use runner_core::workspace::{JobWorkspace, WorkspaceProvider};
 use std::io::Read;
@@ -289,6 +290,7 @@ fn handle_request(
     quarantine: &mut QuarantineLedger,
     rate_limiter: &mut RateLimiter,
     now_secs: u64,
+    scan_policy: &ScanPolicy,
     deadline: &DeadlinePolicy,
     sink: &dyn EventSink,
     raw: &[u8],
@@ -344,6 +346,36 @@ fn handle_request(
                 .with_detail(&detail),
         );
         return DispatchResponse::rejected(detail).with_recovery(directive);
+    }
+
+    // Content / injection scan (Archon marketplace-security-scan): structural lint proved the spec's
+    // *shape*; this checks the *safety* of its free-text fields, which the P3 invoker will interpolate
+    // into a kernel command line / workspace path / audit line. A field whose worst finding meets the
+    // operator's block threshold is refused here — after lint, before fork/route — fail-closed. Like a
+    // malformed job, hostile content can't be fixed by re-dispatch, so recovery escalates (never
+    // retries). Inert unless FXRUN_SCAN_BLOCK_SEVERITY is set (scan/decide split: the scan is cheap,
+    // the policy decides).
+    if scan_policy.is_active() {
+        let report = scan::scan(&job);
+        if scan_policy.blocks(&report) {
+            let directive = policy.decide(retry, &fingerprint(&job), FailureKind::ContentRejected);
+            let detail = format!(
+                "content scan blocked the job (worst severity {}, threshold {}): {} | {}",
+                report.max_severity(),
+                scan_policy
+                    .threshold()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "none".into()),
+                report.summary(),
+                directive.summary()
+            );
+            sink.emit(
+                &DispatchEvent::for_job(Outcome::ContentRejected, &job)
+                    .with_recovery(directive.clone())
+                    .with_detail(&detail),
+            );
+            return DispatchResponse::rejected(detail).with_recovery(directive);
+        }
     }
 
     // Fork-PR isolation (ADR-0008 §6): untrusted fork code must NEVER run on self-hosted hardware.
@@ -564,6 +596,7 @@ fn serve_once(
     quarantine: &mut QuarantineLedger,
     rate_limiter: &mut RateLimiter,
     now_secs: u64,
+    scan_policy: &ScanPolicy,
     deadline: &DeadlinePolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
@@ -587,6 +620,7 @@ fn serve_once(
         quarantine,
         rate_limiter,
         now_secs,
+        scan_policy,
         deadline,
         sink,
         &raw,
@@ -619,6 +653,7 @@ fn serve(
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
     rate_limiter: &mut RateLimiter,
+    scan_policy: &ScanPolicy,
     deadline: &DeadlinePolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
@@ -671,8 +706,12 @@ fn serve(
             }
         }
     };
+    let scan_note = match scan_policy.threshold() {
+        Some(s) => format!("content scan: block ≥ {s}"),
+        None => "content scan: off".to_string(),
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -682,6 +721,7 @@ fn serve(
         quarantine_note,
         deadline_note,
         rate_note,
+        scan_note,
         redaction_note,
         approval_note,
         constitution_note
@@ -704,6 +744,7 @@ fn serve(
             quarantine,
             rate_limiter,
             now_secs,
+            scan_policy,
             deadline,
             redactor,
             sink,
@@ -890,6 +931,12 @@ fn main() -> anyhow::Result<()> {
                 env_u64("FXRUN_RATE_WINDOW_SECS"),
                 env_u64("FXRUN_ROUTE_COOLDOWN_SECS"),
             ));
+            // Content/injection scan: refuse a job whose free-text fields trip the pattern bank at or
+            // above FXRUN_SCAN_BLOCK_SEVERITY (low|medium|high|critical). Unset/off → inert
+            // (behaviour-preserving) — the scan never runs and no job is refused on content.
+            let scan_policy = ScanPolicy::from_env(
+                &std::env::var("FXRUN_SCAN_BLOCK_SEVERITY").unwrap_or_default(),
+            );
             // Constitution: seal the runner's own governing files (comma-separated paths in
             // FXRUN_CONSTITUTION) at startup; a mid-run change refuses all dispatch. Inert if unset.
             let constitution = {
@@ -971,6 +1018,7 @@ fn main() -> anyhow::Result<()> {
                 &quarantine_policy,
                 &mut quarantine,
                 &mut rate_limiter,
+                &scan_policy,
                 &deadline,
                 &redactor,
                 sink.as_ref(),
@@ -1077,6 +1125,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1105,6 +1154,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1132,6 +1182,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1156,6 +1207,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             b"this is not json",
@@ -1195,6 +1247,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&ok).unwrap(),
@@ -1213,6 +1266,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
@@ -1231,6 +1285,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &sink,
             b"garbage",
@@ -1277,6 +1332,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1303,6 +1359,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1333,6 +1390,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1354,6 +1412,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1394,6 +1453,7 @@ mod tests {
                 &mut QuarantineLedger::new(),
                 &mut RateLimiter::disabled(),
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1451,6 +1511,7 @@ mod tests {
                 &mut QuarantineLedger::new(),
                 &mut RateLimiter::disabled(),
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
@@ -1500,6 +1561,7 @@ mod tests {
                     &mut QuarantineLedger::new(),
                     &mut RateLimiter::disabled(),
                     0,
+                    &ScanPolicy::disabled(),
                     &DeadlinePolicy::disabled(),
                     &NullSink,
                     &raw
@@ -1557,6 +1619,7 @@ mod tests {
                 &mut QuarantineLedger::new(),
                 &mut RateLimiter::disabled(),
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
@@ -1616,6 +1679,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -1659,6 +1723,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1684,6 +1749,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1723,6 +1789,7 @@ mod tests {
                 q,
                 &mut RateLimiter::disabled(),
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1756,6 +1823,7 @@ mod tests {
             &mut qledger,
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1788,6 +1856,7 @@ mod tests {
             &mut qledger,
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1821,6 +1890,7 @@ mod tests {
                 &mut qledger,
                 &mut RateLimiter::disabled(),
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -1895,6 +1965,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(), // no operator cap — the per-job envelope deadline applies
             &sink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -1942,6 +2013,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1966,6 +2038,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -1992,6 +2065,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2032,6 +2106,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -2064,6 +2139,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&approved_frame).unwrap(),
@@ -2087,6 +2163,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&forged).unwrap(),
@@ -2156,6 +2233,7 @@ mod tests {
             &mut QuarantineLedger::new(),
             &mut RateLimiter::disabled(),
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
@@ -2244,6 +2322,7 @@ mod tests {
                 &mut QuarantineLedger::new(),
                 &mut RateLimiter::disabled(),
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &Redactor::new(),
                 &NullSink,
@@ -2330,6 +2409,7 @@ mod tests {
                 &mut QuarantineLedger::new(),
                 &mut RateLimiter::disabled(),
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &redactor,
                 &sink,
@@ -2403,6 +2483,7 @@ mod tests {
                 &mut q,
                 &mut rl,
                 0,
+                &ScanPolicy::disabled(),
                 &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
@@ -2423,6 +2504,7 @@ mod tests {
             &mut q,
             &mut rl,
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2475,6 +2557,7 @@ mod tests {
             &mut q,
             &mut rl,
             0,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2496,6 +2579,7 @@ mod tests {
             &mut q,
             &mut rl,
             5,
+            &ScanPolicy::disabled(),
             &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
@@ -2506,6 +2590,80 @@ mod tests {
             inv.calls(),
             1,
             "the cooling route must not reach the kernel again"
+        );
+    }
+
+    #[test]
+    fn content_scan_blocks_an_injection_job_and_escalates_without_reaching_the_kernel() {
+        use runner_core::scan::Severity;
+        let inv = RecordingInvoker::default();
+        // A LoopCycle whose task_id smuggles a command substitution — structurally valid (non-blank,
+        // good repo), so only the content scan catches it.
+        let spec = JobSpec {
+            id: "job-x".into(),
+            correlation_id: "corr-x".into(),
+            from_fork: false,
+            job: runner_core::jobspec::JobKind::LoopCycle {
+                repo: "FlexNetOS/meta".into(),
+                task_id: "T-1; rm -rf $(echo ~)".into(),
+            },
+        };
+        let raw = serde_json::to_vec(&sign_frame(b"k", &spec).unwrap()).unwrap();
+
+        // Gate OFF (default): the job passes content (and delegates).
+        let off = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(off.accepted, "scan off → not refused on content");
+        assert_eq!(inv.calls(), 1);
+
+        // Gate ON at `high`: the same job is refused before the kernel, and escalates (not retry).
+        let blocked = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::block_at(Severity::High),
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!blocked.accepted);
+        let err = blocked.error.unwrap();
+        assert!(err.contains("content scan blocked"));
+        assert!(err.contains("job.task_id"));
+        assert_eq!(
+            blocked.recovery.unwrap().action,
+            RecoveryVerb::Escalate,
+            "hostile content escalates to a human, never retries"
+        );
+        assert_eq!(
+            inv.calls(),
+            1,
+            "the blocked job never reached the kernel (still 1 from the gate-off case)"
         );
     }
 }

@@ -28,6 +28,9 @@
 //! - [`ratelimit`] — windowed dispatch rate cap + per-route failure cooldown (bound the *rate* of
 //!   distinct in-budget dispatches — the timing axis the breaker/governor/quarantine don't cover;
 //!   adapted from `automaton`'s hourly/daily caps + 5-min error backoff; clock-injected).
+//! - [`scan`] — pre-dispatch content/injection scan of the spec's free-text fields (severity-graded
+//!   pattern bank + scan/decide split, fail-closed on a threshold; adapted from `Archon`'s
+//!   `marketplace-security-scan.ts` + `kclaw0`'s `path-simulator.js` risk scoring).
 //! - [`cost`] — per-job cost report (the `atc → runner` cost seam; tokens + USD).
 //! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch over jobs/tokens/USD;
 //!   adapted from kclaw0 `dark-factory.js::enforceBudget` + `survival.js`).
@@ -59,6 +62,7 @@ pub mod recovery;
 pub mod redact;
 pub mod router;
 pub mod safety;
+pub mod scan;
 pub mod wire;
 pub mod workspace;
 
@@ -76,5 +80,6 @@ pub use quarantine::{QuarantineLedger, QuarantinePolicy};
 pub use ratelimit::{RateDecision, RateLimitPolicy, RateLimiter};
 pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger};
 pub use redact::{RedactingSink, Redactor};
+pub use scan::{scan, Finding, ScanPolicy, ScanReport, Severity};
 pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};
 pub use workspace::{JobWorkspace, NoopWorkspaceProvider, TeardownReport, WorkspaceProvider};
