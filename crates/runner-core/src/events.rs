@@ -17,6 +17,7 @@ use crate::cost::JobCost;
 use crate::jobspec::JobSpec;
 use crate::loopguard::fingerprint;
 use crate::recovery::RecoveryDirective;
+use crate::risk::RiskScore;
 use serde::Serialize;
 
 /// The outcome of one dispatch admission decision — the runner-plane event vocabulary.
@@ -97,8 +98,9 @@ pub enum EventCategory {
 }
 
 /// One audit record. Serializes to a single JSON object (one NDJSON line). Job-identifying fields
-/// are absent when the frame never parsed far enough to know them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// are absent when the frame never parsed far enough to know them. (No `Eq`: the optional
+/// [`RiskScore`] carries an `f64` probability, which is `PartialEq` but not `Eq`.)
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DispatchEvent {
     pub outcome: Outcome,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -120,6 +122,11 @@ pub struct DispatchEvent {
     /// Human-readable reason (e.g. the rejection message).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// History-calibrated risk score for this fingerprint (advice-only; present only when risk
+    /// annotation is enabled — see [`crate::risk`]). Absent leaves the audit line byte-for-byte as
+    /// before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk: Option<RiskScore>,
 }
 
 impl DispatchEvent {
@@ -134,6 +141,7 @@ impl DispatchEvent {
             cost: None,
             recovery: None,
             detail: Some(detail.into()),
+            risk: None,
         }
     }
 
@@ -148,6 +156,7 @@ impl DispatchEvent {
             cost: None,
             recovery: None,
             detail: None,
+            risk: None,
         }
     }
 
@@ -172,6 +181,13 @@ impl DispatchEvent {
     /// Builder: attach a reason / detail string.
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
         self.detail = Some(detail.into());
+        self
+    }
+
+    /// Builder: attach a history-calibrated risk score (no-op when `None`, so a disabled risk policy
+    /// leaves the event unchanged).
+    pub fn with_risk(mut self, risk: Option<RiskScore>) -> Self {
+        self.risk = risk;
         self
     }
 
