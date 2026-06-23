@@ -3,7 +3,7 @@
 
 use clap::{Parser, Subcommand};
 use runner_core::{
-    agent::Agent,
+    agent::{Agent, AgentSelection},
     jobspec::{JobKind, JobSpec},
     router, safety,
 };
@@ -25,9 +25,10 @@ enum Cmd {
         /// Simulate a fork-triggered job (forces hosted-only placement).
         #[arg(long)]
         fork: bool,
-        /// Agent backend for agent-class jobs (`review|agent`): claude (default) | codex | kimi.
-        #[arg(long, default_value = "claude", env = "FXRUN_AGENT")]
-        agent: Agent,
+        /// Agent backend for agent-class jobs (`review|agent`): claude | codex | kimi.
+        /// If omitted, WEAVE_FXRUN_AGENT wins over legacy FXRUN_AGENT, then Claude.
+        #[arg(long)]
+        agent: Option<Agent>,
     },
     /// List the supported agent backends and the current default, with the headless invocation.
     Agents,
@@ -43,11 +44,16 @@ fn main() -> anyhow::Result<()> {
             fork,
             agent,
         } => {
-            let job = sample(&kind, &repo, fork, agent)?;
+            let selection = resolve_agent_selection(agent)?;
+            let job = sample(&kind, &repo, fork, selection.agent)?;
             let plan = router::route(&job);
             let place = safety::placement(&job);
             let agent_note = match plan.agent {
-                Some(a) => format!(" agent={a}"),
+                Some(a) => format!(
+                    " agent={a} agent_source={} policy_owner={}",
+                    selection.source.as_str(),
+                    selection.source.policy_owner()
+                ),
                 None => String::new(),
             };
             println!(
@@ -61,6 +67,9 @@ fn main() -> anyhow::Result<()> {
         }
         Cmd::Agents => {
             println!("fxrun agent backends (default first):");
+            println!(
+                "  policy seam: signed job/--agent explicit > WEAVE_FXRUN_AGENT (Weave-owned) > FXRUN_AGENT (legacy) > claude"
+            );
             for a in Agent::ALL {
                 let inv = a.invocation();
                 let default_mark = if a.is_default() { "  [default]" } else { "" };
@@ -99,6 +108,11 @@ fn main() -> anyhow::Result<()> {
                     .collect::<Vec<_>>()
                     .join(", "),
                 Agent::default()
+            );
+            println!(
+                "  agent policy seam  : Weave-compatible — signed job/--agent explicit > \
+                 WEAVE_FXRUN_AGENT (policy_owner=weave) > FXRUN_AGENT legacy fallback > Claude; \
+                 runner carries the selected backend but does not own model/vendor policy"
             );
             let breaker = runner_core::LoopGuard::default();
             println!(
@@ -190,6 +204,13 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn resolve_agent_selection(explicit: Option<Agent>) -> anyhow::Result<AgentSelection> {
+    let weave_agent = std::env::var("WEAVE_FXRUN_AGENT").ok();
+    let env_agent = std::env::var("FXRUN_AGENT").ok();
+    AgentSelection::resolve(explicit, weave_agent.as_deref(), env_agent.as_deref())
+        .map_err(anyhow::Error::msg)
 }
 
 fn sample(kind: &str, repo: &str, fork: bool, agent: Agent) -> anyhow::Result<JobSpec> {

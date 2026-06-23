@@ -28,8 +28,10 @@ Two shapes, by design:
 ## Agent backends (any agent — Claude right now)
 
 Agent-class jobs (`review`, `agent`) route to the `atc` kernel, which drives a selectable
-**agent backend**. The runner picks *which* agent; it never runs the model itself (delegate-only),
-so `atc` owns the spawn. Supported, with the current (June 2026) headless invocation `atc` uses:
+**agent backend**. The runner carries the selected backend as a delegate-only seam; **Weave owns
+live model/vendor routing policy** and can inject that choice through `WEAVE_FXRUN_AGENT` or by
+minting the signed job field. The runner never runs the model itself, so `atc` owns the spawn.
+Supported, with the current (June 2026) headless invocation `atc` uses:
 
 | Agent | API | Spawn (`atc`) |
 |-------|-----|---------------|
@@ -43,10 +45,14 @@ wire (`#[serde(default)]`), so existing App frames keep working unchanged. Selec
 ```bash
 fxrun agents                          # list backends + their headless invocation
 fxrun route review --agent codex      # → kernel=atc agent=codex
-fxrun route agent  --agent kimi       # → kernel=atc agent=kimi  (or FXRUN_AGENT=kimi)
+WEAVE_FXRUN_AGENT=kimi fxrun route agent
+                                       # → kernel=atc agent=kimi agent_source=weave
+FXRUN_AGENT=codex fxrun route agent    # legacy local fallback when Weave is absent
 ```
 
-The selector lives on the signed `JobSpec`, so an explicit agent is integrity-protected end to end.
+Precedence is explicit signed job/`--agent` > `WEAVE_FXRUN_AGENT` > legacy `FXRUN_AGENT` > Claude.
+The selector lives on the signed `JobSpec` when supplied by the front door, so an explicit agent is
+integrity-protected end to end.
 
 ## Status
 

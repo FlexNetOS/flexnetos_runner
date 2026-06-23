@@ -195,6 +195,89 @@ impl std::fmt::Display for Agent {
     }
 }
 
+/// Where an agent backend choice came from. This keeps the runner honest about the
+/// ownership boundary: it exposes and carries an agent selector, but model/vendor
+/// routing policy is allowed to live outside the runner (normally Weave).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSelectionSource {
+    /// A signed job frame or explicit CLI flag selected the backend.
+    Explicit,
+    /// Weave supplied the selection through the runner seam (`WEAVE_FXRUN_AGENT`).
+    Weave,
+    /// Legacy runner environment fallback (`FXRUN_AGENT`).
+    Env,
+    /// No external policy supplied a choice; runner defaults to Claude for
+    /// backward compatibility.
+    BuiltInDefault,
+}
+
+impl AgentSelectionSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AgentSelectionSource::Explicit => "explicit",
+            AgentSelectionSource::Weave => "weave",
+            AgentSelectionSource::Env => "env",
+            AgentSelectionSource::BuiltInDefault => "built_in_default",
+        }
+    }
+
+    /// The policy owner for this selection. Weave owns model/vendor routing when
+    /// it supplies the value; otherwise the runner is only applying local operator
+    /// input or its compatibility default.
+    pub fn policy_owner(self) -> &'static str {
+        match self {
+            AgentSelectionSource::Weave => "weave",
+            AgentSelectionSource::Explicit => "caller",
+            AgentSelectionSource::Env => "runner-env",
+            AgentSelectionSource::BuiltInDefault => "runner-compat",
+        }
+    }
+}
+
+/// A resolved backend plus provenance. Pure data so dispatch/CLI surfaces can
+/// report "what will run" without pretending the runner made a model policy call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSelection {
+    pub agent: Agent,
+    pub source: AgentSelectionSource,
+}
+
+impl AgentSelection {
+    /// Resolve the agent seam with explicit > Weave > legacy env > default
+    /// precedence. The Weave env name is deliberately separate from `FXRUN_AGENT`
+    /// so orchestration policy can be injected without making flexnetos_runner the
+    /// central live coordination/model ledger.
+    pub fn resolve(
+        explicit: Option<Agent>,
+        weave_agent: Option<&str>,
+        env_agent: Option<&str>,
+    ) -> Result<Self, String> {
+        if let Some(agent) = explicit {
+            return Ok(Self {
+                agent,
+                source: AgentSelectionSource::Explicit,
+            });
+        }
+        if let Some(raw) = weave_agent.map(str::trim).filter(|s| !s.is_empty()) {
+            return Ok(Self {
+                agent: raw.parse()?,
+                source: AgentSelectionSource::Weave,
+            });
+        }
+        if let Some(raw) = env_agent.map(str::trim).filter(|s| !s.is_empty()) {
+            return Ok(Self {
+                agent: raw.parse()?,
+                source: AgentSelectionSource::Env,
+            });
+        }
+        Ok(Self {
+            agent: Agent::default(),
+            source: AgentSelectionSource::BuiltInDefault,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +400,33 @@ mod tests {
         }
         let decoded: HasAgent = serde_json::from_str("{}").unwrap();
         assert_eq!(decoded.agent, Agent::Claude);
+    }
+
+    #[test]
+    fn selection_precedence_keeps_weave_policy_seam_explicit() {
+        let s = AgentSelection::resolve(Some(Agent::Codex), Some("kimi"), Some("claude")).unwrap();
+        assert_eq!(s.agent, Agent::Codex);
+        assert_eq!(s.source, AgentSelectionSource::Explicit);
+        assert_eq!(s.source.policy_owner(), "caller");
+
+        let s = AgentSelection::resolve(None, Some("kimi"), Some("codex")).unwrap();
+        assert_eq!(s.agent, Agent::Kimi);
+        assert_eq!(s.source, AgentSelectionSource::Weave);
+        assert_eq!(s.source.policy_owner(), "weave");
+
+        let s = AgentSelection::resolve(None, Some("  "), Some("codex")).unwrap();
+        assert_eq!(s.agent, Agent::Codex);
+        assert_eq!(s.source, AgentSelectionSource::Env);
+
+        let s = AgentSelection::resolve(None, None, None).unwrap();
+        assert_eq!(s.agent, Agent::Claude);
+        assert_eq!(s.source, AgentSelectionSource::BuiltInDefault);
+    }
+
+    #[test]
+    fn selection_rejects_unknown_weave_agent() {
+        let err = AgentSelection::resolve(None, Some("not-a-backend"), None).unwrap_err();
+        assert!(err.contains("unknown agent"));
+        assert!(err.contains("claude"));
     }
 }
