@@ -34,6 +34,7 @@ Background: `meta/DARK-FACTORY-RESEARCH.md` (the autonomous-loop landscape this 
 | 13 | **prior-art:** `coleam00/Archon` `repo.ts` — **scrubs the auth token out of every error string before it is classified, logged, or returned** (a failing git op can never echo the credential it was handed). | **Audit-path secret redaction.** The dispatcher holds key material (the HMAC dispatch key; in P3 the envctl-injected bearer / approval tokens) and writes two operator-readable surfaces that could otherwise carry it verbatim — the NDJSON audit log (`detail` fields) and the UDS error reply (`DispatchResponse.error`). `Redactor` is the single choke point: it replaces every occurrence of a known secret with `«redacted»` *before* the text reaches either surface. Two egress points: a pure **`RedactingSink`** decorator scrubs each event's free-text `detail` before the file write (structured lineage ids untouched), and **`redact_response`** scrubs the reply `error` before it crosses the socket. The binary builds the redactor from the dispatch key + comma-separated `FXRUN_REDACT_SECRETS`; a `MIN_SECRET_LEN` floor (4) refuses pathological short stand-ins that would mangle incidental text (real envctl keys are 32 bytes). **Behaviour-preserving:** no/absent secret → input returned borrowed, byte-identical (defense-in-depth — today's messages don't splice secrets, the seam guarantees they never can). Pure `runner-core` (Cow-based compute + decorator); delegate-only, orthogonal to model routing. | `runner-core::redact` (`Redactor`, `RedactingSink`) + `Box<dyn EventSink>` impl, wired in `runner-dispatch` (sink wrap + `redact_response`) | #18 (merged) |
 | 18 | **prior-art:** `Conway-Research/automaton` `policy-engine.ts::deriveAuthorityLevel` + attractor access-broker + Archon human-vs-agent origin | **Dispatch provenance / authority gate.** The UDS envelope now has an optional `submitter { id, tier }` provenance seam (`guest < agent < maintainer < owner`), and the dispatcher can enforce per-route authority floors with `FXRUN_AUTHORITY_RULES` (for example `cycle=maintainer,agent=owner`) before content/route work is examined. Missing submitter provenance is treated as `guest` once a floor is configured, so privileged routes fail closed; with no rules configured, older App frames remain byte-compatible and pass unchanged. Denials emit fixed telemetry (`Outcome::AuthorityDenied`) plus recovery escalation (`FailureKind::AuthorityDenied`) and never reach a kernel. Delegate-only: the runner verifies the submitted authority tier; the control plane/weave owns deriving it. | `runner-core::authority` (`Submitter`, `AuthorityTier`, `AuthorityPolicy`) + `wire::DispatchRequest::submitter` + `Outcome::AuthorityDenied`/`FailureKind::AuthorityDenied`, wired in `runner-dispatch` and surfaced in `fxrun doctor` | local (cycle 18) |
 | 19 | **prior-art:** `Conway-Research/automaton` `createX402DomainAllowlistRule` fail-closed allowlist + attractor egress allowlist | **Delegation-target allowlist.** The dispatcher now has an optional kernel reachability registry (`FXRUN_KERNEL_ALLOWLIST`) for `loop`/`atc`/`hf`/`weave` targets. Unset is behaviour-preserving (all existing routes allowed); set-but-empty is active deny-all; named kernels allow only those endpoints. The gate routes the authenticated job, then refuses disallowed kernels before rate slots, breaker window, budget, or subprocess invocation are touched. Denials emit fixed telemetry (`Outcome::TargetDenied`) plus recovery escalation (`FailureKind::TargetDenied`). This is kernel reachability only — model/vendor selection remains weave/atc-owned. | `runner-core::targets` (`TargetAllowlist`, `TargetDecision`) + `router::Kernel::parse`/`ALL` + `Outcome::TargetDenied`/`FailureKind::TargetDenied`, wired in `runner-dispatch` and surfaced in `fxrun doctor` | local (cycle 19) |
+| 20 | **prior-art:** `coleam00/Archon` `getActiveWorkflowRunByPath` / `ConversationLockManager` older-wins locks + kclaw0 `docker-exec` `maxContainers` | **Per-target single-flight mutex.** The buildable half of the concurrency backlog is now typed: a `SingleFlight` ledger acquires a stable mutable-target key (today: normalized repo) and denies competing in-flight work with deterministic older-wins metadata. The dispatcher acquires the target after route/target allowlist and before rate slots, breaker window, budget, or kernel invocation; an RAII permit releases on every terminal path. Denials emit fixed telemetry (`Outcome::SingleFlightDenied`) plus recovery escalation (`FailureKind::SingleFlightDenied`). The global max-in-flight cap remains P3/concurrent-serve-gated because today's server accepts one connection at a time. | `runner-core::singleflight` (`TargetKey`, `SingleFlight`, `FlightLease`) + `Outcome::SingleFlightDenied`/`FailureKind::SingleFlightDenied`, wired in `runner-dispatch` and surfaced in `fxrun doctor` | local (cycle 20) |
 
 ### Cycle-2 research note — kclaw0 `dark-factory.js` is a governance engine
 Admission sequence: **immutability → budget → state-machine → holdout**. Mapping to the runner plane:
@@ -188,13 +189,12 @@ by convergence × buildable-now × non-redundancy. **Backlog is refilled.**
   `FXRUN_KERNEL_ALLOWLIST` over `loop`/`atc`/`hf`/`weave`, where unset is inert, set-empty denies all,
   and named kernels are the only reachable endpoints. Denials fail closed as `Outcome::TargetDenied` /
   `FailureKind::TargetDenied` before rate/breaker/budget/kernel invocation. See *Applied* row 19.
-- ▷ **Max-in-flight concurrency cap + per-target single-flight mutex** (Archon `getActiveWorkflowRunByPath`
-  older-wins lock + `ConversationLockManager`; convergent with kclaw0 `docker-exec` `maxContainers`).
-  A *simultaneity* bound (distinct from the rate/time bound of #14) + a per-mutable-target admission
-  mutex with a deterministic older-wins tiebreak. **Partly blocked:** the server serves one connection
-  at a time today, so a global concurrency cap is inert until P3 serves concurrently (same reasoning
-  that deferred `max_in_flight` in #14); the per-target mutex seam is definable now. **Queued (P3-gated
-  for the global cap).**
+- ✓/⛔ **Max-in-flight concurrency cap + per-target single-flight mutex** (Archon `getActiveWorkflowRunByPath`
+  older-wins lock + `ConversationLockManager`; convergent with kclaw0 `docker-exec` `maxContainers`) →
+  **PARTIALLY APPLIED (cycle 20, local)**. The buildable per-target mutex seam is shipped as
+  `SingleFlight` with normalized repo targets and deterministic older-wins denial/release semantics.
+  The global max-in-flight cap remains blocked until the dispatcher serves concurrently; with today's
+  one-connection accept loop it would be inert. See *Applied* row 20.
 
 **Tier 2 — buildable-now, secondary:**
 - ▷ **Idle / liveness watchdog** (Archon `idle-timeout.ts` — resets on each yielded message; "deadlock
@@ -250,10 +250,10 @@ provenance/authority gate (3) · target allowlist (2) · concurrency/single-flig
 watchdog (2) · outcome simulation (2). These six are the highest-confidence net-new primitives.
 
 **Net after the refill:** the backlog was refilled with **15 net-new candidates** (6 convergent).
-**Cycle 17 applied the top pick (FATAL-first error taxonomy), cycle 18 applied dispatch
-provenance/authority, and cycle 19 applied the delegation-target allowlist.** The remaining Tier-1
-backlog is now **max-in-flight concurrency cap + per-target single-flight mutex** (global cap P3-gated;
-per-target mutex seam definable now), plus Tiers 2–3.
+**Cycle 17 applied FATAL-first taxonomy, cycle 18 applied dispatch provenance/authority, cycle 19
+applied the delegation-target allowlist, and cycle 20 applied the buildable per-target single-flight
+mutex.** The only remaining Tier-1 slice is the **global max-in-flight cap**, which is still
+P3/concurrent-serve-gated; continue with Tier 2 buildable/seam-first backlog.
 
 ## P3 execution milestone — the kernel-spawn invoker is real (the seams above are now consumed)
 

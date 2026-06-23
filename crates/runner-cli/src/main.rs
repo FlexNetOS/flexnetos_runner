@@ -145,6 +145,10 @@ fn main() -> anyhow::Result<()> {
                  to fail-closed kernel reachability (empty set = deny all)"
             );
             println!(
+                "  single-flight      : per-target older-wins mutex serializes same-repo mutable work; \
+                 global max-in-flight cap waits for concurrent serve"
+            );
+            println!(
                 "  structural lint    : malformed jobs (bad repo / blank head_sha / pr_number 0) \
                  refused before the kernel"
             );
