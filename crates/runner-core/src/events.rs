@@ -22,6 +22,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
+    /// The runner's own governing files (its constitution) changed mid-run — refuse everything.
+    ConstitutionViolated,
     /// Frame bytes did not parse as a [`crate::wire::DispatchRequest`].
     Unparseable,
     /// HMAC verification failed (bad key / tampered body).

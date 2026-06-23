@@ -20,6 +20,7 @@
 // real target (Unix) keeps full dead-code checking.
 #![cfg_attr(not(unix), allow(dead_code))]
 
+use runner_core::constitution::{Constitution, ConstitutionStatus};
 use runner_core::cost::JobCost;
 use runner_core::events::{DispatchEvent, EventSink, NullSink, Outcome};
 use runner_core::governor::{Admission, Governor};
@@ -101,11 +102,27 @@ impl EventSink for FileSink {
 fn handle_request(
     key: &[u8],
     invoker: &dyn KernelInvoker,
+    constitution: &ConstitutionStatus,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     sink: &dyn EventSink,
     raw: &[u8],
 ) -> DispatchResponse {
+    // Constitution-immutability gate (FIRST, matching dark-factory's immutability→… order): if the
+    // runner's own governing files changed mid-run, an agent may be weakening its guardrails — refuse
+    // everything, before even parsing the frame. Inert unless files are sealed (FXRUN_CONSTITUTION).
+    if let ConstitutionStatus::Violated { changed } = constitution {
+        let detail = format!(
+            "constitution violated: {} changed mid-run; refusing all dispatch until re-armed",
+            changed.join(", ")
+        );
+        sink.emit(&DispatchEvent::untied(
+            Outcome::ConstitutionViolated,
+            &detail,
+        ));
+        return DispatchResponse::rejected(detail);
+    }
+
     let req: DispatchRequest = match serde_json::from_slice(raw) {
         Ok(r) => r,
         Err(e) => {
@@ -189,10 +206,12 @@ fn handle_request(
 /// Accept exactly one connection, handle its frame, and write the reply. Factored out so the loop
 /// (and tests) can drive a single round-trip.
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn serve_once(
     listener: &std::os::unix::net::UnixListener,
     key: &[u8],
     invoker: &dyn KernelInvoker,
+    constitution: &Constitution,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     sink: &dyn EventSink,
@@ -201,7 +220,9 @@ fn serve_once(
     let (mut stream, _addr) = listener.accept()?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
-    let resp = handle_request(key, invoker, guard, governor, sink, &raw);
+    // Re-verify the runner's constitution against the files on disk right now (I/O lives here).
+    let status = constitution.verify(|name| std::fs::read(name).ok());
+    let resp = handle_request(key, invoker, &status, guard, governor, sink, &raw);
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
     stream.write_all(&bytes)?;
@@ -213,10 +234,12 @@ fn serve_once(
 /// Removes a stale socket first; a per-connection error is logged and the loop continues. The
 /// [`LoopGuard`] is owned here so its runaway-loop history spans connections.
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn serve(
     socket_path: &std::path::Path,
     key: &[u8],
     invoker: &dyn KernelInvoker,
+    constitution: &Constitution,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     sink: &dyn EventSink,
@@ -226,15 +249,21 @@ fn serve(
         std::fs::remove_file(socket_path)?;
     }
     let listener = UnixListener::bind(socket_path)?;
+    let constitution_note = if constitution.is_empty() {
+        "constitution: none".to_string()
+    } else {
+        format!("constitution: {} sealed", constitution.len())
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
-        render_budget(&governor.budget())
+        render_budget(&governor.budget()),
+        constitution_note
     );
     loop {
-        if let Err(e) = serve_once(&listener, key, invoker, guard, governor, sink) {
+        if let Err(e) = serve_once(&listener, key, invoker, constitution, guard, governor, sink) {
             eprintln!("fxrun-dispatch: connection error: {e}");
         }
     }
@@ -343,6 +372,26 @@ fn main() -> anyhow::Result<()> {
                 env_u64("FXRUN_TOKEN_BUDGET"),
                 env_u64("FXRUN_USD_MICROS_BUDGET"),
             );
+            // Constitution: seal the runner's own governing files (comma-separated paths in
+            // FXRUN_CONSTITUTION) at startup; a mid-run change refuses all dispatch. Inert if unset.
+            let constitution = {
+                let paths = std::env::var("FXRUN_CONSTITUTION").unwrap_or_default();
+                let names: Vec<String> = paths
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
+                let c = Constitution::seal(&names, |name| std::fs::read(name).ok());
+                if !c.is_empty() {
+                    eprintln!(
+                        "fxrun-dispatch: sealed constitution ({} files): {}",
+                        c.len(),
+                        c.names().collect::<Vec<_>>().join(", ")
+                    );
+                }
+                c
+            };
             // Audit trail: NDJSON to FXRUN_EVENT_LOG when set, else a no-op sink (default).
             let event_log = std::env::var("FXRUN_EVENT_LOG").unwrap_or_default();
             let sink: Box<dyn EventSink> = if event_log.trim().is_empty() {
@@ -357,6 +406,7 @@ fn main() -> anyhow::Result<()> {
                 std::path::Path::new(path),
                 key.as_bytes(),
                 &DryRunInvoker,
+                &constitution,
                 &mut guard,
                 &mut governor,
                 sink.as_ref(),
@@ -424,6 +474,7 @@ mod tests {
         let resp = handle_request(
             b"k",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &NullSink,
@@ -443,6 +494,7 @@ mod tests {
         let resp = handle_request(
             b"k",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &NullSink,
@@ -461,6 +513,7 @@ mod tests {
         let resp = handle_request(
             b"wrong-key",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &NullSink,
@@ -476,6 +529,7 @@ mod tests {
         let resp = handle_request(
             b"k",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &NullSink,
@@ -506,6 +560,7 @@ mod tests {
         handle_request(
             b"k",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut guard,
             &mut gov,
             &sink,
@@ -515,13 +570,22 @@ mod tests {
         handle_request(
             b"k",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut guard,
             &mut gov,
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
         );
         // An unparseable frame is audited too — with no job fields.
-        handle_request(b"k", &inv, &mut guard, &mut gov, &sink, b"garbage");
+        handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &mut guard,
+            &mut gov,
+            &sink,
+            b"garbage",
+        );
 
         let events = sink.0.into_inner();
         assert_eq!(events.len(), 3);
@@ -540,6 +604,41 @@ mod tests {
     }
 
     #[test]
+    fn constitution_violation_refuses_everything_before_the_kernel() {
+        let inv = RecordingInvoker::default();
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::unlimited();
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        let raw = serde_json::to_vec(&frame).unwrap();
+
+        // A tampered constitution refuses a perfectly valid, signed, non-fork job — first gate.
+        let violated = ConstitutionStatus::Violated {
+            changed: vec![".handoff/policy.toml".to_string()],
+        };
+        let resp = handle_request(b"k", &inv, &violated, &mut guard, &mut gov, &NullSink, &raw);
+        assert!(!resp.accepted);
+        assert!(resp.error.unwrap().contains("constitution violated"));
+        assert_eq!(
+            inv.calls(),
+            0,
+            "a tampered constitution must reach no kernel"
+        );
+
+        // Intact → the same job is delegated.
+        let ok = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &mut guard,
+            &mut gov,
+            &NullSink,
+            &raw,
+        );
+        assert!(ok.accepted);
+        assert_eq!(inv.calls(), 1);
+    }
+
+    #[test]
     fn loop_breaker_trips_on_repeated_identical_dispatch_and_spares_the_kernel() {
         let inv = RecordingInvoker::default();
         // Tight breaker: trip on the 2nd identical dispatch within a window of 4.
@@ -551,6 +650,7 @@ mod tests {
         let first = handle_request(
             b"k",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut guard,
             &mut Governor::unlimited(),
             &NullSink,
@@ -563,6 +663,7 @@ mod tests {
         let second = handle_request(
             b"k",
             &inv,
+            &ConstitutionStatus::Intact,
             &mut guard,
             &mut Governor::unlimited(),
             &NullSink,
@@ -591,7 +692,15 @@ mod tests {
             };
             let frame = sign_frame(b"k", &spec).unwrap();
             let raw = serde_json::to_vec(&frame).unwrap();
-            handle_request(b"k", &inv, &mut guard, &mut governor, &NullSink, &raw)
+            handle_request(
+                b"k",
+                &inv,
+                &ConstitutionStatus::Intact,
+                &mut guard,
+                &mut governor,
+                &NullSink,
+                &raw,
+            )
         };
 
         assert!(dispatch("a").accepted); // 1/2
@@ -635,6 +744,7 @@ mod tests {
             handle_request(
                 b"k",
                 &inv,
+                &ConstitutionStatus::Intact,
                 &mut guard,
                 &mut gov,
                 &sink,
@@ -675,6 +785,7 @@ mod tests {
                 handle_request(
                     b"k",
                     &inv,
+                    &ConstitutionStatus::Intact,
                     &mut guard,
                     &mut Governor::unlimited(),
                     &NullSink,
@@ -712,6 +823,7 @@ mod tests {
                 &listener,
                 &key_srv,
                 &*rec_srv,
+                &Constitution::default(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &NullSink,
