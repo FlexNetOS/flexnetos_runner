@@ -6,6 +6,8 @@
 //! - [`router`] — delegate-only kernel router (loop_lib/atc/handoff/weave); decides *what*
 //!   runs *where*, never *how* (it never reimplements a kernel).
 //! - [`safety`] — fork-PR isolation policy + runner rails (the §6 minimums).
+//! - [`loopguard`] — loop-detection circuit breaker (runaway-loop guard at the dispatch choke
+//!   point; adapted from kclaw0 `loop-detection.js`).
 //! - [`lifecycle`] — JIT/ephemeral runner lifecycle (one job, then removed).
 //! - [`wire`] — the signed UDS dispatch frame (App → dispatcher) + reply.
 //!
@@ -16,10 +18,12 @@ pub mod agent;
 pub mod error;
 pub mod jobspec;
 pub mod lifecycle;
+pub mod loopguard;
 pub mod router;
 pub mod safety;
 pub mod wire;
 
 pub use agent::{Agent, ApiStyle};
 pub use error::{CoreError, Result};
+pub use loopguard::{fingerprint, LoopGuard, Verdict};
 pub use wire::{sign_frame, verify_frame, DispatchRequest, DispatchResponse, WireError};

@@ -21,6 +21,7 @@
 #![cfg_attr(not(unix), allow(dead_code))]
 
 use runner_core::jobspec::JobSpec;
+use runner_core::loopguard::{LoopGuard, Verdict};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
@@ -59,9 +60,15 @@ impl KernelInvoker for DryRunInvoker {
 }
 
 /// Handle one received frame end-to-end. Pure over its inputs (no socket), so the accept→verify→
-/// isolate→route→delegate decision is unit-tested directly. Fail-closed: every non-happy path is
-/// a `DispatchResponse::rejected`.
-fn handle_request(key: &[u8], invoker: &dyn KernelInvoker, raw: &[u8]) -> DispatchResponse {
+/// isolate→breaker→route→delegate decision is unit-tested directly. Fail-closed: every non-happy
+/// path is a `DispatchResponse::rejected`. The `guard` persists across connections (the runaway-loop
+/// breaker is stateful by design).
+fn handle_request(
+    key: &[u8],
+    invoker: &dyn KernelInvoker,
+    guard: &mut LoopGuard,
+    raw: &[u8],
+) -> DispatchResponse {
     let req: DispatchRequest = match serde_json::from_slice(raw) {
         Ok(r) => r,
         Err(e) => return DispatchResponse::rejected(format!("unparseable dispatch frame: {e}")),
@@ -78,6 +85,16 @@ fn handle_request(key: &[u8], invoker: &dyn KernelInvoker, raw: &[u8]) -> Dispat
         return DispatchResponse::rejected(
             "fork-triggered job must run on GitHub-hosted infra, not the self-hosted dispatcher",
         );
+    }
+
+    // Runaway-loop circuit breaker: a self-hosted autonomous loop dispatching the SAME work over
+    // and over is the #1 unattended-loop failure mode (cost blowups). Trip fail-closed before the
+    // kernel is touched. Distinct work and normal retries pass; only a tight identical loop trips.
+    if let Verdict::Trip { count } = guard.observe(&job) {
+        return DispatchResponse::rejected(format!(
+            "loop breaker tripped: identical job dispatched {count}x within the recent window \
+             (runaway-loop guard); back off or vary the work"
+        ));
     }
 
     let plan = router::route(&job);
@@ -103,12 +120,13 @@ fn serve_once(
     listener: &std::os::unix::net::UnixListener,
     key: &[u8],
     invoker: &dyn KernelInvoker,
+    guard: &mut LoopGuard,
 ) -> std::io::Result<()> {
     use std::io::Write;
     let (mut stream, _addr) = listener.accept()?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
-    let resp = handle_request(key, invoker, &raw);
+    let resp = handle_request(key, invoker, guard, &raw);
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
     stream.write_all(&bytes)?;
@@ -117,21 +135,28 @@ fn serve_once(
 }
 
 /// Bind `socket_path` and serve forever (one job per connection — the ephemeral-runner model).
-/// Removes a stale socket first; a per-connection error is logged and the loop continues.
+/// Removes a stale socket first; a per-connection error is logged and the loop continues. The
+/// [`LoopGuard`] is owned here so its runaway-loop history spans connections.
 #[cfg(unix)]
 fn serve(
     socket_path: &std::path::Path,
     key: &[u8],
     invoker: &dyn KernelInvoker,
+    guard: &mut LoopGuard,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
     }
     let listener = UnixListener::bind(socket_path)?;
-    eprintln!("fxrun-dispatch: listening on {}", socket_path.display());
+    eprintln!(
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {})",
+        socket_path.display(),
+        guard.trip_threshold(),
+        guard.window()
+    );
     loop {
-        if let Err(e) = serve_once(&listener, key, invoker) {
+        if let Err(e) = serve_once(&listener, key, invoker, guard) {
             eprintln!("fxrun-dispatch: connection error: {e}");
         }
     }
@@ -172,6 +197,16 @@ fn stdin_dry_run(key: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Read a positive `usize` from `var`, falling back to `default` when unset/empty/unparseable.
+#[cfg(unix)]
+fn env_usize(var: &str, default: usize) -> usize {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(default)
+}
+
 fn main() -> anyhow::Result<()> {
     // P3: fetch from envctl's vault, not the environment.
     let key = std::env::var("FXRUN_DISPATCH_KEY").unwrap_or_default();
@@ -189,7 +224,17 @@ fn main() -> anyhow::Result<()> {
                     "refusing to serve without FXRUN_DISPATCH_KEY (P3: injected from envctl's vault)"
                 );
             }
-            serve(std::path::Path::new(path), key.as_bytes(), &DryRunInvoker)?;
+            // The breaker spans the whole server lifetime. Operators may tune it via env
+            // (FXRUN_LOOP_WINDOW / FXRUN_LOOP_THRESHOLD); defaults mirror kclaw0 (4 in 8).
+            let window = env_usize("FXRUN_LOOP_WINDOW", 8);
+            let threshold = env_usize("FXRUN_LOOP_THRESHOLD", 4);
+            let mut guard = LoopGuard::new(window, threshold);
+            serve(
+                std::path::Path::new(path),
+                key.as_bytes(),
+                &DryRunInvoker,
+                &mut guard,
+            )?;
             return Ok(());
         }
         #[cfg(not(unix))]
@@ -242,7 +287,7 @@ mod tests {
         let inv = RecordingInvoker::default();
         let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
-        let resp = handle_request(b"k", &inv, &raw);
+        let resp = handle_request(b"k", &inv, &mut LoopGuard::default(), &raw);
         assert!(resp.accepted);
         assert_eq!(resp.kernel.as_deref(), Some("loop"));
         assert_eq!(resp.placement.as_deref(), Some("SelfHosted"));
@@ -254,7 +299,7 @@ mod tests {
         let inv = RecordingInvoker::default();
         let frame = sign_frame(b"k", &ci_spec(true)).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
-        let resp = handle_request(b"k", &inv, &raw);
+        let resp = handle_request(b"k", &inv, &mut LoopGuard::default(), &raw);
         assert!(!resp.accepted);
         assert!(resp.error.unwrap().contains("fork"));
         assert_eq!(inv.calls(), 0, "fork job must never reach a kernel");
@@ -265,7 +310,7 @@ mod tests {
         let inv = RecordingInvoker::default();
         let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
-        let resp = handle_request(b"wrong-key", &inv, &raw);
+        let resp = handle_request(b"wrong-key", &inv, &mut LoopGuard::default(), &raw);
         assert!(!resp.accepted);
         assert_eq!(inv.calls(), 0);
     }
@@ -273,9 +318,51 @@ mod tests {
     #[test]
     fn unparseable_frame_is_rejected() {
         let inv = RecordingInvoker::default();
-        let resp = handle_request(b"k", &inv, b"this is not json");
+        let resp = handle_request(b"k", &inv, &mut LoopGuard::default(), b"this is not json");
         assert!(!resp.accepted);
         assert_eq!(inv.calls(), 0);
+    }
+
+    #[test]
+    fn loop_breaker_trips_on_repeated_identical_dispatch_and_spares_the_kernel() {
+        let inv = RecordingInvoker::default();
+        // Tight breaker: trip on the 2nd identical dispatch within a window of 4.
+        let mut guard = LoopGuard::new(4, 2);
+        let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        let raw = serde_json::to_vec(&frame).unwrap();
+
+        // First identical dispatch is delegated…
+        let first = handle_request(b"k", &inv, &mut guard, &raw);
+        assert!(first.accepted);
+        assert_eq!(inv.calls(), 1);
+
+        // …the second identical dispatch trips the breaker and never reaches the kernel.
+        let second = handle_request(b"k", &inv, &mut guard, &raw);
+        assert!(!second.accepted);
+        assert!(second.error.unwrap().contains("loop breaker"));
+        assert_eq!(inv.calls(), 1, "tripped job must not be delegated");
+    }
+
+    #[test]
+    fn distinct_work_is_not_tripped_by_the_breaker() {
+        let inv = RecordingInvoker::default();
+        let mut guard = LoopGuard::new(4, 2);
+        // Each dispatch is distinct work (varying head_sha) → never trips.
+        for i in 0..6 {
+            let spec = JobSpec {
+                id: format!("job-{i}"),
+                correlation_id: "c".into(),
+                from_fork: false,
+                job: JobKind::Ci {
+                    repo: "FlexNetOS/meta".into(),
+                    head_sha: format!("sha{i}"),
+                },
+            };
+            let frame = sign_frame(b"k", &spec).unwrap();
+            let raw = serde_json::to_vec(&frame).unwrap();
+            assert!(handle_request(b"k", &inv, &mut guard, &raw).accepted);
+        }
+        assert_eq!(inv.calls(), 6);
     }
 
     #[cfg(unix)]
@@ -300,7 +387,7 @@ mod tests {
         let rec_srv = recorder.clone();
         let key_srv = key.clone();
         let handle = std::thread::spawn(move || {
-            serve_once(&listener, &key_srv, &*rec_srv).unwrap();
+            serve_once(&listener, &key_srv, &*rec_srv, &mut LoopGuard::default()).unwrap();
         });
 
         let frame = sign_frame(&key, &ci_spec(false)).unwrap();
