@@ -20,6 +20,7 @@
 // real target (Unix) keeps full dead-code checking.
 #![cfg_attr(not(unix), allow(dead_code))]
 
+use runner_core::approval::ApprovalPolicy;
 use runner_core::constitution::{Constitution, ConstitutionStatus};
 use runner_core::cost::JobCost;
 use runner_core::events::{DispatchEvent, EventSink, NullSink, Outcome};
@@ -109,6 +110,7 @@ fn handle_request(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     constitution: &ConstitutionStatus,
+    approval: &ApprovalPolicy,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -177,6 +179,31 @@ fn handle_request(
                       dispatcher";
         sink.emit(&DispatchEvent::for_job(Outcome::ForkRejected, &job).with_detail(detail));
         return DispatchResponse::rejected(detail);
+    }
+
+    // Human-approval gate (Archon ApprovalNode / attractor wait.human): if this job's class is in an
+    // operator-enabled approval band, hold it unless the frame carries a valid approval grant (an
+    // HMAC over the job fingerprint a human authorized). Placed before the breaker/budget so a
+    // held job consumes neither the loop window nor the budget — the orchestrator approves out of
+    // band and re-dispatches with the grant. Inert unless a band is enabled (FXRUN_APPROVAL_BANDS).
+    if approval.requires(&job) {
+        let approved = req
+            .approval
+            .as_ref()
+            .is_some_and(|grant| grant.verify(key, &fingerprint(&job)));
+        if !approved {
+            let directive = policy.decide(retry, &fingerprint(&job), FailureKind::ApprovalRequired);
+            let detail = format!(
+                "job class requires human approval and no valid grant was presented | {}",
+                directive.summary()
+            );
+            sink.emit(
+                &DispatchEvent::for_job(Outcome::ApprovalRequired, &job)
+                    .with_recovery(directive.clone())
+                    .with_detail(&detail),
+            );
+            return DispatchResponse::rejected(detail).with_recovery(directive);
+        }
     }
 
     // Runaway-loop circuit breaker: a self-hosted autonomous loop dispatching the SAME work over
@@ -267,6 +294,7 @@ fn serve_once(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     constitution: &Constitution,
+    approval: &ApprovalPolicy,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -280,7 +308,7 @@ fn serve_once(
     // Re-verify the runner's constitution against the files on disk right now (I/O lives here).
     let status = constitution.verify(|name| std::fs::read(name).ok());
     let resp = handle_request(
-        key, invoker, &status, guard, governor, policy, retry, sink, &raw,
+        key, invoker, &status, approval, guard, governor, policy, retry, sink, &raw,
     );
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
@@ -299,6 +327,7 @@ fn serve(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     constitution: &Constitution,
+    approval: &ApprovalPolicy,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -315,14 +344,20 @@ fn serve(
     } else {
         format!("constitution: {} sealed", constitution.len())
     };
+    let approval_note = if approval.is_active() {
+        format!("approval bands: {}", approval.enabled_bands().join(","))
+    } else {
+        "approval: none".to_string()
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
         render_budget(&governor.budget()),
         policy.max_retries(),
         policy.base_backoff_secs(),
+        approval_note,
         constitution_note
     );
     loop {
@@ -331,6 +366,7 @@ fn serve(
             key,
             invoker,
             constitution,
+            approval,
             guard,
             governor,
             policy,
@@ -486,6 +522,11 @@ fn main() -> anyhow::Result<()> {
                 }
                 c
             };
+            // Human-approval bands: job classes (ci/review/agent/cycle) that require a human grant
+            // before dispatch. Empty/unset → nothing requires approval (behaviour-preserving).
+            let approval = ApprovalPolicy::from_bands(
+                &std::env::var("FXRUN_APPROVAL_BANDS").unwrap_or_default(),
+            );
             // Audit trail: NDJSON to FXRUN_EVENT_LOG when set, else a no-op sink (default).
             let event_log = std::env::var("FXRUN_EVENT_LOG").unwrap_or_default();
             let sink: Box<dyn EventSink> = if event_log.trim().is_empty() {
@@ -501,6 +542,7 @@ fn main() -> anyhow::Result<()> {
                 key.as_bytes(),
                 &DryRunInvoker,
                 &constitution,
+                &approval,
                 &mut guard,
                 &mut governor,
                 &policy,
@@ -588,6 +630,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -610,6 +653,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -631,6 +675,7 @@ mod tests {
             b"wrong-key",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -649,6 +694,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -682,6 +728,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -694,6 +741,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -706,6 +754,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -746,6 +795,7 @@ mod tests {
             b"k",
             &inv,
             &violated,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -766,6 +816,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -790,6 +841,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -805,6 +857,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -839,6 +892,7 @@ mod tests {
                 b"k",
                 &inv,
                 &ConstitutionStatus::Intact,
+                &ApprovalPolicy::none(),
                 &mut guard,
                 &mut governor,
                 &RecoveryPolicy::default(),
@@ -890,6 +944,7 @@ mod tests {
                 b"k",
                 &inv,
                 &ConstitutionStatus::Intact,
+                &ApprovalPolicy::none(),
                 &mut guard,
                 &mut gov,
                 &RecoveryPolicy::default(),
@@ -933,6 +988,7 @@ mod tests {
                     b"k",
                     &inv,
                     &ConstitutionStatus::Intact,
+                    &ApprovalPolicy::none(),
                     &mut guard,
                     &mut Governor::unlimited(),
                     &RecoveryPolicy::default(),
@@ -984,6 +1040,7 @@ mod tests {
                 b"k",
                 &inv,
                 &ConstitutionStatus::Intact,
+                &ApprovalPolicy::none(),
                 &mut guard,
                 gov,
                 &policy,
@@ -1037,6 +1094,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1074,6 +1132,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut guard,
             &mut gov,
             &policy,
@@ -1093,6 +1152,7 @@ mod tests {
             b"k",
             &inv,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -1121,6 +1181,7 @@ mod tests {
             b"k",
             &fail,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -1139,6 +1200,7 @@ mod tests {
             b"k",
             &ok,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -1159,6 +1221,7 @@ mod tests {
             b"k",
             &ok,
             &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
             &mut tight,
             &mut gov,
             &policy,
@@ -1171,6 +1234,86 @@ mod tests {
             tripped.recovery.expect("loop trip carries recovery").action,
             RecoveryVerb::Escalate
         );
+    }
+
+    #[test]
+    fn approval_band_holds_a_job_without_a_grant_then_admits_with_one() {
+        use runner_core::recovery::RecoveryVerb;
+        use runner_core::wire::Approval;
+        let inv = RecordingInvoker::default();
+        // CI jobs require approval in this policy.
+        let approval = ApprovalPolicy::from_bands("ci");
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::unlimited();
+        let policy = RecoveryPolicy::default();
+        let mut retry = RetryLedger::new();
+
+        let spec = ci_spec(false);
+        let frame = sign_frame(b"k", &spec).unwrap();
+
+        // No grant → held (ApprovalRequired), never reaches the kernel, advises escalation.
+        let held = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &approval,
+            &mut guard,
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &serde_json::to_vec(&frame).unwrap(),
+        );
+        assert!(!held.accepted);
+        assert!(held.error.unwrap().contains("requires human approval"));
+        assert_eq!(
+            held.recovery.expect("held job carries recovery").action,
+            RecoveryVerb::Escalate
+        );
+        assert_eq!(inv.calls(), 0, "a held job must never reach a kernel");
+
+        // Re-dispatch WITH a valid grant bound to the fingerprint → admitted and delegated.
+        let mut approved_frame = sign_frame(b"k", &spec).unwrap();
+        approved_frame.approval = Some(Approval::grant(
+            b"k",
+            &runner_core::fingerprint(&spec),
+            "alice",
+        ));
+        let ok = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &approval,
+            &mut guard,
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &serde_json::to_vec(&approved_frame).unwrap(),
+        );
+        assert!(ok.accepted);
+        assert_eq!(inv.calls(), 1);
+
+        // A grant for a DIFFERENT job's fingerprint does not unlock this one.
+        let mut forged = sign_frame(b"k", &spec).unwrap();
+        forged.approval = Some(Approval::grant(b"k", "some-other-fingerprint", "alice"));
+        let rejected = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &approval,
+            &mut LoopGuard::default(), // fresh guard so the breaker doesn't trip on the repeat
+            &mut gov,
+            &policy,
+            &mut retry,
+            &NullSink,
+            &serde_json::to_vec(&forged).unwrap(),
+        );
+        assert!(
+            !rejected.accepted,
+            "a mismatched grant must not unlock the job"
+        );
+        assert_eq!(inv.calls(), 1, "still only the one approved delegation");
     }
 
     #[cfg(unix)]
@@ -1200,6 +1343,7 @@ mod tests {
                 &key_srv,
                 &*rec_srv,
                 &Constitution::default(),
+                &ApprovalPolicy::none(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::default(),

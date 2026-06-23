@@ -10,6 +10,8 @@
 //!   point; adapted from kclaw0 `loop-detection.js`).
 //! - [`constitution`] — constitution-immutability gate (refuse to dispatch if the runner's own
 //!   governing files change mid-run; adapted from `automaton` + kclaw0 `dark-factory.js`).
+//! - [`approval`] — human-approval admission policy (hold a flagged job class until a human grants
+//!   approval; adapted from `Archon`'s `ApprovalNode` + `attractor`'s `wait.human`).
 //! - [`lint`] — structural JobSpec lint (refuse a malformed job before it reaches a kernel;
 //!   adapted from `attractor`'s VALIDATE phase).
 //! - [`recovery`] — declarative recovery routing (retry-with-backoff vs. escalate-to-human advice
@@ -26,6 +28,7 @@
 //! `runner-dispatch` (UDS server) drive these typed seams.
 
 pub mod agent;
+pub mod approval;
 pub mod constitution;
 pub mod cost;
 pub mod error;
@@ -41,6 +44,7 @@ pub mod safety;
 pub mod wire;
 
 pub use agent::{Agent, ApiStyle};
+pub use approval::ApprovalPolicy;
 pub use constitution::{Constitution, ConstitutionStatus};
 pub use cost::JobCost;
 pub use error::{CoreError, Result};
@@ -49,4 +53,4 @@ pub use governor::{Admission, Budget, Governor, Spend, SurvivalTier};
 pub use lint::{is_structurally_valid, structural_errors, LintError};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};
 pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger};
-pub use wire::{sign_frame, verify_frame, DispatchRequest, DispatchResponse, WireError};
+pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};

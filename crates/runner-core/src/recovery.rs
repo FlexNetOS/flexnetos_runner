@@ -36,6 +36,9 @@ pub enum FailureKind {
     LoopTripped,
     /// The job was structurally invalid (NOT retryable: the same bytes can never become valid).
     Malformed,
+    /// The job's class requires a human approval grant that was absent/invalid (NOT retryable by the
+    /// runner: a human must approve, then the orchestrator re-dispatches *with* a grant).
+    ApprovalRequired,
 }
 
 impl FailureKind {
@@ -138,6 +141,10 @@ impl RecoveryPolicy {
                 FailureKind::Malformed => {
                     "job is structurally invalid — re-dispatching the same spec cannot succeed; \
                      fix the JobSpec or escalate to a human"
+                }
+                FailureKind::ApprovalRequired => {
+                    "job class requires human approval — a human must approve, then re-dispatch \
+                     with an approval grant"
                 }
                 FailureKind::KernelFailed => unreachable!("KernelFailed is retryable"),
             };
@@ -272,6 +279,16 @@ mod tests {
         let d = policy.decide(&mut ledger, FP, FailureKind::Malformed);
         assert_eq!(d.action, RecoveryVerb::Escalate);
         assert!(d.reason.contains("structurally invalid"));
+    }
+
+    #[test]
+    fn approval_required_escalates_for_a_human_to_approve() {
+        let policy = RecoveryPolicy::default();
+        let mut ledger = RetryLedger::new();
+        let d = policy.decide(&mut ledger, FP, FailureKind::ApprovalRequired);
+        assert_eq!(d.action, RecoveryVerb::Escalate);
+        assert_eq!(d.attempt, 0, "a held job consumes no retry budget");
+        assert!(d.reason.contains("requires human approval"));
     }
 
     #[test]

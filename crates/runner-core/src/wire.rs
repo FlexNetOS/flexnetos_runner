@@ -27,6 +27,49 @@ pub struct DispatchRequest {
     pub spec_json: String,
     /// `sha256=<hex>` HMAC over `spec_json`'s bytes.
     pub signature: String,
+    /// Optional human-approval grant (present only on a re-dispatch *after* a human approved a job
+    /// whose class requires it — see [`crate::approval`]). Absent on a normal first dispatch, so
+    /// older App frames stay valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<Approval>,
+}
+
+/// A human-approval grant: HMAC proof, over the job's fingerprint, that an approver authorized this
+/// specific job. Forging it requires the dispatch key (the App holds it and computes the grant once
+/// a human approves), and binding to the fingerprint stops a grant being replayed onto a *different*
+/// job. Carried on the [`DispatchRequest`] envelope, not the signed `JobSpec`, so approval is an
+/// out-of-band fact the orchestrator attaches without re-minting the original signed spec.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Approval {
+    /// Approver identity (informational, and bound into the signature so it can't be swapped).
+    pub by: String,
+    /// `sha256=<hex>` HMAC over `approve:<fingerprint>:<by>`.
+    pub signature: String,
+}
+
+impl Approval {
+    /// The bytes an approval signs: `approve:<fingerprint>:<by>`.
+    fn grant_message(fingerprint: &str, by: &str) -> Vec<u8> {
+        format!("approve:{fingerprint}:{by}").into_bytes()
+    }
+
+    /// Mint a grant for `fingerprint` by approver `by`, signed with the dispatch `key` (the App
+    /// calls this after a human approves).
+    pub fn grant(key: &[u8], fingerprint: &str, by: impl Into<String>) -> Self {
+        let by = by.into();
+        let signature = sign_bytes(key, &Self::grant_message(fingerprint, &by));
+        Self { by, signature }
+    }
+
+    /// Verify this grant authorizes `fingerprint` under `key` (constant-time).
+    pub fn verify(&self, key: &[u8], fingerprint: &str) -> bool {
+        verify_bytes(
+            key,
+            &Self::grant_message(fingerprint, &self.by),
+            &self.signature,
+        )
+        .is_ok()
+    }
 }
 
 /// The dispatcher's reply. `accepted=false` always carries an `error`; the optional fields echo
@@ -84,6 +127,7 @@ pub fn sign_frame(key: &[u8], spec: &JobSpec) -> Result<DispatchRequest, WireErr
     Ok(DispatchRequest {
         spec_json,
         signature,
+        approval: None,
     })
 }
 
@@ -166,6 +210,7 @@ mod tests {
         let frame = DispatchRequest {
             spec_json: body.to_string(),
             signature: sign_bytes(b"k", body.as_bytes()),
+            approval: None,
         };
         assert!(matches!(
             verify_frame(b"k", &frame),
@@ -178,5 +223,27 @@ mod tests {
         let r = DispatchResponse::rejected("nope");
         let json = serde_json::to_string(&r).unwrap();
         assert_eq!(json, r#"{"accepted":false,"error":"nope"}"#);
+    }
+
+    #[test]
+    fn approval_grant_round_trips_and_binds_to_the_fingerprint() {
+        let grant = Approval::grant(b"k", "fp-123", "alice");
+        assert!(grant.verify(b"k", "fp-123"));
+        // Wrong key, wrong fingerprint, or swapped approver all fail.
+        assert!(!grant.verify(b"other", "fp-123"));
+        assert!(!grant.verify(b"k", "fp-999"));
+        let mut tampered = grant.clone();
+        tampered.by = "mallory".into();
+        assert!(!tampered.verify(b"k", "fp-123"));
+    }
+
+    #[test]
+    fn frame_without_approval_omits_the_field_and_still_parses() {
+        let frame = sign_frame(b"k", &spec()).unwrap();
+        assert!(frame.approval.is_none());
+        let json = serde_json::to_string(&frame).unwrap();
+        assert!(!json.contains("approval"));
+        let back: DispatchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, frame);
     }
 }
