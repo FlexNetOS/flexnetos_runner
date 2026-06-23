@@ -149,6 +149,10 @@ fn main() -> anyhow::Result<()> {
                  (weight desc, route id asc; today one candidate per job kind)"
             );
             println!(
+                "  state gate         : off by default (FXRUN_STATE_GATE=agent=full,cycle=conserving \
+                 defers route classes when survival tier is too degraded)"
+            );
+            println!(
                 "  single-flight      : per-target older-wins mutex serializes same-repo mutable work; \
                  global max-in-flight cap waits for concurrent serve"
             );

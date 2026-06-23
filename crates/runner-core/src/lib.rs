@@ -38,6 +38,8 @@
 //!   adapted from fail-closed allowlist / egress-control prior art).
 //! - [`singleflight`] — per-target older-wins mutex for mutable repo work (the buildable seam of the
 //!   max-in-flight/single-flight backlog item; global cap waits for concurrent serve).
+//! - [`stategate`] — route-class × survival-tier admission matrix (defer non-essential work when
+//!   the runner is conserving/distressed).
 //! - [`cost`] — per-job cost report (the `atc → runner` cost seam; tokens + USD).
 //! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch over jobs/tokens/USD;
 //!   adapted from kclaw0 `dark-factory.js::enforceBudget` + `survival.js`).
@@ -74,6 +76,7 @@ pub mod router;
 pub mod safety;
 pub mod scan;
 pub mod singleflight;
+pub mod stategate;
 pub mod targets;
 pub mod wire;
 pub mod workspace;
@@ -97,6 +100,7 @@ pub use risk::{RiskBand, RiskLedger, RiskModel, RiskPolicy, RiskScore};
 pub use router::{select_route, RouteCandidate};
 pub use scan::{scan, Finding, ScanPolicy, ScanReport, Severity};
 pub use singleflight::{FlightLease, SingleFlight, SingleFlightDenied, TargetKey};
+pub use stategate::{StateGateDecision, StateGatePolicy};
 pub use targets::{TargetAllowlist, TargetDecision};
 pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};
 pub use workspace::{JobWorkspace, NoopWorkspaceProvider, TeardownReport, WorkspaceProvider};
