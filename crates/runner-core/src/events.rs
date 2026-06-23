@@ -16,6 +16,7 @@
 use crate::cost::JobCost;
 use crate::jobspec::JobSpec;
 use crate::loopguard::fingerprint;
+use crate::recovery::RecoveryDirective;
 use serde::Serialize;
 
 /// The outcome of one dispatch admission decision — the runner-plane event vocabulary.
@@ -28,6 +29,8 @@ pub enum Outcome {
     Unparseable,
     /// HMAC verification failed (bad key / tampered body).
     VerifyFailed,
+    /// The job authenticated and parsed but is structurally invalid (failed the [`crate::lint`]).
+    Malformed,
     /// Fork-triggered job refused (must run on hosted infra).
     ForkRejected,
     /// Runaway-loop circuit breaker tripped.
@@ -64,6 +67,10 @@ pub struct DispatchEvent {
     /// Cost `atc` reported for a delegated job (absent for rejections and unmeasured work).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<JobCost>,
+    /// Recovery directive emitted for a failed dispatch (retry-with-backoff vs. escalate); absent
+    /// for clean delegations and pre-parse rejections.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<RecoveryDirective>,
     /// Human-readable reason (e.g. the rejection message).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -79,6 +86,7 @@ impl DispatchEvent {
             fingerprint: None,
             kernel: None,
             cost: None,
+            recovery: None,
             detail: Some(detail.into()),
         }
     }
@@ -92,6 +100,7 @@ impl DispatchEvent {
             fingerprint: Some(fingerprint(job)),
             kernel: None,
             cost: None,
+            recovery: None,
             detail: None,
         }
     }
@@ -105,6 +114,12 @@ impl DispatchEvent {
     /// Builder: attach the cost `atc` reported (omitted when unmeasured).
     pub fn with_cost(mut self, cost: JobCost) -> Self {
         self.cost = Some(cost);
+        self
+    }
+
+    /// Builder: attach the recovery directive emitted for a failed dispatch.
+    pub fn with_recovery(mut self, recovery: RecoveryDirective) -> Self {
+        self.recovery = Some(recovery);
         self
     }
 
