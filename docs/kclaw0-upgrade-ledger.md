@@ -25,6 +25,7 @@ Background: `meta/DARK-FACTORY-RESEARCH.md` (the autonomous-loop landscape this 
 | 8 | **prior-art:** `coleam00/Archon` `ApprovalNode` / `interactive: true` + `strongdm/attractor` `wait.human` hexagon | **Human-approval admission gate.** An operator opts job *classes* into an approval band (`FXRUN_APPROVAL_BANDS=ci,review,agent,cycle`); a job in an enabled band is **held** (not delegated) unless the frame carries a valid **approval grant** — an HMAC (under the dispatch key) over the job *fingerprint*, bound to the approver, so it can't be replayed onto a different job and can't be forged without the key. Gate sits **before** the breaker/budget so a held job consumes neither the loop window nor the budget; a hold escalates via the recovery layer (`wait.human`). `Outcome::ApprovalRequired`, `FailureKind::ApprovalRequired`, grant on the `DispatchRequest` envelope (not the signed spec — an out-of-band orchestrator fact). Delegate-only: the runner holds + surfaces the request; a human/the orchestrator approves and re-dispatches. Inert unless a band is enabled. | `runner-core::approval` (`ApprovalPolicy`) + `runner-core::wire::Approval`, wired in `runner-dispatch` | #12 (merged) |
 | 9 | **prior-art:** `Conway-Research/automaton` separate `policy_decisions` table + git lineage (guardrail decisions auditable apart from execution) | **`policy_decisions` audit stream** (extends the cycle-3 audit log). Each [`Outcome`] is classified `EventCategory::{Policy, Execution}`: *Execution* = the kernel actually ran (`Delegated`/`KernelFailed`); *Policy* = every admission/guardrail decision (constitution, frame auth, lint, fork, approval, breaker, budget). A binary-side `RoutingSink` writes **all** events to `FXRUN_EVENT_LOG` (unchanged) and **policy-only** events to a distinct `FXRUN_POLICY_LOG`, so guardrail tampering is auditable on its own stream (pairs with the constitution gate, row 5). `runner-core` stays I/O-free (just the classifier); off by default. | `runner-core::events` (`EventCategory`, `Outcome::category`), `RoutingSink` in `runner-dispatch` | feat/policy-audit-stream |
 | 7 | **prior-art:** `Conway-Research/automaton` 5-tier balance ladder (healthy → conserving → critical → distress → dead) + grace-before-dead | **Survival tiers + debounced halt** (extends the `Governor`). (a) **`SurvivalTier`** (full → conserving@75% → distress@90% → halted) classifies how close the *worst* capped dimension is to its ceiling — read-only **observability** the operator/weave acts on *before* the wall (the runner still only hard-stops at the cap; the *model-downgrade* response stays weave's). Surfaced in the audit log: a degraded-tier delegation carries a `survival tier: …` note. (b) A **debounced floor** (`FXRUN_BUDGET_GRACE`): when a cap is first met, allow up to `grace` further "distress" admits before refusing all dispatch — avoids latching the kill-switch on a single tiny overshoot / in-flight job. `grace = 0` (default) is the exact strict cliff (behaviour-preserving). | `runner-core::governor` (`SurvivalTier`, `Budget::grace`, `tier()`), wired in `runner-dispatch` | #11 (merged) |
+| 11 | **prior-art:** `Conway-Research/automaton` child lifecycle `… → unhealthy → recovering → dead` + `strongdm/attractor` terminal-failure state (a unit that keeps failing the same way is moved *terminal*, not retried forever) — surfaced independently by the cycle-11 deep-research sweep. | **Cross-dispatch quarantine ledger** — the *enforcement teeth* behind recovery's escalate advice. The breaker trips on identical-dispatch *volume* (and self-recovers as it ages out); recovery counts `KernelFailed` attempts but only flips its *advice* retry→escalate (nothing stops the orchestrator re-firing doomed work). Quarantine closes that gap: once a fingerprint fails at the kernel `FXRUN_QUARANTINE_THRESHOLD` times it latches **terminal**, and every subsequent dispatch is **refused at admission (before breaker/budget/kernel)** until an operator re-arms — same kill-switch doctrine as the budget governor. A clean delegation resets the count + releases it, so only *persistent same-way* failure latches (a transient blip recovers). New gate after `approval`, before `breaker`. `Outcome::Quarantined` (Policy category) + `FailureKind::Quarantined` (escalate). Pure runner-core; **opt-in** (threshold 0 = off, behaviour-preserving). | `runner-core::quarantine` (`QuarantinePolicy`, `QuarantineLedger`), wired in `runner-dispatch` | feat/quarantine-ledger |
 
 ### Cycle-2 research note — kclaw0 `dark-factory.js` is a governance engine
 Admission sequence: **immutability → budget → state-machine → holdout**. Mapping to the runner plane:
@@ -91,6 +92,58 @@ From the phase-3 research sweep of kclaw0's named prior-art (cited in `meta/DARK
 **Out of scope (weave/atc/CI), confirmed by the sweep:** `pi-subagents` reviewer-loop + per-agent model
 overrides (atc/weave); `Conway-Research/skills` progressive disclosure (context-engineering);
 `Understand-Anything` / `mempalace` / `chroma` / `second-brain-starter` (memory/KG/vector — weave/atc).
+
+### Cycle-11 deep-research sweep (3 parallel agents: kclaw0 + Archon + attractor/automaton)
+A fresh, deeper sweep — past the exhausted #2–#6 batch — re-read the source of all four targets for
+mechanisms not yet adopted. Strong **cross-source convergence** (the signal that an item is real, not
+a single repo's quirk). Ranked, runner-plane lens; **#11 (quarantine) applied this cycle**:
+
+- ✓ **Cross-dispatch quarantine** (automaton child `→ dead` lifecycle + attractor terminal-failure) →
+  **APPLIED (cycle 11, `feat/quarantine-ledger`).** See *Applied* row 11.
+- ▶ **Per-job wall-clock deadline / hung-delegate timeout** — surfaced **independently by all three**
+  sources (kclaw0 `docker-exec.js` `defaultTimeout` + `dockerStop`; Archon `GIT_OPERATION_TIMEOUT_MS`
+  per-op ceilings; attractor `timeout` node attribute). The orthogonal failure axis the runner lacks:
+  the breaker catches *loops*, the governor catches *cost/volume*, quarantine catches *repeat-failure*
+  — **none bound a single non-looping, in-budget, *hung* job by time.** Runner-plane slice: a signed
+  `deadline`/`max_runtime` on the JobSpec + a watchdog wrapping `route → delegate` that, on expiry,
+  fires the existing `JobWorkspace` teardown (#10) + a `Policy` timeout event (#9) + recovery directive
+  (#6). Seam-first (the actual SIGKILL of the kernel's own process is the kernel's; the runner
+  abandons + reclaims + signals). **Next to apply.**
+- ▶ **Audit-path secret redaction** (Archon `repo.ts` scrubs the auth token from every error *before*
+  it is classified/logged/returned). The runner handles HMAC keys + approval-grant tokens; a
+  `redact(text, secrets)` seam invoked by the audit writer + the UDS error responder ensures key
+  material never lands in `FXRUN_EVENT_LOG` / `FXRUN_POLICY_LOG` / a reply. Cheap, high-value, fully
+  in-scope, fully live-verifiable. **Queued.**
+- ▷ **Windowed rate-limit + per-route error cooldown** (automaton hourly/daily caps + "5-min backoff
+  on error") — extend the `Governor` from cumulative caps to rolling-window counters (jobs/min,
+  jobs/hour, `max_in_flight`) + a post-failure per-route cooldown stamp. In-scope Governor extension;
+  distinct from the retry backoff (which is per-job advice). **Queued.**
+- ▷ **Pre-dispatch content/injection scan** (Archon `marketplace-security-scan.ts`: severity-graded
+  regex pattern-banks, scan/decide split, fail-closed on critical/high; kclaw0 `path-simulator.js`
+  risk scoring). Lighter for a delegate-only router (the JobSpec carries no source — only `prompt_ref`
+  / `task_id` strings), so the in-scope slice is an **injection-pattern scan of the spec's string
+  fields** → `ScanReport{severity, findings}` → fail-closed reject at/after `lint`. **Queued (lower
+  fit; verify the payload surface is worth a gate).**
+- ▷ **History-calibrated pre-route risk score** (kclaw0 `path-simulator.js` blends a static base rate
+  with the *live* failure rate from the event ledger). Pure advice over seams already present (#3
+  audit history + #4 cost); feeds approval/recovery (high predicted-failure → bias conservative).
+  Advice-only, novel, but lower urgency than the guards above. **Backlog.**
+- ⛔ **Adoption-time workspace ownership verification** (Archon `assertWorktreeOwnership` — refuse to
+  *adopt* a worktree not provably bound to this repo/fingerprint). The acquisition-side dual of the
+  applied teardown (#10), but **blocked-until-a-reuse-path-exists**: today's `WorkspaceProvider`
+  always creates fresh, so there is nothing to adopt yet. Apply alongside the P3 tmpfs-worktree reuse.
+- ⊕ **Rule-citation audit schema** (automaton `policy_decisions` 6-category: each denial cites
+  *which gate + which rule*). A **refinement** of the applied dual stream (#9): tag each `Policy`
+  refusal with `denied_by:{gate, rule_id}` so the stream is queryable by gate. Low-risk increment.
+- ▽ **Dispatch resume journal** (attractor checkpoint/resume) — marginal for a single-shot delegate
+  router; only the crash-recovery-lineage slice is in scope. Defer unless in-flight durability becomes
+  a goal. **Rejected by all three agents:** heartbeat / dead-man's-switch (no persistent loop to
+  guard), distill/optimize/ReasoningBank nodes (weave learning), `goal_gate`/holdout (CI/eval), and
+  every model-selection mechanism (weave).
+
+**Net after cycle 11:** quarantine applied; the queued backlog (deadline → redaction → rate-limit) is
+all unblocked, in-scope runner-plane work for the next cycles. Deadline is the highest-confidence pick
+(triple-converged). Adoption-ownership is the only newly-surfaced item gated on another component.
 
 ## Deferred / out of scope (model-router — weave owns)
 

@@ -35,6 +35,8 @@ pub enum Outcome {
     ForkRejected,
     /// Held: the job's class requires a human approval grant that was absent or invalid.
     ApprovalRequired,
+    /// Refused: this job's fingerprint is quarantined (it failed at the kernel too many times).
+    Quarantined,
     /// Runaway-loop circuit breaker tripped.
     LoopTripped,
     /// Dispatch budget exhausted (bounded-autonomy kill-switch).
@@ -64,6 +66,7 @@ impl Outcome {
             | Outcome::Malformed
             | Outcome::ForkRejected
             | Outcome::ApprovalRequired
+            | Outcome::Quarantined
             | Outcome::LoopTripped
             | Outcome::BudgetDenied => EventCategory::Policy,
         }
@@ -247,6 +250,7 @@ mod tests {
             Outcome::Malformed,
             Outcome::ForkRejected,
             Outcome::ApprovalRequired,
+            Outcome::Quarantined,
             Outcome::LoopTripped,
             Outcome::BudgetDenied,
         ] {

@@ -133,6 +133,10 @@ fn main() -> anyhow::Result<()> {
                 recovery.base_backoff_secs()
             );
             println!(
+                "  quarantine gate    : off by default (FXRUN_QUARANTINE_THRESHOLD=N → after N \
+                 kernel failures of a fingerprint, refuse re-dispatch until re-armed)"
+            );
+            println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
             println!(
