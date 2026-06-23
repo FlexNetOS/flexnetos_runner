@@ -109,6 +109,9 @@ fn main() -> anyhow::Result<()> {
             println!(
                 "  dispatch budget    : unlimited by default (FXRUN_DISPATCH_BUDGET kill-switch)"
             );
+            println!(
+                "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
+            );
             println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
             println!("  uds dispatch       : UNWIRED (P2)");
             println!("  secret injection   : UNWIRED (P3 — envctl relay-bearer)");
