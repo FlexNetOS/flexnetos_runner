@@ -29,6 +29,7 @@ use runner_core::events::{DispatchEvent, EventCategory, EventSink, NullSink, Out
 use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
 use runner_core::lint;
+use runner_core::liveness::LivenessPolicy;
 use runner_core::loopguard::{fingerprint, LoopGuard, Verdict};
 use runner_core::quarantine::{QuarantineLedger, QuarantinePolicy};
 use runner_core::ratelimit::{RateDecision, RateLimitPolicy, RateLimiter};
@@ -66,6 +67,7 @@ trait KernelInvoker {
         plan: &KernelPlan,
         job: &JobSpec,
         deadline: Option<std::time::Duration>,
+        idle_timeout: Option<std::time::Duration>,
     ) -> Delegation;
 }
 
@@ -79,6 +81,8 @@ enum Delegation {
     /// limit that was exceeded). The runner-plane bound on a *hung* job — the time axis the breaker /
     /// governor / quarantine don't cover.
     TimedOut(std::time::Duration),
+    /// The kernel kept running but produced no stdout/stderr activity within the idle timeout.
+    IdleTimedOut(std::time::Duration),
 }
 
 /// Run one delegation under the effective `deadline`. The invoker owns enforcement (see
@@ -88,8 +92,9 @@ fn run_delegation(
     plan: &KernelPlan,
     job: &JobSpec,
     deadline: Option<std::time::Duration>,
+    idle_timeout: Option<std::time::Duration>,
 ) -> Delegation {
-    invoker.invoke(plan, job, deadline)
+    invoker.invoke(plan, job, deadline, idle_timeout)
 }
 
 /// Shared handling for a failed/timed-out delegation: advise recovery (retry-with-backoff →
@@ -192,6 +197,7 @@ impl<P: WorkspaceProvider> KernelInvoker for DryRunInvoker<P> {
         plan: &KernelPlan,
         job: &JobSpec,
         _deadline: Option<std::time::Duration>,
+        _idle_timeout: Option<std::time::Duration>,
     ) -> Delegation {
         // Acquire the isolated work area. Its guard tears the tree down when this scope ends (Archon
         // zero-residue). The dry-run never hangs, so it ignores the deadline.
@@ -300,9 +306,11 @@ impl<P: WorkspaceProvider> KernelInvoker for SubprocessInvoker<P> {
         plan: &KernelPlan,
         job: &JobSpec,
         deadline: Option<std::time::Duration>,
+        idle_timeout: Option<std::time::Duration>,
     ) -> Delegation {
-        use std::io::Write;
+        use std::io::{Read as _, Write};
         use std::process::{Command, Stdio};
+        use std::sync::{Arc, Mutex};
 
         let ws = match self.workspace.acquire(&job.id) {
             Ok(ws) => ws,
@@ -315,12 +323,14 @@ impl<P: WorkspaceProvider> KernelInvoker for SubprocessInvoker<P> {
             Ok(s) => s,
             Err(e) => return Delegation::Failed(format!("jobspec encode failed: {e}")),
         };
-        // stderr → a file in the workspace (avoids a pipe-buffer deadlock with a chatty kernel; read
-        // back on failure). stdout is inherited so the kernel's own progress is visible to the operator.
-        let stderr_sink = match std::fs::File::create(&stderr_file) {
+        // stderr → a file in the workspace (read back on failure). When an idle timeout is active we
+        // pipe stdout/stderr through small pump threads so every yielded byte resets liveness; without
+        // it, stdout is inherited and stderr goes straight to the file (the old path).
+        let mut stderr_sink = match std::fs::File::create(&stderr_file) {
             Ok(f) => f,
             Err(e) => return Delegation::Failed(format!("workspace stderr file failed: {e}")),
         };
+        let activity = idle_timeout.map(|_| Arc::new(Mutex::new(std::time::Instant::now())));
         let mut cmd = Command::new(&cmd_path);
         cmd.current_dir(ws.root())
             .env("FXRUN_JOB_ID", &job.id)
@@ -329,9 +339,17 @@ impl<P: WorkspaceProvider> KernelInvoker for SubprocessInvoker<P> {
             .env("FXRUN_INTENT", &plan.intent)
             .env("FXRUN_REPO", &plan.repo)
             .env("FXRUN_COST_FILE", &cost_file)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::from(stderr_sink));
+            .stdin(Stdio::piped());
+        if activity.is_some() {
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        } else {
+            cmd.stdout(Stdio::inherit())
+                .stderr(Stdio::from(stderr_sink));
+            stderr_sink = match std::fs::File::create(&stderr_file) {
+                Ok(f) => f,
+                Err(e) => return Delegation::Failed(format!("workspace stderr file failed: {e}")),
+            };
+        }
         if let Some(agent) = plan.agent {
             cmd.env("FXRUN_AGENT", agent.as_str());
         }
@@ -348,14 +366,55 @@ impl<P: WorkspaceProvider> KernelInvoker for SubprocessInvoker<P> {
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(spec_json.as_bytes());
         }
+        let mut pumps = Vec::new();
+        if let Some(activity) = &activity {
+            if let Some(mut stdout) = child.stdout.take() {
+                let activity = Arc::clone(activity);
+                pumps.push(std::thread::spawn(move || {
+                    let mut buf = [0u8; 4096];
+                    let mut out = std::io::stdout();
+                    loop {
+                        match stdout.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if let Ok(mut a) = activity.lock() {
+                                    *a = std::time::Instant::now();
+                                }
+                                let _ = out.write_all(&buf[..n]);
+                                let _ = out.flush();
+                            }
+                        }
+                    }
+                }));
+            }
+            if let Some(mut stderr) = child.stderr.take() {
+                let activity = Arc::clone(activity);
+                pumps.push(std::thread::spawn(move || {
+                    let mut buf = [0u8; 4096];
+                    loop {
+                        match stderr.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if let Ok(mut a) = activity.lock() {
+                                    *a = std::time::Instant::now();
+                                }
+                                let _ = stderr_sink.write_all(&buf[..n]);
+                                let _ = stderr_sink.flush();
+                            }
+                        }
+                    }
+                }));
+            }
+        }
 
-        // Wait, enforcing the deadline by polling try_wait and killing the child on expiry.
-        let status = match deadline {
-            None => match child.wait() {
+        // Wait, enforcing deadline and idle/liveness timeout by polling try_wait and killing the
+        // child on expiry. Output pump threads refresh `activity` whenever stdout/stderr yields data.
+        let status = match (deadline, idle_timeout) {
+            (None, None) => match child.wait() {
                 Ok(s) => s,
                 Err(e) => return Delegation::Failed(format!("wait on `{cmd_path}` failed: {e}")),
             },
-            Some(limit) => {
+            (deadline, idle_timeout) => {
                 let start = std::time::Instant::now();
                 loop {
                     match child.try_wait() {
@@ -365,17 +424,33 @@ impl<P: WorkspaceProvider> KernelInvoker for SubprocessInvoker<P> {
                             return Delegation::Failed(format!("wait on `{cmd_path}` failed: {e}"))
                         }
                     }
-                    if start.elapsed() >= limit {
-                        // Hard-kill the hung child (attractor "interrupt" / Archon dockerStop), reap it,
-                        // and report the timeout. The workspace guard reclaims its tree on return.
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return Delegation::TimedOut(limit);
+                    if let Some(limit) = deadline {
+                        if start.elapsed() >= limit {
+                            // Hard-kill the hung child (attractor "interrupt" / Archon dockerStop), reap it,
+                            // and report the timeout. The workspace guard reclaims its tree on return.
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return Delegation::TimedOut(limit);
+                        }
+                    }
+                    if let Some(idle) = idle_timeout {
+                        let silent_for = activity
+                            .as_ref()
+                            .and_then(|a| a.lock().ok().map(|t| t.elapsed()))
+                            .unwrap_or_else(|| start.elapsed());
+                        if silent_for >= idle {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return Delegation::IdleTimedOut(idle);
+                        }
                     }
                     std::thread::sleep(std::time::Duration::from_millis(25));
                 }
             }
         };
+        for pump in pumps {
+            let _ = pump.join();
+        }
 
         if status.success() {
             let report = std::fs::read_to_string(&cost_file).unwrap_or_default();
@@ -508,6 +583,7 @@ fn handle_request(
     risk_policy: &RiskPolicy,
     risk_ledger: &mut RiskLedger,
     deadline: &DeadlinePolicy,
+    liveness: &LivenessPolicy,
     sink: &dyn EventSink,
     raw: &[u8],
 ) -> DispatchResponse {
@@ -800,7 +876,8 @@ fn handle_request(
     // (FXRUN_DEFAULT_DEADLINE_SECS) and the job's own envelope request. `None` → no bound (the
     // watchdog stays disengaged and the invoker is called directly — the default, unchanged path).
     let effective_deadline = deadline.effective(req.deadline_secs);
-    match run_delegation(invoker, &plan, &job, effective_deadline) {
+    let effective_idle = liveness.effective(req.idle_timeout_secs);
+    match run_delegation(invoker, &plan, &job, effective_deadline, effective_idle) {
         Delegation::Delivered(cost) => {
             // Charge the cost atc reported so the NEXT admit sees it (fail-open: ZERO is a no-op).
             governor.charge(cost);
@@ -904,6 +981,28 @@ fn handle_request(
                 ),
             )
         }
+        Delegation::IdleTimedOut(limit) => {
+            risk_ledger.record(&fp, false);
+            handle_failure(
+                policy,
+                retry,
+                quarantine_policy,
+                quarantine,
+                rate_limiter,
+                now_secs,
+                risk,
+                sink,
+                &job,
+                program,
+                &fp,
+                FailureKind::IdleTimeout,
+                Outcome::IdleTimeout,
+                format!(
+                    "kernel `{program}` produced no output for {}s (idle/liveness timeout) — killed",
+                    limit.as_secs()
+                ),
+            )
+        }
     }
 }
 
@@ -932,6 +1031,7 @@ fn serve_once(
     risk_policy: &RiskPolicy,
     risk_ledger: &mut RiskLedger,
     deadline: &DeadlinePolicy,
+    liveness: &LivenessPolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
@@ -961,6 +1061,7 @@ fn serve_once(
         risk_policy,
         risk_ledger,
         deadline,
+        liveness,
         sink,
         &raw,
     );
@@ -999,6 +1100,7 @@ fn serve(
     risk_policy: &RiskPolicy,
     risk_ledger: &mut RiskLedger,
     deadline: &DeadlinePolicy,
+    liveness: &LivenessPolicy,
     redactor: &Redactor,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
@@ -1040,6 +1142,10 @@ fn serve(
         Some(s) => format!("deadline: {s}s cap"),
         None => "deadline: none".to_string(),
     };
+    let liveness_note = match liveness.default_secs() {
+        Some(s) => format!("liveness: {s}s idle"),
+        None => "liveness: off".to_string(),
+    };
     let redaction_note = if redactor.is_active() {
         format!("redaction: {} secret(s)", redactor.secret_count())
     } else {
@@ -1071,7 +1177,7 @@ fn serve(
         "risk score: off".to_string()
     };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -1080,6 +1186,7 @@ fn serve(
         policy.base_backoff_secs(),
         quarantine_note,
         deadline_note,
+        liveness_note,
         rate_note,
         scan_note,
         risk_note,
@@ -1115,6 +1222,7 @@ fn serve(
             risk_policy,
             risk_ledger,
             deadline,
+            liveness,
             redactor,
             sink,
         ) {
@@ -1309,6 +1417,7 @@ fn main() -> anyhow::Result<()> {
             // delegation (the time axis the breaker/governor/quarantine don't cover). 0/unset = no
             // cap (behaviour-preserving) — a job may still request a tighter deadline on its envelope.
             let deadline = DeadlinePolicy::from_secs(env_u64("FXRUN_DEFAULT_DEADLINE_SECS"));
+            let liveness = LivenessPolicy::from_secs(env_u64("FXRUN_IDLE_TIMEOUT_SECS"));
             // Dispatch rate limit + per-route failure cooldown: at most FXRUN_RATE_MAX dispatches per
             // FXRUN_RATE_WINDOW_SECS (default 60s), and FXRUN_ROUTE_COOLDOWN_SECS of backoff for a
             // route after it fails. The timing axis the other guards don't cover. 0/unset = off
@@ -1473,6 +1582,7 @@ fn main() -> anyhow::Result<()> {
                 &risk_policy,
                 &mut risk_ledger,
                 &deadline,
+                &liveness,
                 &redactor,
                 sink.as_ref(),
             )?;
@@ -1519,6 +1629,7 @@ mod tests {
             _plan: &KernelPlan,
             _job: &JobSpec,
             _deadline: Option<std::time::Duration>,
+            _idle_timeout: Option<std::time::Duration>,
         ) -> Delegation {
             self.calls.fetch_add(1, Ordering::Relaxed);
             Delegation::Delivered(self.cost)
@@ -1541,6 +1652,7 @@ mod tests {
             _plan: &KernelPlan,
             _job: &JobSpec,
             _deadline: Option<std::time::Duration>,
+            _idle_timeout: Option<std::time::Duration>,
         ) -> Delegation {
             self.calls.fetch_add(1, Ordering::Relaxed);
             Delegation::Failed("kernel exploded".into())
@@ -1563,6 +1675,7 @@ mod tests {
             _plan: &KernelPlan,
             _job: &JobSpec,
             _deadline: Option<std::time::Duration>,
+            _idle_timeout: Option<std::time::Duration>,
         ) -> Delegation {
             self.calls.fetch_add(1, Ordering::Relaxed);
             Delegation::Failed("HTTP 401 Unauthorized: invalid credentials".into())
@@ -1582,9 +1695,11 @@ mod tests {
             _plan: &KernelPlan,
             _job: &JobSpec,
             deadline: Option<std::time::Duration>,
+            _idle_timeout: Option<std::time::Duration>,
         ) -> Delegation {
-            match deadline {
-                Some(limit) if self.sleep > limit => Delegation::TimedOut(limit),
+            match (deadline, _idle_timeout) {
+                (_, Some(limit)) if self.sleep > limit => Delegation::IdleTimedOut(limit),
+                (Some(limit), _) if self.sleep > limit => Delegation::TimedOut(limit),
                 _ => {
                     std::thread::sleep(self.sleep);
                     Delegation::Delivered(JobCost::ZERO)
@@ -1630,6 +1745,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1665,6 +1781,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1711,6 +1828,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1751,6 +1869,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1799,6 +1918,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &NullSink,
                 &raw,
             );
@@ -1836,6 +1956,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1881,6 +2002,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1913,6 +2035,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1946,6 +2069,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1976,6 +2100,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             b"this is not json",
         );
@@ -2021,6 +2146,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &sink,
             &serde_json::to_vec(&ok).unwrap(),
         );
@@ -2045,6 +2171,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
         );
@@ -2069,6 +2196,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &sink,
             b"garbage",
         );
@@ -2121,6 +2249,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2153,6 +2282,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2189,6 +2319,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2216,6 +2347,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2262,6 +2394,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &NullSink,
                 &raw,
             )
@@ -2325,6 +2458,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
             )
@@ -2380,6 +2514,7 @@ mod tests {
                     &RiskPolicy::disabled(),
                     &mut RiskLedger::new(),
                     &DeadlinePolicy::disabled(),
+                    &LivenessPolicy::disabled(),
                     &NullSink,
                     &raw
                 )
@@ -2443,6 +2578,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
             )
@@ -2508,6 +2644,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -2557,6 +2694,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2588,6 +2726,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2633,6 +2772,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &NullSink,
                 &raw,
             )
@@ -2672,6 +2812,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2710,6 +2851,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2749,6 +2891,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &NullSink,
                 &raw,
             );
@@ -2768,7 +2911,7 @@ mod tests {
         // A fast invoker under a deadline → delivered (the watchdog does not interfere).
         let fast = RecordingInvoker::default();
         assert!(matches!(
-            run_delegation(&fast, &plan, &job, Some(Duration::from_millis(500))),
+            run_delegation(&fast, &plan, &job, Some(Duration::from_millis(500)), None),
             Delegation::Delivered(_)
         ));
 
@@ -2777,15 +2920,29 @@ mod tests {
             sleep: Duration::from_millis(150),
         };
         assert!(matches!(
-            run_delegation(&slow, &plan, &job, Some(Duration::from_millis(20))),
+            run_delegation(&slow, &plan, &job, Some(Duration::from_millis(20)), None),
             Delegation::TimedOut(_)
         ));
 
         // No deadline configured → the invoker is called directly; even a "slow" one delivers (the
         // default path is unchanged — the watchdog is not engaged).
         assert!(matches!(
-            run_delegation(&slow, &plan, &job, None),
+            run_delegation(&slow, &plan, &job, None, None),
             Delegation::Delivered(_)
+        ));
+    }
+
+    #[test]
+    fn idle_watchdog_times_out_a_silent_slow_delegation() {
+        use std::time::Duration;
+        let plan = router::route(&ci_spec(false));
+        let job = ci_spec(false);
+        let slow = SlowInvoker {
+            sleep: Duration::from_millis(150),
+        };
+        assert!(matches!(
+            run_delegation(&slow, &plan, &job, None, Some(Duration::from_millis(20))),
+            Delegation::IdleTimedOut(_)
         ));
     }
 
@@ -2829,6 +2986,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(), // no operator cap — the per-job envelope deadline applies
+            &LivenessPolicy::disabled(),
             &sink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -2882,6 +3040,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2912,6 +3071,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2944,6 +3104,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -2990,6 +3151,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -3028,6 +3190,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&approved_frame).unwrap(),
         );
@@ -3057,6 +3220,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&forged).unwrap(),
         );
@@ -3103,6 +3267,7 @@ mod tests {
                 _plan: &KernelPlan,
                 job: &JobSpec,
                 _deadline: Option<std::time::Duration>,
+                _idle_timeout: Option<std::time::Duration>,
             ) -> Delegation {
                 let ws = match self.provider.acquire(&job.id) {
                     Ok(ws) => ws,
@@ -3140,6 +3305,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -3234,6 +3400,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &Redactor::new(),
                 &NullSink,
             )
@@ -3268,6 +3435,7 @@ mod tests {
             _plan: &KernelPlan,
             _job: &JobSpec,
             _deadline: Option<std::time::Duration>,
+            _idle_timeout: Option<std::time::Duration>,
         ) -> Delegation {
             Delegation::Failed(format!("upstream auth failed using token {}", self.secret))
         }
@@ -3331,6 +3499,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &redactor,
                 &sink,
             )
@@ -3410,6 +3579,7 @@ mod tests {
                 &RiskPolicy::disabled(),
                 &mut RiskLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &NullSink,
                 &raw,
             );
@@ -3436,6 +3606,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -3494,6 +3665,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -3521,6 +3693,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -3571,6 +3744,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -3598,6 +3772,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -3658,6 +3833,7 @@ mod tests {
                 &risk_policy,
                 &mut risk_ledger,
                 &DeadlinePolicy::disabled(),
+                &LivenessPolicy::disabled(),
                 &sink,
                 &raw,
             );
@@ -3722,6 +3898,7 @@ mod tests {
             &RiskPolicy::disabled(),
             &mut RiskLedger::new(),
             &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
             &sink,
             &serde_json::to_vec(&sign_frame(b"k", &ci_spec(false)).unwrap()).unwrap(),
         );
@@ -3813,7 +3990,7 @@ mod tests {
                 secrets: vec![],
             };
             let job = ci();
-            match inv.invoke(&router::route(&job), &job, None) {
+            match inv.invoke(&router::route(&job), &job, None, None) {
                 Delegation::Delivered(cost) => assert_eq!(cost, JobCost::new(1500, 7500)),
                 other => panic!("expected Delivered, got {:?}", DelegDbg(&other)),
             }
@@ -3830,7 +4007,7 @@ mod tests {
                 secrets: vec![],
             };
             let job = ci();
-            match inv.invoke(&router::route(&job), &job, None) {
+            match inv.invoke(&router::route(&job), &job, None, None) {
                 Delegation::Failed(msg) => {
                     assert!(msg.contains("exited 3"), "msg: {msg}");
                     assert!(
@@ -3854,7 +4031,12 @@ mod tests {
             };
             let job = ci();
             let start = std::time::Instant::now();
-            let outcome = inv.invoke(&router::route(&job), &job, Some(Duration::from_millis(300)));
+            let outcome = inv.invoke(
+                &router::route(&job),
+                &job,
+                Some(Duration::from_millis(300)),
+                None,
+            );
             let elapsed = start.elapsed();
             match outcome {
                 Delegation::TimedOut(limit) => assert_eq!(limit, Duration::from_millis(300)),
@@ -3864,6 +4046,35 @@ mod tests {
             assert!(
                 elapsed < Duration::from_secs(3),
                 "should kill at the deadline, took {elapsed:?}"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn a_silent_kernel_is_killed_at_the_idle_timeout() {
+            let dir = scratch("idle");
+            let k = stub(&dir, "sleep 30"); // alive but silent
+            let inv = SubprocessInvoker {
+                workspace: TempDirProvider,
+                commands: commands_using(&k),
+                secrets: vec![],
+            };
+            let job = ci();
+            let start = std::time::Instant::now();
+            let outcome = inv.invoke(
+                &router::route(&job),
+                &job,
+                None,
+                Some(Duration::from_millis(250)),
+            );
+            let elapsed = start.elapsed();
+            match outcome {
+                Delegation::IdleTimedOut(limit) => assert_eq!(limit, Duration::from_millis(250)),
+                other => panic!("expected IdleTimedOut, got {:?}", DelegDbg(&other)),
+            }
+            assert!(
+                elapsed < Duration::from_secs(3),
+                "should kill at the idle timeout, took {elapsed:?}"
             );
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -3890,7 +4101,7 @@ mod tests {
             };
             let job = ci();
             assert!(matches!(
-                inv.invoke(&router::route(&job), &job, None),
+                inv.invoke(&router::route(&job), &job, None, None),
                 Delegation::Delivered(_)
             ));
             let seen = std::fs::read_to_string(&marker).unwrap();
@@ -3925,7 +4136,7 @@ mod tests {
             };
             let job = ci();
             assert!(matches!(
-                inv.invoke(&router::route(&job), &job, None),
+                inv.invoke(&router::route(&job), &job, None, None),
                 Delegation::Delivered(_)
             ));
             assert_eq!(std::fs::read_to_string(&marker).unwrap(), "inject3d-s3cret");
@@ -3942,7 +4153,7 @@ mod tests {
                 secrets: vec![],
             };
             let job = ci();
-            match inv.invoke(&router::route(&job), &job, None) {
+            match inv.invoke(&router::route(&job), &job, None, None) {
                 Delegation::Delivered(cost) => assert_eq!(cost, JobCost::ZERO),
                 other => panic!("expected Delivered ZERO, got {:?}", DelegDbg(&other)),
             }
@@ -3957,7 +4168,7 @@ mod tests {
                 secrets: vec![],
             };
             let job = ci();
-            match inv.invoke(&router::route(&job), &job, None) {
+            match inv.invoke(&router::route(&job), &job, None, None) {
                 Delegation::Failed(msg) => assert!(msg.contains("spawn"), "spawn failure: {msg}"),
                 other => panic!("expected Failed, got {:?}", DelegDbg(&other)),
             }
@@ -3971,6 +4182,7 @@ mod tests {
                     Delegation::Delivered(c) => write!(f, "Delivered({c})"),
                     Delegation::Failed(e) => write!(f, "Failed({e})"),
                     Delegation::TimedOut(d) => write!(f, "TimedOut({d:?})"),
+                    Delegation::IdleTimedOut(d) => write!(f, "IdleTimedOut({d:?})"),
                 }
             }
         }

@@ -63,6 +63,7 @@ pub mod governor;
 pub mod jobspec;
 pub mod lifecycle;
 pub mod lint;
+pub mod liveness;
 pub mod loopguard;
 pub mod quarantine;
 pub mod ratelimit;

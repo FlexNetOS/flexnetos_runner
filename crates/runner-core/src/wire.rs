@@ -43,6 +43,11 @@ pub struct DispatchRequest {
     /// operator ceiling, so it can only shorten a job, never exceed the cap. Absent on older frames.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline_secs: Option<u64>,
+    /// Optional per-job idle/liveness timeout in seconds. Distinct from `deadline_secs`: this bounds
+    /// how long a kernel may be silent while still running. The runner takes the tighter of this and
+    /// `FXRUN_IDLE_TIMEOUT_SECS`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout_secs: Option<u64>,
 }
 
 /// A human-approval grant: HMAC proof, over the job's fingerprint, that an approver authorized this
@@ -141,6 +146,7 @@ pub fn sign_frame(key: &[u8], spec: &JobSpec) -> Result<DispatchRequest, WireErr
         approval: None,
         submitter: None,
         deadline_secs: None,
+        idle_timeout_secs: None,
     })
 }
 
@@ -226,6 +232,7 @@ mod tests {
             approval: None,
             submitter: None,
             deadline_secs: None,
+            idle_timeout_secs: None,
         };
         assert!(matches!(
             verify_frame(b"k", &frame),
