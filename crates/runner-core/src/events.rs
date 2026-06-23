@@ -13,6 +13,7 @@
 //! (a `FileSink` over `FXRUN_EVENT_LOG`), so the decision core remains pure and unit-testable with
 //! a recording sink. The audit log is observability, orthogonal to model routing (weave's domain).
 
+use crate::cost::JobCost;
 use crate::jobspec::JobSpec;
 use crate::loopguard::fingerprint;
 use serde::Serialize;
@@ -58,6 +59,9 @@ pub struct DispatchEvent {
     pub fingerprint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kernel: Option<String>,
+    /// Cost `atc` reported for a delegated job (absent for rejections and unmeasured work).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<JobCost>,
     /// Human-readable reason (e.g. the rejection message).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -72,6 +76,7 @@ impl DispatchEvent {
             correlation_id: None,
             fingerprint: None,
             kernel: None,
+            cost: None,
             detail: Some(detail.into()),
         }
     }
@@ -84,6 +89,7 @@ impl DispatchEvent {
             correlation_id: Some(job.correlation_id.clone()),
             fingerprint: Some(fingerprint(job)),
             kernel: None,
+            cost: None,
             detail: None,
         }
     }
@@ -91,6 +97,12 @@ impl DispatchEvent {
     /// Builder: attach the delegated kernel.
     pub fn with_kernel(mut self, kernel: impl Into<String>) -> Self {
         self.kernel = Some(kernel.into());
+        self
+    }
+
+    /// Builder: attach the cost `atc` reported (omitted when unmeasured).
+    pub fn with_cost(mut self, cost: JobCost) -> Self {
+        self.cost = Some(cost);
         self
     }
 

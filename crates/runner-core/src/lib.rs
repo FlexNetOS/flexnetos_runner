@@ -8,8 +8,9 @@
 //! - [`safety`] — fork-PR isolation policy + runner rails (the §6 minimums).
 //! - [`loopguard`] — loop-detection circuit breaker (runaway-loop guard at the dispatch choke
 //!   point; adapted from kclaw0 `loop-detection.js`).
-//! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch; adapted from kclaw0
-//!   `dark-factory.js::enforceBudget` + `survival.js`).
+//! - [`cost`] — per-job cost report (the `atc → runner` cost seam; tokens + USD).
+//! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch over jobs/tokens/USD;
+//!   adapted from kclaw0 `dark-factory.js::enforceBudget` + `survival.js`).
 //! - [`events`] — structured dispatch audit log (NDJSON event trail; adapted from kclaw0
 //!   `event-system.js`).
 //! - [`lifecycle`] — JIT/ephemeral runner lifecycle (one job, then removed).
@@ -19,6 +20,7 @@
 //! `runner-dispatch` (UDS server) drive these typed seams.
 
 pub mod agent;
+pub mod cost;
 pub mod error;
 pub mod events;
 pub mod governor;
@@ -30,8 +32,9 @@ pub mod safety;
 pub mod wire;
 
 pub use agent::{Agent, ApiStyle};
+pub use cost::JobCost;
 pub use error::{CoreError, Result};
 pub use events::{DispatchEvent, EventSink, NullSink, Outcome};
-pub use governor::{Admission, Governor};
+pub use governor::{Admission, Budget, Governor, Spend};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};
 pub use wire::{sign_frame, verify_frame, DispatchRequest, DispatchResponse, WireError};

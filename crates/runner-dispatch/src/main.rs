@@ -20,6 +20,7 @@
 // real target (Unix) keeps full dead-code checking.
 #![cfg_attr(not(unix), allow(dead_code))]
 
+use runner_core::cost::JobCost;
 use runner_core::events::{DispatchEvent, EventSink, NullSink, Outcome};
 use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
@@ -33,7 +34,9 @@ use std::io::Read;
 /// NEVER reimplements a kernel — it shells out to the existing binary. Injected so the UDS path is
 /// testable with a fake (no kernels spawned in CI).
 trait KernelInvoker {
-    fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<(), String>;
+    /// Invoke the kernel and return the job's measured [`JobCost`] (the `atc → runner` cost seam).
+    /// Kernels that don't measure cost (the dry-run, or non-agent kernels) return [`JobCost::ZERO`].
+    fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String>;
 }
 
 /// The default invoker: logs the delegation it *would* perform (no subprocess). The real
@@ -43,7 +46,7 @@ trait KernelInvoker {
 struct DryRunInvoker;
 #[cfg(unix)]
 impl KernelInvoker for DryRunInvoker {
-    fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<(), String> {
+    fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String> {
         let agent = match plan.agent {
             Some(a) => format!(", agent {a}"),
             None => String::new(),
@@ -57,7 +60,8 @@ impl KernelInvoker for DryRunInvoker {
             plan.repo,
             agent
         );
-        Ok(())
+        // P3: the real atc invoker reports the job's measured cost here. The dry-run measures none.
+        Ok(JobCost::ZERO)
     }
 }
 
@@ -141,14 +145,12 @@ fn handle_request(
         return DispatchResponse::rejected(detail);
     }
 
-    // Dispatch budget (bounded autonomy): refuse once the operator-set lifetime ceiling is hit, so
-    // an unattended loop can't run away. Checked after the breaker so a refused-loop job costs no
-    // budget. Unlimited by default — only enforced when FXRUN_DISPATCH_BUDGET is set.
-    if let Admission::Denied { spent, budget } = governor.admit() {
-        let detail = format!(
-            "dispatch budget exhausted: {spent}/{budget} jobs used this session \
-             (bounded-autonomy kill-switch); re-arm the runner to continue"
-        );
+    // Dispatch budget (bounded autonomy): refuse once any operator-set ceiling (jobs/tokens/USD) is
+    // already met, so an unattended loop can't run away. Checked after the breaker so a refused-loop
+    // job costs no budget. Unlimited by default; cost dimensions only bite once atc reports cost.
+    if let Admission::Denied { reason } = governor.admit() {
+        let detail =
+            format!("{reason} (bounded-autonomy kill-switch); re-arm the runner to continue");
         sink.emit(&DispatchEvent::for_job(Outcome::BudgetDenied, &job).with_detail(&detail));
         return DispatchResponse::rejected(detail);
     }
@@ -156,8 +158,14 @@ fn handle_request(
     let plan = router::route(&job);
     let program = plan.kernel.program();
     match invoker.invoke(&plan, &job) {
-        Ok(()) => {
-            sink.emit(&DispatchEvent::for_job(Outcome::Delegated, &job).with_kernel(program));
+        Ok(cost) => {
+            // Charge the cost atc reported so the NEXT admit sees it (fail-open: ZERO is a no-op).
+            governor.charge(cost);
+            let mut event = DispatchEvent::for_job(Outcome::Delegated, &job).with_kernel(program);
+            if cost.is_measured() {
+                event = event.with_cost(cost);
+            }
+            sink.emit(&event);
             DispatchResponse {
                 accepted: true,
                 kernel: Some(program.to_string()),
@@ -218,16 +226,12 @@ fn serve(
         std::fs::remove_file(socket_path)?;
     }
     let listener = UnixListener::bind(socket_path)?;
-    let budget = match governor.budget() {
-        Some(b) => b.to_string(),
-        None => "unlimited".to_string(),
-    };
     eprintln!(
         "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
-        budget
+        render_budget(&governor.budget())
     );
     loop {
         if let Err(e) = serve_once(&listener, key, invoker, guard, governor, sink) {
@@ -281,6 +285,35 @@ fn env_usize(var: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+/// Read a positive `u64` from `var` (`0`/unset/unparseable → `0`, meaning "uncapped").
+#[cfg(unix)]
+fn env_u64(var: &str) -> u64 {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+/// Render a [`Budget`] for the startup banner: the capped dimensions, or "unlimited".
+#[cfg(unix)]
+fn render_budget(b: &runner_core::governor::Budget) -> String {
+    let mut parts = Vec::new();
+    if let Some(j) = b.jobs {
+        parts.push(format!("{j} jobs"));
+    }
+    if let Some(t) = b.tokens {
+        parts.push(format!("{t} tokens"));
+    }
+    if let Some(u) = b.usd_micros {
+        parts.push(format!("${:.4}", JobCost::new(0, u).usd()));
+    }
+    if parts.is_empty() {
+        "unlimited".to_string()
+    } else {
+        parts.join(" / ")
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     // P3: fetch from envctl's vault, not the environment.
     let key = std::env::var("FXRUN_DISPATCH_KEY").unwrap_or_default();
@@ -303,8 +336,13 @@ fn main() -> anyhow::Result<()> {
             let window = env_usize("FXRUN_LOOP_WINDOW", 8);
             let threshold = env_usize("FXRUN_LOOP_THRESHOLD", 4);
             let mut guard = LoopGuard::new(window, threshold);
-            // Bounded-autonomy ceiling: 0/unset → unlimited (behaviour-preserving default).
-            let mut governor = Governor::from_env_budget(env_usize("FXRUN_DISPATCH_BUDGET", 0));
+            // Bounded-autonomy ceiling across jobs/tokens/USD: 0/unset → uncapped per dimension
+            // (behaviour-preserving default). Token/USD caps only bite once atc reports cost.
+            let mut governor = Governor::from_env(
+                env_usize("FXRUN_DISPATCH_BUDGET", 0),
+                env_u64("FXRUN_TOKEN_BUDGET"),
+                env_u64("FXRUN_USD_MICROS_BUDGET"),
+            );
             // Audit trail: NDJSON to FXRUN_EVENT_LOG when set, else a no-op sink (default).
             let event_log = std::env::var("FXRUN_EVENT_LOG").unwrap_or_default();
             let sink: Box<dyn EventSink> = if event_log.trim().is_empty() {
@@ -345,16 +383,24 @@ mod tests {
     #[derive(Default)]
     struct RecordingInvoker {
         calls: AtomicUsize,
+        /// Cost each invocation reports back (the `atc → runner` seam); default ZERO (unmeasured).
+        cost: JobCost,
     }
     impl RecordingInvoker {
         fn calls(&self) -> usize {
             self.calls.load(Ordering::Relaxed)
         }
+        fn reporting(cost: JobCost) -> Self {
+            Self {
+                cost,
+                ..Self::default()
+            }
+        }
     }
     impl KernelInvoker for RecordingInvoker {
-        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<(), String> {
+        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
             self.calls.fetch_add(1, Ordering::Relaxed);
-            Ok(())
+            Ok(self.cost)
         }
     }
 
@@ -531,7 +577,7 @@ mod tests {
     fn dispatch_budget_denies_past_the_ceiling_and_spares_the_kernel() {
         let inv = RecordingInvoker::default();
         let mut guard = LoopGuard::default();
-        let mut governor = Governor::with_budget(2);
+        let mut governor = Governor::with_jobs(2);
 
         let mut dispatch = |sha: &str| {
             let spec = JobSpec {
@@ -554,6 +600,58 @@ mod tests {
         assert!(!denied.accepted);
         assert!(denied.error.unwrap().contains("budget exhausted"));
         assert_eq!(inv.calls(), 2, "over-budget job must not be delegated");
+    }
+
+    #[test]
+    fn reported_cost_charges_the_token_budget_and_lands_in_the_audit_log() {
+        use runner_core::events::DispatchEvent;
+        use std::cell::RefCell;
+        struct Rec(RefCell<Vec<DispatchEvent>>);
+        impl EventSink for Rec {
+            fn emit(&self, e: &DispatchEvent) {
+                self.0.borrow_mut().push(e.clone());
+            }
+        }
+        let sink = Rec(RefCell::new(Vec::new()));
+        // atc reports 600 tokens per job; cap the session at 1000 tokens.
+        let inv = RecordingInvoker::reporting(JobCost::new(600, 0));
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::with_budget(runner_core::governor::Budget {
+            tokens: Some(1000),
+            ..Default::default()
+        });
+
+        let mut dispatch = |sha: &str| {
+            let spec = JobSpec {
+                id: format!("job-{sha}"),
+                correlation_id: "c".into(),
+                from_fork: false,
+                job: JobKind::Ci {
+                    repo: "FlexNetOS/meta".into(),
+                    head_sha: sha.into(),
+                },
+            };
+            let frame = sign_frame(b"k", &spec).unwrap();
+            handle_request(
+                b"k",
+                &inv,
+                &mut guard,
+                &mut gov,
+                &sink,
+                &serde_json::to_vec(&frame).unwrap(),
+            )
+        };
+
+        assert!(dispatch("a").accepted); // spent 600
+        assert!(dispatch("b").accepted); // spent 1200 (admit happened before charge crossed cap)
+        let denied = dispatch("c"); // 1200 >= 1000 → denied
+        assert!(!denied.accepted);
+        assert!(denied.error.unwrap().contains("token budget exhausted"));
+
+        // The two delegated events carry the reported cost.
+        let events = sink.0.into_inner();
+        let costed: Vec<_> = events.iter().filter_map(|e| e.cost).collect();
+        assert_eq!(costed, vec![JobCost::new(600, 0), JobCost::new(600, 0)]);
     }
 
     #[test]

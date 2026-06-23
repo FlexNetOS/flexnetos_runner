@@ -107,7 +107,11 @@ fn main() -> anyhow::Result<()> {
                 breaker.window()
             );
             println!(
-                "  dispatch budget    : unlimited by default (FXRUN_DISPATCH_BUDGET kill-switch)"
+                "  dispatch budget    : unlimited by default — jobs/tokens/USD caps via \
+                 FXRUN_DISPATCH_BUDGET / FXRUN_TOKEN_BUDGET / FXRUN_USD_MICROS_BUDGET"
+            );
+            println!(
+                "  cost seam          : atc→runner per-job JobCost (tokens+USD); charged to the budget"
             );
             println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
