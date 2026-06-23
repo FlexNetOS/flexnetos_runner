@@ -119,6 +119,10 @@ fn main() -> anyhow::Result<()> {
             );
             let recovery = runner_core::RecoveryPolicy::default();
             println!(
+                "  approval gate      : off by default (FXRUN_APPROVAL_BANDS=ci,review,agent,cycle \
+                 → hold flagged classes until a human grant)"
+            );
+            println!(
                 "  structural lint    : malformed jobs (bad repo / blank head_sha / pr_number 0) \
                  refused before the kernel"
             );

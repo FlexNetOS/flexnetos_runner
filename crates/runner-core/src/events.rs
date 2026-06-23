@@ -33,6 +33,8 @@ pub enum Outcome {
     Malformed,
     /// Fork-triggered job refused (must run on hosted infra).
     ForkRejected,
+    /// Held: the job's class requires a human approval grant that was absent or invalid.
+    ApprovalRequired,
     /// Runaway-loop circuit breaker tripped.
     LoopTripped,
     /// Dispatch budget exhausted (bounded-autonomy kill-switch).
