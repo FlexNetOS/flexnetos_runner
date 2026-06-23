@@ -186,6 +186,14 @@ pub trait EventSink {
     fn emit(&self, event: &DispatchEvent);
 }
 
+/// Forward through a boxed sink — lets the binary build a `Box<dyn EventSink>` (the routing sink)
+/// and then wrap it in a decorator like [`crate::redact::RedactingSink`] that requires `S: EventSink`.
+impl EventSink for Box<dyn EventSink> {
+    fn emit(&self, event: &DispatchEvent) {
+        (**self).emit(event);
+    }
+}
+
 /// Drops every event — the behaviour-preserving default when no audit log is configured.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NullSink;
