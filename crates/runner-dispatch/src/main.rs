@@ -357,7 +357,7 @@ impl<P: WorkspaceProvider> KernelInvoker for SubprocessInvoker<P> {
             cmd.env(k, v);
         }
 
-        let mut child = match cmd.spawn() {
+        let mut child = match spawn_with_text_busy_retry(&mut cmd) {
             Ok(c) => c,
             Err(e) => return Delegation::Failed(format!("spawn `{cmd_path}` failed: {e}")),
         };
@@ -1295,6 +1295,27 @@ fn redact_response(redactor: &Redactor, mut resp: DispatchResponse) -> DispatchR
         });
     }
     resp
+}
+
+/// Spawn can transiently return `ETXTBSY` on Unix when a just-written executable script is invoked
+/// immediately (common in tests that synthesize stub kernels). Retry briefly; any other spawn error
+/// still fails fast and reports the original OS error.
+#[cfg(unix)]
+fn spawn_with_text_busy_retry(
+    cmd: &mut std::process::Command,
+) -> std::io::Result<std::process::Child> {
+    let mut last = None;
+    for _ in 0..5 {
+        match cmd.spawn() {
+            Ok(child) => return Ok(child),
+            Err(e) if e.raw_os_error() == Some(26) => {
+                last = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.expect("retry loop recorded ETXTBSY"))
 }
 
 /// Read a positive `usize` from `var`, falling back to `default` when unset/empty/unparseable.
