@@ -208,10 +208,10 @@ by convergence × buildable-now × non-redundancy. **Backlog is refilled.**
   **APPLIED (cycle 22, local)**. `RouteCandidate` selection is now `weight DESC, route_id ASC`, and
   each `KernelPlan` carries a route witness (`route_id`, `route_weight`) that the dispatch audit detail
   records on clean delegation. See *Applied* row 22.
-- ▷ **State-gated route admission** (automaton `idle-only-tools.ts` × `AgentState`). A route-class ×
-  dispatcher-state matrix (quiescent-only routes — introspection/reconfig/drain — deferred under load),
-  consuming the applied survival tier (#7) as the gate input. Buildable-now extension of the ladder.
-  **Queued.**
+- ✓ **State-gated route admission** (automaton `idle-only-tools.ts` × `AgentState`) →
+  **APPLIED (cycle 23, PR #31).** `FXRUN_STATE_GATE=agent=full,cycle=conserving` maps route classes to
+  the worst allowed `SurvivalTier`; degraded classes are deferred before single-flight, rate, breaker,
+  budget, or kernel execution and return an attempt-0 retry-after directive (`Outcome::StateDeferred`).
 - ▷ **Intra-job fan-out / amplification cap** (automaton `MAX_TOOL_CALLS_PER_TURN` + per-class per-turn
   cap). Bound how many sub-dispatches a single admitted job may emit — the gap the windowed rate-limit
   (#14) can't close (a burst *inside* one window). Inert until a job can emit sub-dispatches (P3).
@@ -255,9 +255,105 @@ watchdog (2) · outcome simulation (2). These six are the highest-confidence net
 **Net after the refill:** the backlog was refilled with **15 net-new candidates** (6 convergent).
 **Cycle 17 applied FATAL-first taxonomy, cycle 18 applied dispatch provenance/authority, cycle 19
 applied the delegation-target allowlist, cycle 20 applied the buildable per-target single-flight
-mutex, cycle 21 applied the idle/liveness watchdog, and cycle 22 applied deterministic route
-selection.** The only remaining Tier-1 slice is the **global max-in-flight cap**, which is still
-P3/concurrent-serve-gated; continue with the remaining Tier 2 buildable/seam-first backlog.
+mutex, cycle 21 applied the idle/liveness watchdog, cycle 22 applied deterministic route selection,
+and cycle 23 applied state-gated route admission (PR #31).** The only remaining Tier-1 slice is the
+**global max-in-flight cap**, which is still concurrent-serve-gated; continue with the remaining
+P3/result/lifecycle backlog and the post-audit hardening tasks below.
+
+## Cycle-23 deep code audit backlog (fresh tasks)
+
+Deep code audit date: **2026-06-23**. Local verification at audit time: `cargo fmt --all -- --check`,
+`cargo test --workspace` (238 passed), `cargo clippy --workspace --all-targets --all-features -- -D
+warnings`, and `cargo audit --json` (no vulnerabilities). The audit surfaced concrete code/design gaps
+that now supersede the stale "empty backlog" assumption. Each item below is a cycle-sized task: write
+failing tests first, implement, run local gates, open/merge a PR, then update this ledger and
+`docs/automation-and-user-story.md`.
+
+### Tier 0 — must-fix security/correctness
+
+1. **Signed full-envelope authority provenance**
+   - Gap: `DispatchRequest.submitter` is trusted by the authority gate but is not covered by the
+     `spec_json` HMAC. Approval has its own HMAC; submitter currently does not.
+   - Upgrade: add a versioned envelope MAC or submitter proof binding `spec_json`, job signature,
+     submitter identity/tier, and trust-relevant envelope fields.
+   - Acceptance: replaying a valid signed `spec_json` with a forged `owner` submitter fails; legacy
+     frames remain accepted only when no authority floor is configured.
+
+2. **UDS socket ownership and permission hardening**
+   - Gap: `serve()` removes an existing socket path and binds without proving safe parent ownership,
+     file type, symlink absence, or owner-only permissions.
+   - Upgrade: validate parent directory owner/mode, remove only stale sockets, reject non-socket path
+     collisions, bind in a private runtime dir, and chmod the socket to owner-only.
+   - Acceptance: tests cover unsafe parent, symlink/non-socket collision, stale socket cleanup, and
+     expected mode.
+
+3. **Fresh workspace acquisition by construction**
+   - Gap: `TempDirProvider` uses `/tmp/fxrun-ws-$PID-$jobid` plus `create_dir_all`, so residue or a
+     pre-created path can be adopted despite the “fresh isolated workspace” claim.
+   - Upgrade: create a unique nonce path with atomic `create_dir`/`tempfile` semantics; never adopt an
+     existing path; audit the workspace id.
+   - Acceptance: pre-created candidate path is refused or bypassed; repeated same-job acquisitions are
+     distinct; teardown still proves zero residue.
+
+4. **Rate-limit clock freshness**
+   - Gap: `now_secs` is sampled before blocking `accept()`, so the next request after idle can be
+     evaluated with stale time.
+   - Upgrade: sample monotonic time after accept/read, immediately before `handle_request()`.
+   - Acceptance: a cooldown/window can expire while the server is idle before the next connection.
+
+5. **Actions runner artifact verification**
+   - Gap: `fxrun-actions install` downloads and extracts the upstream runner tarball without checksum
+     or attestation verification.
+   - Upgrade: verify GitHub-published SHA256 and/or artifact attestation before extraction.
+   - Acceptance: bad digest refuses before `tar`; latest-version install verifies automatically.
+
+6. **Actions registration token non-argv path**
+   - Gap: `config.sh --token <token>` exposes the short-lived registration token in process argv.
+   - Upgrade: prefer stdin/env/token-file path if the upstream runner supports it; otherwise isolate,
+     minimize lifetime, and emit an explicit audited fallback warning.
+   - Acceptance: normal registration path has no token in argv; fallback is opt-in/visible.
+
+7. **CI supply-chain gate**
+   - Gap: local `cargo audit` passes, but CI does not enforce advisory or dependency policy checks.
+   - Upgrade: add CI jobs for `cargo audit` and, if policy is adopted, `cargo deny`.
+   - Acceptance: PR checks fail on vulnerable advisories or denied crates/licenses.
+
+8. **Ledger/docs drift guard**
+   - Gap: state-gated route admission landed in PR #31 while the ledger still said “Queued”.
+   - Upgrade: add a cycle checklist/check that every merged upgrade updates Applied/Backlog docs and
+     automation diagrams.
+   - Acceptance: stale queued entries for exported modules are caught before merge.
+
+### Tier 1 — automation and orchestration expansion
+
+9. **Concurrent serve + global max-in-flight cap** — introduce bounded concurrent serving and enforce
+   `FXRUN_MAX_IN_FLIGHT` alongside per-target single-flight.
+10. **Intra-job fan-out / amplification cap** — when kernels can emit child dispatches, bind children
+    to a parent job id and cap per-job/per-route amplification.
+11. **Rule-citation audit schema** — every policy refusal carries `denied_by={gate, rule_id,
+    configured_value}` for queryable desktop/CLI explanations.
+12. **Freshness and required-check input seams** — accept App-signed `head_sha_is_tip` and
+    `required_checks_green` facts, then gate stale/unverified work before delegation.
+
+### Tier 2 — result, rollback, and lifecycle
+
+13. **Structured kernel result/status contract** — require a status JSON beside `FXRUN_COST_FILE`;
+    missing status fails closed unless the route explicitly opts into synthesized success.
+14. **Holdout output-coverage gate** — compare request/intent fields to kernel result summary and hold
+    or fail success-without-answer cases.
+15. **Pre-dispatch outcome simulation** — forecast success probability and projected cost before
+    delegation; optionally defer/reject above thresholds.
+16. **Reversibility classification + pre-action checkpoint** — tag reversible/irreversible dispatches,
+    create restore points, and require higher authority for irreversible work.
+17. **Pre/post hook middleware with veto** — ordered hook chain around dispatch; pre-hook veto skips,
+    post-hook classifies output without masking original errors.
+18. **Dispatch lifecycle FSM and resume journal** — persist per-job state (`admitted -> delegated ->
+    returned -> verified/blocked`) so crash recovery and desktop timelines are first-class.
+19. **Safe reclamation / workspace reuse gates** — before deleting or adopting a workspace, prove
+    ownership, no active refs, persisted output, and landed products.
+
+See [`automation-and-user-story.md`](automation-and-user-story.md) for the component inventory, ASCII
+flow diagrams, automation boundary map, full agent automation story, and user communication flow.
 
 ## P3 execution milestone — the kernel-spawn invoker is real (the seams above are now consumed)
 
