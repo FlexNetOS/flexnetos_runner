@@ -16,6 +16,53 @@ Two shapes, by design:
    `loop-cycle → handoff hf`, `lease/a2a → weave`, `worktrees → meta_git_lib`. It never reimplements
    these — it delegates (ADR-0008 §2).
 
+
+## Architecture and automation map
+
+```text
+GitHub / user intent
+        |
+        v
++-----------------------+       signed dispatch frame       +----------------------+
+| flexnetos_github_app  | -------------------------------> | fxrun-dispatch       |
+| control plane         |                                  | local UDS server     |
++-----------------------+                                  +----------+-----------+
+                                                                      |
+                                                                      v
+                          +-------------------------------------------+-------------------+
+                          | admission gates: verify -> authority -> lint -> scan -> fork |
+                          | -> approval -> quarantine -> route/allowlist -> state/rate   |
+                          | -> single-flight -> loop/budget                              |
+                          +-------------------------------------------+-------------------+
+                                                                      |
+                                                                      v
++------------------+       JobSpec stdin/env/cost/status       +--------------------------+
+| runner-core      | <----------------------------------------> | SubprocessInvoker        |
+| pure policy/data |                                           | fresh workspace + bounds |
++------------------+                                           +------------+-------------+
+                                                                      |
+                                                                      v
+                                                +------------------------------+
+                                                | existing kernels             |
+                                                | loop / atc / hf / weave      |
+                                                +------------------------------+
+                                                                      |
+                                                                      v
+                                                DispatchResponse + redacted NDJSON audit
+```
+
+Automation boundaries:
+- **Automated now:** signed JobSpec verification, admission gates, routing, kernel spawn, deadline /
+  idle enforcement, cost relay, recovery directives, risk/cost audit, Actions runner install/register
+  with explicit confirmation.
+- **User/operator today:** approvals, budget/quarantine/constitution re-arm, runner install/register
+  confirmation, policy/secrets/socket/log configuration.
+- **Planned:** signed full-envelope provenance, UDS/socket hardening, fresh workspace by construction,
+  artifact verification, structured kernel result/status, desktop approval/re-arm flow.
+
+See [`docs/automation-and-user-story.md`](docs/automation-and-user-story.md) for the full component
+inventory, data-flow diagrams, fresh backlog, agent automation story, and user communication flow.
+
 ## Workspace
 
 | Crate | Bin | Role |
@@ -64,8 +111,9 @@ mint short-lived registration tokens with `gh`, register repo/org-scoped runners
 ephemeral job, or install a persistent service. Install enforces GitHub's mandated minimum runner
 version (`≥ 2.329.0`, changelog 2026-06-12) — below it GitHub refuses registration / pauses job
 queuing and the runner is exposed to the Runner-Escape host-secret leak, so the supervisor fails
-closed on a stale pin. The UDS dispatch + kernel invocation (P2), envctl secret injection, and
-provenance (P3) remain fail-closed typed seams; the confirmed P3 recipe is GitHub Artifact
+closed on a stale pin. The UDS dispatch + kernel invocation, envctl-style secret injection, and
+provenance gates are wired seams; the fresh backlog now hardens full-envelope provenance, socket
+permissions, workspace freshness, supply-chain verification, and structured result status; the confirmed P3 recipe is GitHub Artifact
 Attestations (`actions/attest-build-provenance@v3`, SLSA Build L2 via OIDC + Sigstore), verified
 with `cosign verify-attestation` / `slsa-verifier`.
 
