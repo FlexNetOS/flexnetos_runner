@@ -100,6 +100,12 @@ fn main() -> anyhow::Result<()> {
                     .join(", "),
                 Agent::default()
             );
+            let breaker = runner_core::LoopGuard::default();
+            println!(
+                "  loop breaker       : {} identical / window {} (FXRUN_LOOP_THRESHOLD/_WINDOW)",
+                breaker.trip_threshold(),
+                breaker.window()
+            );
             println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
             println!("  uds dispatch       : UNWIRED (P2)");
             println!("  secret injection   : UNWIRED (P3 — envctl relay-bearer)");
