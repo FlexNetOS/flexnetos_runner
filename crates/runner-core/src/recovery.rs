@@ -40,6 +40,9 @@ pub enum FailureKind {
     LoopTripped,
     /// The job was structurally invalid (NOT retryable: the same bytes can never become valid).
     Malformed,
+    /// The job's free-text fields tripped the content/injection scan (NOT retryable: the same bytes
+    /// carry the same hostile content; a human must review).
+    ContentRejected,
     /// The job's class requires a human approval grant that was absent/invalid (NOT retryable by the
     /// runner: a human must approve, then the orchestrator re-dispatches *with* a grant).
     ApprovalRequired,
@@ -151,6 +154,10 @@ impl RecoveryPolicy {
                 FailureKind::Malformed => {
                     "job is structurally invalid — re-dispatching the same spec cannot succeed; \
                      fix the JobSpec or escalate to a human"
+                }
+                FailureKind::ContentRejected => {
+                    "job content tripped the injection scan — re-dispatching the same spec cannot \
+                     succeed; a human must review the flagged fields"
                 }
                 FailureKind::ApprovalRequired => {
                     "job class requires human approval — a human must approve, then re-dispatch \
@@ -299,6 +306,16 @@ mod tests {
         let d = policy.decide(&mut ledger, FP, FailureKind::Malformed);
         assert_eq!(d.action, RecoveryVerb::Escalate);
         assert!(d.reason.contains("structurally invalid"));
+    }
+
+    #[test]
+    fn content_rejected_escalates_immediately() {
+        let policy = RecoveryPolicy::default();
+        let mut ledger = RetryLedger::new();
+        let d = policy.decide(&mut ledger, FP, FailureKind::ContentRejected);
+        assert_eq!(d.action, RecoveryVerb::Escalate);
+        assert_eq!(d.attempt, 0, "a content rejection consumes no retry budget");
+        assert!(d.reason.contains("injection scan"));
     }
 
     #[test]

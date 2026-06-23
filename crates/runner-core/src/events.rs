@@ -31,6 +31,9 @@ pub enum Outcome {
     VerifyFailed,
     /// The job authenticated and parsed but is structurally invalid (failed the [`crate::lint`]).
     Malformed,
+    /// The job's free-text fields tripped the content/injection scan ([`crate::scan`]) at or above
+    /// the operator's block threshold.
+    ContentRejected,
     /// Fork-triggered job refused (must run on hosted infra).
     ForkRejected,
     /// Held: the job's class requires a human approval grant that was absent or invalid.
@@ -70,6 +73,7 @@ impl Outcome {
             | Outcome::Unparseable
             | Outcome::VerifyFailed
             | Outcome::Malformed
+            | Outcome::ContentRejected
             | Outcome::ForkRejected
             | Outcome::ApprovalRequired
             | Outcome::Quarantined
@@ -267,6 +271,7 @@ mod tests {
             Outcome::Unparseable,
             Outcome::VerifyFailed,
             Outcome::Malformed,
+            Outcome::ContentRejected,
             Outcome::ForkRejected,
             Outcome::ApprovalRequired,
             Outcome::Quarantined,

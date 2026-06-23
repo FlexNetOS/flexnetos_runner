@@ -147,6 +147,11 @@ fn main() -> anyhow::Result<()> {
                  a retry-after, never escalate)"
             );
             println!(
+                "  content scan       : off by default (FXRUN_SCAN_BLOCK_SEVERITY=low|medium|high|\
+                 critical → refuse a job whose free-text fields trip the injection pattern bank at/above \
+                 the threshold; escalates, never retries)"
+            );
+            println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
             println!(
