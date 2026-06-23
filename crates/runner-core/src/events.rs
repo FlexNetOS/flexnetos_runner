@@ -45,6 +45,8 @@ pub enum Outcome {
     TargetDenied,
     /// Refused: this job's fingerprint is quarantined (it failed at the kernel too many times).
     Quarantined,
+    /// Refused: another in-flight job already owns this mutable target (older-wins single-flight).
+    SingleFlightDenied,
     /// Refused for timing: the dispatch rate window is full, or the job's route is in failure cooldown.
     RateLimited,
     /// Runaway-loop circuit breaker tripped.
@@ -88,6 +90,7 @@ impl Outcome {
             | Outcome::AuthorityDenied
             | Outcome::TargetDenied
             | Outcome::Quarantined
+            | Outcome::SingleFlightDenied
             | Outcome::RateLimited
             | Outcome::LoopTripped
             | Outcome::BudgetDenied => EventCategory::Policy,
@@ -304,6 +307,7 @@ mod tests {
             Outcome::AuthorityDenied,
             Outcome::TargetDenied,
             Outcome::Quarantined,
+            Outcome::SingleFlightDenied,
             Outcome::RateLimited,
             Outcome::LoopTripped,
             Outcome::BudgetDenied,

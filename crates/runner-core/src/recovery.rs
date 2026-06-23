@@ -59,6 +59,9 @@ pub enum FailureKind {
     /// The routed kernel target is not allowed by operator policy (NOT retryable by the runner: an
     /// operator must change the allowlist or route the work elsewhere).
     TargetDenied,
+    /// Another in-flight job already owns the same mutable target. The runner does not self-retry;
+    /// the orchestrator/human must wait or inspect the older in-flight job.
+    SingleFlightDenied,
     /// The job's fingerprint is quarantined after repeated kernel failures (NOT retryable: the same
     /// work keeps failing the same way; a human must investigate and re-arm the runner).
     Quarantined,
@@ -216,6 +219,10 @@ impl RecoveryPolicy {
                 FailureKind::TargetDenied => {
                     "routed kernel target is not in the operator allowlist — an operator must \
                      update the allowlist or route the work elsewhere"
+                }
+                FailureKind::SingleFlightDenied => {
+                    "mutable target is already owned by an older in-flight job — wait for that \
+                     job or inspect it before dispatching competing work"
                 }
                 FailureKind::Quarantined => {
                     "job fingerprint is quarantined after repeated kernel failures — re-dispatching \
