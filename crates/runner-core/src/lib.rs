@@ -22,6 +22,9 @@
 //! - [`deadline`] — per-job wall-clock deadline policy (bound a *hung* delegation by time — the axis
 //!   the breaker/governor/quarantine don't cover; adapted from `attractor`'s `timeout` node +
 //!   `Archon`/`kclaw0` per-op timeouts).
+//! - [`redact`] — secret redaction for the audit-log + error-reply egress surfaces (scrub key
+//!   material out of every operator-readable string before it is logged/returned; adapted from
+//!   `Archon`'s `repo.ts` token scrub).
 //! - [`cost`] — per-job cost report (the `atc → runner` cost seam; tokens + USD).
 //! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch over jobs/tokens/USD;
 //!   adapted from kclaw0 `dark-factory.js::enforceBudget` + `survival.js`).
@@ -49,6 +52,7 @@ pub mod lint;
 pub mod loopguard;
 pub mod quarantine;
 pub mod recovery;
+pub mod redact;
 pub mod router;
 pub mod safety;
 pub mod wire;
@@ -66,5 +70,6 @@ pub use lint::{is_structurally_valid, structural_errors, LintError};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};
 pub use quarantine::{QuarantineLedger, QuarantinePolicy};
 pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb, RetryLedger};
+pub use redact::{RedactingSink, Redactor};
 pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};
 pub use workspace::{JobWorkspace, NoopWorkspaceProvider, TeardownReport, WorkspaceProvider};

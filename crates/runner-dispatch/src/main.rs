@@ -31,6 +31,7 @@ use runner_core::lint;
 use runner_core::loopguard::{fingerprint, LoopGuard, Verdict};
 use runner_core::quarantine::{QuarantineLedger, QuarantinePolicy};
 use runner_core::recovery::{FailureKind, RecoveryPolicy, RetryLedger};
+use runner_core::redact::{RedactingSink, Redactor};
 use runner_core::router::{self, KernelPlan};
 use runner_core::safety::{self, Placement};
 use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
@@ -512,6 +513,7 @@ fn serve_once(
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
     deadline: &DeadlinePolicy,
+    redactor: &Redactor,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::io::Write;
@@ -535,6 +537,9 @@ fn serve_once(
         sink,
         &raw,
     );
+    // Scrub any registered secret out of the error reply before it crosses the socket (the audit-log
+    // half is already scrubbed by the RedactingSink that wraps `sink`).
+    let resp = redact_response(redactor, resp);
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
     stream.write_all(&bytes)?;
@@ -560,6 +565,7 @@ fn serve(
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
     deadline: &DeadlinePolicy,
+    redactor: &Redactor,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
@@ -586,8 +592,13 @@ fn serve(
         Some(s) => format!("deadline: {s}s cap"),
         None => "deadline: none".to_string(),
     };
+    let redaction_note = if redactor.is_active() {
+        format!("redaction: {} secret(s)", redactor.secret_count())
+    } else {
+        "redaction: off".to_string()
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -596,6 +607,7 @@ fn serve(
         policy.base_backoff_secs(),
         quarantine_note,
         deadline_note,
+        redaction_note,
         approval_note,
         constitution_note
     );
@@ -613,6 +625,7 @@ fn serve(
             quarantine_policy,
             quarantine,
             deadline,
+            redactor,
             sink,
         ) {
             eprintln!("fxrun-dispatch: connection error: {e}");
@@ -653,6 +666,37 @@ fn stdin_dry_run(key: &str) -> anyhow::Result<()> {
         plan.intent
     );
     Ok(())
+}
+
+/// Build the egress redactor from the dispatcher's configured secrets: the HMAC dispatch `key`
+/// (the primary secret the runner holds) plus any extra comma-separated strings in
+/// `FXRUN_REDACT_SECRETS` (e.g. an envctl-injected bearer the App embeds). Each candidate is filtered
+/// by [`Redactor::register`] (too-short stand-ins are dropped). Not `#[cfg(unix)]`: it's pure and
+/// unit-tested on every OS; the top-of-file `allow(dead_code)` covers its non-Unix unused state.
+fn build_redactor(key: &str) -> Redactor {
+    let mut redactor = Redactor::new();
+    // The dispatch key itself must never surface in a log line or an error reply.
+    redactor.register(key);
+    if let Ok(extra) = std::env::var("FXRUN_REDACT_SECRETS") {
+        for secret in extra.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            redactor.register(secret);
+        }
+    }
+    redactor
+}
+
+/// Scrub a [`DispatchResponse`]'s `error` (the only free-text field that crosses the socket) through
+/// `redactor` before it is serialized to the client — the wire-reply half of the redaction seam
+/// (the audit-log half is the [`RedactingSink`] decorator). When nothing matches, the original
+/// `error` string is reused (no allocation). Pure / cross-platform (testable on every OS).
+fn redact_response(redactor: &Redactor, mut resp: DispatchResponse) -> DispatchResponse {
+    if let Some(err) = resp.error.take() {
+        resp.error = Some(match redactor.redact(&err) {
+            std::borrow::Cow::Borrowed(_) => err,
+            std::borrow::Cow::Owned(scrubbed) => scrubbed,
+        });
+    }
+    resp
 }
 
 /// Read a positive `usize` from `var`, falling back to `default` when unset/empty/unparseable.
@@ -795,7 +839,7 @@ fn main() -> anyhow::Result<()> {
             };
             let all_log = env_path("FXRUN_EVENT_LOG");
             let policy_log = env_path("FXRUN_POLICY_LOG");
-            let sink: Box<dyn EventSink> = if all_log.is_none() && policy_log.is_none() {
+            let base_sink: Box<dyn EventSink> = if all_log.is_none() && policy_log.is_none() {
                 Box::new(NullSink)
             } else {
                 if let Some(p) = &all_log {
@@ -809,6 +853,20 @@ fn main() -> anyhow::Result<()> {
                     policy: policy_log.map(|path| FileSink { path }),
                 })
             };
+            // Secret redaction: scrub the dispatch key (+ any FXRUN_REDACT_SECRETS) out of every
+            // audit-log `detail` and every error reply, so key material can never land on disk or
+            // cross the socket (Archon repo.ts token scrub). The key is always set in serve mode
+            // (fail-closed above), so redaction is active here; inert only if no qualifying secret.
+            let redactor = build_redactor(&key);
+            if redactor.is_active() {
+                eprintln!(
+                    "fxrun-dispatch: secret redaction active ({} secret(s) scrubbed from audit log + error replies)",
+                    redactor.secret_count()
+                );
+            }
+            // Wrap the audit sink so every emitted event's detail is scrubbed before the file write.
+            let sink: Box<dyn EventSink> =
+                Box::new(RedactingSink::new(base_sink, redactor.clone()));
             serve(
                 std::path::Path::new(path),
                 key.as_bytes(),
@@ -824,6 +882,7 @@ fn main() -> anyhow::Result<()> {
                 &quarantine_policy,
                 &mut quarantine,
                 &deadline,
+                &redactor,
                 sink.as_ref(),
             )?;
             return Ok(());
@@ -2034,6 +2093,7 @@ mod tests {
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
                 &DeadlinePolicy::disabled(),
+                &Redactor::new(),
                 &NullSink,
             )
             .unwrap();
@@ -2054,5 +2114,111 @@ mod tests {
         assert_eq!(resp.kernel.as_deref(), Some("loop"));
         assert_eq!(recorder.calls(), 1);
         let _ = std::fs::remove_file(&sock);
+    }
+
+    /// An invoker whose error string embeds a secret — exercises the redaction seam on the real
+    /// kernel-failure path (the error becomes a `detail` + the response `error`).
+    struct LeakyInvoker {
+        secret: String,
+    }
+    impl KernelInvoker for LeakyInvoker {
+        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
+            Err(format!("upstream auth failed using token {}", self.secret))
+        }
+    }
+
+    /// End-to-end over a real Unix socket AND a real on-disk audit file: a kernel failure whose error
+    /// embeds a registered secret must reach NEITHER the wire reply NOR the audit log un-redacted.
+    #[cfg(unix)]
+    #[test]
+    fn secret_is_redacted_from_both_the_reply_and_the_audit_log() {
+        use std::io::{Read, Write};
+        use std::net::Shutdown;
+        use std::os::unix::net::{UnixListener, UnixStream};
+
+        fn unique(stem: &str) -> std::path::PathBuf {
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed);
+            std::env::temp_dir().join(format!("fxrun-redact-{}-{stem}-{n}", std::process::id()))
+        }
+
+        const SECRET: &str = "s3cr3t-bearer-do-not-log";
+        let key = b"dispatch-key".to_vec();
+        let sock = unique("sock");
+        let log_path = unique("audit.ndjson");
+        let listener = UnixListener::bind(&sock).unwrap();
+
+        // The dispatch key is also a secret — confirm it never leaks either (it isn't in the message
+        // here, but the redactor registers it regardless).
+        let redactor = build_redactor("dispatch-key").with_secret(SECRET);
+        assert!(redactor.is_active());
+
+        let log_srv = log_path.clone();
+        let key_srv = key.clone();
+        let handle = std::thread::spawn(move || {
+            // The real FileSink (writes the NDJSON file), wrapped in the real RedactingSink.
+            let file_sink: Box<dyn EventSink> = Box::new(RoutingSink {
+                all: Some(FileSink { path: log_srv }),
+                policy: None,
+            });
+            let sink = RedactingSink::new(file_sink, redactor.clone());
+            serve_once(
+                &listener,
+                &key_srv,
+                &LeakyInvoker {
+                    secret: SECRET.to_string(),
+                },
+                &Constitution::default(),
+                &ApprovalPolicy::none(),
+                &mut LoopGuard::default(),
+                &mut Governor::unlimited(),
+                &RecoveryPolicy::new(0, 5), // 0 retries → escalate (still a rejection carrying detail)
+                &mut RetryLedger::new(),
+                &QuarantinePolicy::disabled(),
+                &mut QuarantineLedger::new(),
+                &DeadlinePolicy::disabled(),
+                &redactor,
+                &sink,
+            )
+            .unwrap();
+        });
+
+        let frame = sign_frame(&key, &ci_spec(false)).unwrap();
+        let mut stream = UnixStream::connect(&sock).unwrap();
+        stream
+            .write_all(&serde_json::to_vec(&frame).unwrap())
+            .unwrap();
+        stream.shutdown(Shutdown::Write).unwrap();
+        let mut resp_bytes = Vec::new();
+        stream.read_to_end(&mut resp_bytes).unwrap();
+        handle.join().unwrap();
+
+        // (1) The wire reply: rejected, error present, secret scrubbed, placeholder shown.
+        let resp: DispatchResponse = serde_json::from_slice(&resp_bytes).unwrap();
+        assert!(!resp.accepted);
+        let err = resp.error.expect("a rejection carries an error");
+        assert!(
+            !err.contains(SECRET),
+            "secret leaked into the wire reply: {err}"
+        );
+        assert!(
+            err.contains(Redactor::PLACEHOLDER),
+            "reply should show the placeholder: {err}"
+        );
+
+        // (2) The on-disk audit log: the secret must not appear anywhere in the file.
+        let logged = std::fs::read_to_string(&log_path).unwrap();
+        assert!(
+            !logged.contains(SECRET),
+            "secret leaked into the audit log:\n{logged}"
+        );
+        assert!(
+            logged.contains(Redactor::PLACEHOLDER),
+            "audit log should show the placeholder:\n{logged}"
+        );
+        assert!(logged.contains("kernel_failed"), "the failure was audited");
+
+        let _ = std::fs::remove_file(&sock);
+        let _ = std::fs::remove_file(&log_path);
     }
 }

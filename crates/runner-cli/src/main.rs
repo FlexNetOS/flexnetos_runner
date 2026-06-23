@@ -145,6 +145,10 @@ fn main() -> anyhow::Result<()> {
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
             println!(
+                "  secret redaction   : dispatch key + FXRUN_REDACT_SECRETS scrubbed from the audit \
+                 log + error replies (active whenever serving; Archon repo.ts token scrub)"
+            );
+            println!(
                 "  policy stream      : off by default (FXRUN_POLICY_LOG → admission/guardrail \
                  decisions only, for tamper-lineage)"
             );
