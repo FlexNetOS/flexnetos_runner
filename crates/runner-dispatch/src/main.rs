@@ -20,6 +20,7 @@
 // real target (Unix) keeps full dead-code checking.
 #![cfg_attr(not(unix), allow(dead_code))]
 
+use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
 use runner_core::loopguard::{LoopGuard, Verdict};
 use runner_core::router::{self, KernelPlan};
@@ -60,13 +61,14 @@ impl KernelInvoker for DryRunInvoker {
 }
 
 /// Handle one received frame end-to-end. Pure over its inputs (no socket), so the accept→verify→
-/// isolate→breaker→route→delegate decision is unit-tested directly. Fail-closed: every non-happy
-/// path is a `DispatchResponse::rejected`. The `guard` persists across connections (the runaway-loop
-/// breaker is stateful by design).
+/// isolate→breaker→budget→route→delegate decision is unit-tested directly. Fail-closed: every
+/// non-happy path is a `DispatchResponse::rejected`. `guard` and `governor` persist across
+/// connections (the runaway-loop breaker and the dispatch budget are stateful by design).
 fn handle_request(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     guard: &mut LoopGuard,
+    governor: &mut Governor,
     raw: &[u8],
 ) -> DispatchResponse {
     let req: DispatchRequest = match serde_json::from_slice(raw) {
@@ -97,6 +99,16 @@ fn handle_request(
         ));
     }
 
+    // Dispatch budget (bounded autonomy): refuse once the operator-set lifetime ceiling is hit, so
+    // an unattended loop can't run away. Checked after the breaker so a refused-loop job costs no
+    // budget. Unlimited by default — only enforced when FXRUN_DISPATCH_BUDGET is set.
+    if let Admission::Denied { spent, budget } = governor.admit() {
+        return DispatchResponse::rejected(format!(
+            "dispatch budget exhausted: {spent}/{budget} jobs used this session \
+             (bounded-autonomy kill-switch); re-arm the runner to continue"
+        ));
+    }
+
     let plan = router::route(&job);
     match invoker.invoke(&plan, &job) {
         Ok(()) => DispatchResponse {
@@ -121,12 +133,13 @@ fn serve_once(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     guard: &mut LoopGuard,
+    governor: &mut Governor,
 ) -> std::io::Result<()> {
     use std::io::Write;
     let (mut stream, _addr) = listener.accept()?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
-    let resp = handle_request(key, invoker, guard, &raw);
+    let resp = handle_request(key, invoker, guard, governor, &raw);
     let bytes = serde_json::to_vec(&resp)
         .unwrap_or_else(|_| br#"{"accepted":false,"error":"response encode failed"}"#.to_vec());
     stream.write_all(&bytes)?;
@@ -143,20 +156,26 @@ fn serve(
     key: &[u8],
     invoker: &dyn KernelInvoker,
     guard: &mut LoopGuard,
+    governor: &mut Governor,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
     }
     let listener = UnixListener::bind(socket_path)?;
+    let budget = match governor.budget() {
+        Some(b) => b.to_string(),
+        None => "unlimited".to_string(),
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {})",
         socket_path.display(),
         guard.trip_threshold(),
-        guard.window()
+        guard.window(),
+        budget
     );
     loop {
-        if let Err(e) = serve_once(&listener, key, invoker, guard) {
+        if let Err(e) = serve_once(&listener, key, invoker, guard, governor) {
             eprintln!("fxrun-dispatch: connection error: {e}");
         }
     }
@@ -229,11 +248,14 @@ fn main() -> anyhow::Result<()> {
             let window = env_usize("FXRUN_LOOP_WINDOW", 8);
             let threshold = env_usize("FXRUN_LOOP_THRESHOLD", 4);
             let mut guard = LoopGuard::new(window, threshold);
+            // Bounded-autonomy ceiling: 0/unset → unlimited (behaviour-preserving default).
+            let mut governor = Governor::from_env_budget(env_usize("FXRUN_DISPATCH_BUDGET", 0));
             serve(
                 std::path::Path::new(path),
                 key.as_bytes(),
                 &DryRunInvoker,
                 &mut guard,
+                &mut governor,
             )?;
             return Ok(());
         }
@@ -287,7 +309,13 @@ mod tests {
         let inv = RecordingInvoker::default();
         let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
-        let resp = handle_request(b"k", &inv, &mut LoopGuard::default(), &raw);
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &raw,
+        );
         assert!(resp.accepted);
         assert_eq!(resp.kernel.as_deref(), Some("loop"));
         assert_eq!(resp.placement.as_deref(), Some("SelfHosted"));
@@ -299,7 +327,13 @@ mod tests {
         let inv = RecordingInvoker::default();
         let frame = sign_frame(b"k", &ci_spec(true)).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
-        let resp = handle_request(b"k", &inv, &mut LoopGuard::default(), &raw);
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &raw,
+        );
         assert!(!resp.accepted);
         assert!(resp.error.unwrap().contains("fork"));
         assert_eq!(inv.calls(), 0, "fork job must never reach a kernel");
@@ -310,7 +344,13 @@ mod tests {
         let inv = RecordingInvoker::default();
         let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
-        let resp = handle_request(b"wrong-key", &inv, &mut LoopGuard::default(), &raw);
+        let resp = handle_request(
+            b"wrong-key",
+            &inv,
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &raw,
+        );
         assert!(!resp.accepted);
         assert_eq!(inv.calls(), 0);
     }
@@ -318,7 +358,13 @@ mod tests {
     #[test]
     fn unparseable_frame_is_rejected() {
         let inv = RecordingInvoker::default();
-        let resp = handle_request(b"k", &inv, &mut LoopGuard::default(), b"this is not json");
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            b"this is not json",
+        );
         assert!(!resp.accepted);
         assert_eq!(inv.calls(), 0);
     }
@@ -332,15 +378,44 @@ mod tests {
         let raw = serde_json::to_vec(&frame).unwrap();
 
         // First identical dispatch is delegated…
-        let first = handle_request(b"k", &inv, &mut guard, &raw);
+        let first = handle_request(b"k", &inv, &mut guard, &mut Governor::unlimited(), &raw);
         assert!(first.accepted);
         assert_eq!(inv.calls(), 1);
 
         // …the second identical dispatch trips the breaker and never reaches the kernel.
-        let second = handle_request(b"k", &inv, &mut guard, &raw);
+        let second = handle_request(b"k", &inv, &mut guard, &mut Governor::unlimited(), &raw);
         assert!(!second.accepted);
         assert!(second.error.unwrap().contains("loop breaker"));
         assert_eq!(inv.calls(), 1, "tripped job must not be delegated");
+    }
+
+    #[test]
+    fn dispatch_budget_denies_past_the_ceiling_and_spares_the_kernel() {
+        let inv = RecordingInvoker::default();
+        let mut guard = LoopGuard::default();
+        let mut governor = Governor::with_budget(2);
+
+        let mut dispatch = |sha: &str| {
+            let spec = JobSpec {
+                id: format!("job-{sha}"),
+                correlation_id: "c".into(),
+                from_fork: false,
+                job: JobKind::Ci {
+                    repo: "FlexNetOS/meta".into(),
+                    head_sha: sha.into(),
+                },
+            };
+            let frame = sign_frame(b"k", &spec).unwrap();
+            let raw = serde_json::to_vec(&frame).unwrap();
+            handle_request(b"k", &inv, &mut guard, &mut governor, &raw)
+        };
+
+        assert!(dispatch("a").accepted); // 1/2
+        assert!(dispatch("b").accepted); // 2/2
+        let denied = dispatch("c"); // 3rd → over budget
+        assert!(!denied.accepted);
+        assert!(denied.error.unwrap().contains("budget exhausted"));
+        assert_eq!(inv.calls(), 2, "over-budget job must not be delegated");
     }
 
     #[test]
@@ -360,7 +435,9 @@ mod tests {
             };
             let frame = sign_frame(b"k", &spec).unwrap();
             let raw = serde_json::to_vec(&frame).unwrap();
-            assert!(handle_request(b"k", &inv, &mut guard, &raw).accepted);
+            assert!(
+                handle_request(b"k", &inv, &mut guard, &mut Governor::unlimited(), &raw).accepted
+            );
         }
         assert_eq!(inv.calls(), 6);
     }
@@ -387,7 +464,14 @@ mod tests {
         let rec_srv = recorder.clone();
         let key_srv = key.clone();
         let handle = std::thread::spawn(move || {
-            serve_once(&listener, &key_srv, &*rec_srv, &mut LoopGuard::default()).unwrap();
+            serve_once(
+                &listener,
+                &key_srv,
+                &*rec_srv,
+                &mut LoopGuard::default(),
+                &mut Governor::unlimited(),
+            )
+            .unwrap();
         });
 
         let frame = sign_frame(&key, &ci_spec(false)).unwrap();
