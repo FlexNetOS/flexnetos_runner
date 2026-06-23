@@ -11,6 +11,7 @@
 //! The HMAC key is sealed in envctl's vault and injected at runtime (P3); the App holds the same
 //! key to sign. Verification is constant-time (`Mac::verify_slice`).
 
+use crate::authority::Submitter;
 use crate::jobspec::JobSpec;
 use crate::recovery::RecoveryDirective;
 use hmac::{Hmac, Mac};
@@ -32,6 +33,11 @@ pub struct DispatchRequest {
     /// older App frames stay valid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<Approval>,
+    /// Optional submitter provenance / authority tier, derived by the control plane before dispatch.
+    /// This is an envelope fact (like approval/deadline), not part of the signed JobSpec payload, so
+    /// older App frames remain valid when the authority gate is disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submitter: Option<Submitter>,
     /// Optional per-job wall-clock deadline in seconds (see [`crate::deadline`]). An out-of-band
     /// request the App attaches to the envelope; the runner takes the **tighter** of this and its
     /// operator ceiling, so it can only shorten a job, never exceed the cap. Absent on older frames.
@@ -133,6 +139,7 @@ pub fn sign_frame(key: &[u8], spec: &JobSpec) -> Result<DispatchRequest, WireErr
         spec_json,
         signature,
         approval: None,
+        submitter: None,
         deadline_secs: None,
     })
 }
@@ -217,6 +224,7 @@ mod tests {
             spec_json: body.to_string(),
             signature: sign_bytes(b"k", body.as_bytes()),
             approval: None,
+            submitter: None,
             deadline_secs: None,
         };
         assert!(matches!(
@@ -248,10 +256,32 @@ mod tests {
     fn frame_without_approval_omits_the_field_and_still_parses() {
         let frame = sign_frame(b"k", &spec()).unwrap();
         assert!(frame.approval.is_none());
+        assert!(frame.submitter.is_none());
         let json = serde_json::to_string(&frame).unwrap();
         assert!(!json.contains("approval"));
+        assert!(!json.contains("submitter"));
         let back: DispatchRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back, frame);
+    }
+
+    #[test]
+    fn submitter_is_optional_omitted_when_absent_and_round_trips_when_present() {
+        use crate::authority::{AuthorityTier, Submitter};
+
+        let frame = sign_frame(b"k", &spec()).unwrap();
+        assert_eq!(frame.submitter, None);
+        assert!(!serde_json::to_string(&frame).unwrap().contains("submitter"));
+
+        let mut with_submitter = sign_frame(b"k", &spec()).unwrap();
+        with_submitter.submitter = Some(Submitter::new("alice", AuthorityTier::Maintainer));
+        let json = serde_json::to_string(&with_submitter).unwrap();
+        assert!(json.contains(r#""submitter":{"id":"alice","tier":"maintainer"}"#));
+        let back: DispatchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, with_submitter);
+
+        let legacy = r#"{"spec_json":"x","signature":"sha256=00"}"#;
+        let parsed: DispatchRequest = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.submitter, None);
     }
 
     #[test]

@@ -137,6 +137,10 @@ fn main() -> anyhow::Result<()> {
                  → hold flagged classes until a human grant)"
             );
             println!(
+                "  authority gate     : off by default (FXRUN_AUTHORITY_RULES=cycle=maintainer,\
+                 agent=owner → require envelope submitter provenance/tier before privileged routes)"
+            );
+            println!(
                 "  structural lint    : malformed jobs (bad repo / blank head_sha / pr_number 0) \
                  refused before the kernel"
             );

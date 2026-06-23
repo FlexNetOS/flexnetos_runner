@@ -21,6 +21,7 @@
 #![cfg_attr(not(unix), allow(dead_code))]
 
 use runner_core::approval::ApprovalPolicy;
+use runner_core::authority::{AuthorityDecision, AuthorityPolicy};
 use runner_core::constitution::{Constitution, ConstitutionStatus};
 use runner_core::cost::JobCost;
 use runner_core::deadline::DeadlinePolicy;
@@ -464,6 +465,7 @@ fn handle_request(
     invoker: &(dyn KernelInvoker + Sync),
     constitution: &ConstitutionStatus,
     approval: &ApprovalPolicy,
+    authority: &AuthorityPolicy,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -510,6 +512,32 @@ fn handle_request(
             return DispatchResponse::rejected(detail);
         }
     };
+
+    // Dispatch provenance / authority gate (automaton authority tiers + access-broker prior art):
+    // the envelope can state *who* submitted the dispatch, and the operator can set per-route floors
+    // for privileged classes. This is intentionally before structural/content inspection: once the
+    // signed JobSpec parsed, decide whether this origin may ask for the route at all. Inert unless
+    // FXRUN_AUTHORITY_RULES is configured, preserving older App frames with no submitter.
+    if let AuthorityDecision::Denied {
+        route,
+        required,
+        actual,
+        submitter,
+    } = authority.check(&job, req.submitter.as_ref())
+    {
+        let directive = policy.decide(retry, &fingerprint(&job), FailureKind::AuthorityDenied);
+        let who = submitter.unwrap_or_else(|| "<none>".into());
+        let detail = format!(
+            "authority gate denied route `{route}` for submitter `{who}`: required ≥ {required}, actual {actual} | {}",
+            directive.summary()
+        );
+        sink.emit(
+            &DispatchEvent::for_job(Outcome::AuthorityDenied, &job)
+                .with_recovery(directive.clone())
+                .with_detail(&detail),
+        );
+        return DispatchResponse::rejected(detail).with_recovery(directive);
+    }
 
     // Structural lint (attractor VALIDATE phase): the earliest safe gate — now that the bytes are
     // authenticated, refuse a malformed job (bad repo / blank head_sha / pr_number 0) before any
@@ -811,6 +839,7 @@ fn serve_once(
     invoker: &(dyn KernelInvoker + Sync),
     constitution: &Constitution,
     approval: &ApprovalPolicy,
+    authority: &AuthorityPolicy,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -837,6 +866,7 @@ fn serve_once(
         invoker,
         &status,
         approval,
+        authority,
         guard,
         governor,
         policy,
@@ -873,6 +903,7 @@ fn serve(
     invoker: &(dyn KernelInvoker + Sync),
     constitution: &Constitution,
     approval: &ApprovalPolicy,
+    authority: &AuthorityPolicy,
     guard: &mut LoopGuard,
     governor: &mut Governor,
     policy: &RecoveryPolicy,
@@ -904,6 +935,11 @@ fn serve(
         format!("approval bands: {}", approval.enabled_bands().join(","))
     } else {
         "approval: none".to_string()
+    };
+    let authority_note = if authority.is_active() {
+        format!("authority: {}", authority.describe())
+    } else {
+        "authority: off".to_string()
     };
     let quarantine_note = if quarantine_policy.is_active() {
         format!("quarantine: {} failures", quarantine_policy.threshold())
@@ -945,7 +981,7 @@ fn serve(
         "risk score: off".to_string()
     };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {}; {}; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -959,6 +995,7 @@ fn serve(
         risk_note,
         redaction_note,
         approval_note,
+        authority_note,
         constitution_note
     );
     loop {
@@ -971,6 +1008,7 @@ fn serve(
             invoker,
             constitution,
             approval,
+            authority,
             guard,
             governor,
             policy,
@@ -1218,6 +1256,14 @@ fn main() -> anyhow::Result<()> {
             let approval = ApprovalPolicy::from_bands(
                 &std::env::var("FXRUN_APPROVAL_BANDS").unwrap_or_default(),
             );
+            // Dispatch provenance / authority gate: optional per-route floors such as
+            // `FXRUN_AUTHORITY_RULES=cycle=maintainer,agent=owner`. Older App frames carry no
+            // submitter and still pass when no floor is configured; once a floor exists, missing
+            // submitter provenance is `guest` and fails closed.
+            let authority = AuthorityPolicy::from_rules(
+                &std::env::var("FXRUN_AUTHORITY_RULES").unwrap_or_default(),
+            )
+            .map_err(|e| anyhow::anyhow!("invalid FXRUN_AUTHORITY_RULES: {e}"))?;
             // Audit trail: every event to FXRUN_EVENT_LOG (when set); admission/guardrail
             // (policy-category) events ALSO to a distinct FXRUN_POLICY_LOG stream — automaton's
             // separate `policy_decisions` table, so guardrail tampering is auditable on its own.
@@ -1307,6 +1353,7 @@ fn main() -> anyhow::Result<()> {
                 invoker.as_ref(),
                 &constitution,
                 &approval,
+                &authority,
                 &mut guard,
                 &mut governor,
                 &policy,
@@ -1336,6 +1383,7 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use runner_core::authority::{AuthorityTier, Submitter};
     use runner_core::jobspec::{JobKind, JobSpec};
     use runner_core::wire::sign_frame;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1459,6 +1507,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1481,6 +1530,81 @@ mod tests {
     }
 
     #[test]
+    fn authority_gate_denies_low_tier_submitter_before_delegation() {
+        let inv = RecordingInvoker::default();
+        let mut frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        frame.submitter = Some(Submitter::new("bot", AuthorityTier::Agent));
+        let raw = serde_json::to_vec(&frame).unwrap();
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::from_rules("ci=maintainer").unwrap(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!resp.accepted);
+        assert!(resp
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("authority gate denied"));
+        assert_eq!(
+            resp.recovery.as_ref().unwrap().action,
+            RecoveryVerb::Escalate
+        );
+        assert_eq!(
+            inv.calls(),
+            0,
+            "unauthorized submitter must never reach a kernel"
+        );
+    }
+
+    #[test]
+    fn authority_gate_allows_sufficient_submitter() {
+        let inv = RecordingInvoker::default();
+        let mut frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        frame.submitter = Some(Submitter::new("alice", AuthorityTier::Maintainer));
+        let raw = serde_json::to_vec(&frame).unwrap();
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::from_rules("ci=maintainer").unwrap(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(resp.accepted);
+        assert_eq!(inv.calls(), 1);
+    }
+
+    #[test]
     fn fork_job_is_rejected_and_never_delegated() {
         let inv = RecordingInvoker::default();
         let frame = sign_frame(b"k", &ci_spec(true)).unwrap();
@@ -1490,6 +1614,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1520,6 +1645,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1547,6 +1673,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1589,6 +1716,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1610,6 +1738,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1631,6 +1760,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1680,6 +1810,7 @@ mod tests {
             &inv,
             &violated,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1709,6 +1840,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -1742,6 +1874,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1766,6 +1899,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -1809,6 +1943,7 @@ mod tests {
                 &inv,
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut guard,
                 &mut governor,
                 &RecoveryPolicy::default(),
@@ -1869,6 +2004,7 @@ mod tests {
                 &inv,
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut guard,
                 &mut gov,
                 &RecoveryPolicy::default(),
@@ -1921,6 +2057,7 @@ mod tests {
                     &inv,
                     &ConstitutionStatus::Intact,
                     &ApprovalPolicy::none(),
+                    &AuthorityPolicy::disabled(),
                     &mut guard,
                     &mut Governor::unlimited(),
                     &RecoveryPolicy::default(),
@@ -1981,6 +2118,7 @@ mod tests {
                 &inv,
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut guard,
                 gov,
                 &policy,
@@ -2043,6 +2181,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -2089,6 +2228,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &policy,
@@ -2117,6 +2257,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -2159,6 +2300,7 @@ mod tests {
                 &fail,
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &policy,
@@ -2195,6 +2337,7 @@ mod tests {
             &ok,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &policy,
@@ -2230,6 +2373,7 @@ mod tests {
             &ok,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &policy,
@@ -2266,6 +2410,7 @@ mod tests {
                 &fail,
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::new(5, 1),
@@ -2343,6 +2488,7 @@ mod tests {
             &slow,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -2393,6 +2539,7 @@ mod tests {
             &fail,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -2420,6 +2567,7 @@ mod tests {
             &ok,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut gov,
             &policy,
@@ -2449,6 +2597,7 @@ mod tests {
             &ok,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut tight,
             &mut gov,
             &policy,
@@ -2492,6 +2641,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &approval,
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &policy,
@@ -2527,6 +2677,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &approval,
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &policy,
@@ -2553,6 +2704,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &approval,
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(), // fresh guard so the breaker doesn't trip on the repeat
             &mut gov,
             &policy,
@@ -2633,6 +2785,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -2724,6 +2877,7 @@ mod tests {
                 &*rec_srv,
                 &Constitution::default(),
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::default(),
@@ -2818,6 +2972,7 @@ mod tests {
                 },
                 &Constitution::default(),
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut LoopGuard::default(),
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::new(0, 5), // 0 retries → escalate (still a rejection carrying detail)
@@ -2894,6 +3049,7 @@ mod tests {
                 &inv,
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut guard,
                 &mut gov,
                 &RecoveryPolicy::default(),
@@ -2917,6 +3073,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -2972,6 +3129,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -2996,6 +3154,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut guard,
             &mut gov,
             &RecoveryPolicy::default(),
@@ -3043,6 +3202,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -3067,6 +3227,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::default(),
@@ -3124,6 +3285,7 @@ mod tests {
                 &inv,
                 &ConstitutionStatus::Intact,
                 &ApprovalPolicy::none(),
+                &AuthorityPolicy::disabled(),
                 &mut LoopGuard::new(100, 100), // keep the breaker out of the way for this run
                 &mut Governor::unlimited(),
                 &RecoveryPolicy::new(99, 1), // never escalate within this run (stay on the retry path)
@@ -3185,6 +3347,7 @@ mod tests {
             &inv,
             &ConstitutionStatus::Intact,
             &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
             &mut LoopGuard::default(),
             &mut Governor::unlimited(),
             &RecoveryPolicy::new(5, 1),
