@@ -4,6 +4,7 @@
 //! WITHOUT running anything. The dispatcher (P2) turns a plan into a subprocess call; the
 //! runner NEVER reimplements loop_lib / atc / handoff / weave.
 
+use crate::agent::Agent;
 use crate::jobspec::{JobKind, JobSpec};
 
 /// The existing kernels the runner delegates to.
@@ -33,6 +34,9 @@ pub struct KernelPlan {
     /// Human-readable intent; exact argv is finalized by the dispatcher in P2.
     pub intent: String,
     pub repo: String,
+    /// For agent-class jobs (kernel = `atc`), which agent backend `atc` drives. `None` for
+    /// non-agent kernels (`loop`/`hf`/`weave`), which have no agent backend.
+    pub agent: Option<Agent>,
 }
 
 /// Route a job to its kernel. Pure.
@@ -42,23 +46,34 @@ pub fn route(job: &JobSpec) -> KernelPlan {
             kernel: Kernel::LoopLib,
             intent: format!("ci build/test @ {head_sha}"),
             repo: repo.clone(),
+            agent: None,
         },
         JobKind::ReviewGate {
-            repo, pr_number, ..
+            repo,
+            pr_number,
+            agent,
+            ..
         } => KernelPlan {
             kernel: Kernel::Atc,
-            intent: format!("merge-gate review PR #{pr_number}"),
+            intent: format!("merge-gate review PR #{pr_number} via {agent}"),
             repo: repo.clone(),
+            agent: Some(*agent),
         },
-        JobKind::AgentTask { repo, prompt_ref } => KernelPlan {
+        JobKind::AgentTask {
+            repo,
+            prompt_ref,
+            agent,
+        } => KernelPlan {
             kernel: Kernel::Atc,
-            intent: format!("agent task {prompt_ref}"),
+            intent: format!("agent task {prompt_ref} via {agent}"),
             repo: repo.clone(),
+            agent: Some(*agent),
         },
         JobKind::LoopCycle { repo, task_id } => KernelPlan {
             kernel: Kernel::Handoff,
             intent: format!("loop cycle / ship {task_id}"),
             repo: repo.clone(),
+            agent: None,
         },
     }
 }
@@ -92,6 +107,7 @@ mod tests {
                 repo: "r".into(),
                 pr_number: 7,
                 head_sha: "s".into(),
+                agent: Agent::default(),
             }))
             .kernel,
             Kernel::Atc
@@ -100,10 +116,47 @@ mod tests {
             route(&job(JobKind::AgentTask {
                 repo: "r".into(),
                 prompt_ref: "p".into(),
+                agent: Agent::default(),
             }))
             .kernel,
             Kernel::Atc
         );
+    }
+
+    #[test]
+    fn agent_jobs_carry_the_selected_backend_into_the_plan() {
+        // Default (Claude) when unspecified.
+        let p = route(&job(JobKind::AgentTask {
+            repo: "r".into(),
+            prompt_ref: "p".into(),
+            agent: Agent::default(),
+        }));
+        assert_eq!(p.agent, Some(Agent::Claude));
+        assert!(p.intent.contains("claude"));
+
+        // An explicit non-default backend is carried verbatim and surfaced in the intent.
+        let p = route(&job(JobKind::ReviewGate {
+            repo: "r".into(),
+            pr_number: 7,
+            head_sha: "s".into(),
+            agent: Agent::Kimi,
+        }));
+        assert_eq!(p.agent, Some(Agent::Kimi));
+        assert!(p.intent.contains("kimi"));
+    }
+
+    #[test]
+    fn non_agent_kernels_have_no_agent_backend() {
+        let ci = route(&job(JobKind::Ci {
+            repo: "r".into(),
+            head_sha: "s".into(),
+        }));
+        assert_eq!(ci.agent, None);
+        let cycle = route(&job(JobKind::LoopCycle {
+            repo: "r".into(),
+            task_id: "t".into(),
+        }));
+        assert_eq!(cycle.agent, None);
     }
 
     #[test]
