@@ -137,6 +137,11 @@ fn main() -> anyhow::Result<()> {
                  kernel failures of a fingerprint, refuse re-dispatch until re-armed)"
             );
             println!(
+                "  dispatch deadline  : off by default (FXRUN_DEFAULT_DEADLINE_SECS caps wall-clock \
+                 per job; a hung delegation times out → recovery + quarantine; tighter per-job on the \
+                 request envelope)"
+            );
+            println!(
                 "  audit log          : off by default (FXRUN_EVENT_LOG → NDJSON dispatch trail)"
             );
             println!(

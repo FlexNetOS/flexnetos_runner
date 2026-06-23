@@ -23,6 +23,7 @@
 use runner_core::approval::ApprovalPolicy;
 use runner_core::constitution::{Constitution, ConstitutionStatus};
 use runner_core::cost::JobCost;
+use runner_core::deadline::DeadlinePolicy;
 use runner_core::events::{DispatchEvent, EventCategory, EventSink, NullSink, Outcome};
 use runner_core::governor::{Admission, Governor};
 use runner_core::jobspec::JobSpec;
@@ -43,6 +44,101 @@ trait KernelInvoker {
     /// Invoke the kernel and return the job's measured [`JobCost`] (the `atc → runner` cost seam).
     /// Kernels that don't measure cost (the dry-run, or non-agent kernels) return [`JobCost::ZERO`].
     fn invoke(&self, plan: &KernelPlan, job: &JobSpec) -> Result<JobCost, String>;
+}
+
+/// The outcome of one delegation attempt, after the optional wall-clock watchdog.
+enum Delegation {
+    /// The kernel completed within the deadline, reporting its cost.
+    Delivered(JobCost),
+    /// The kernel returned an error.
+    Failed(String),
+    /// The kernel did not finish within the effective deadline — abandoned (see [`run_delegation`]).
+    TimedOut(std::time::Duration),
+}
+
+/// Run one delegation, enforcing the effective wall-clock `deadline` when one is set.
+///
+/// With **no deadline** (the default) the invoker is called directly on this thread — byte-for-byte
+/// the prior behaviour, zero thread overhead. With a deadline, the invocation runs on a *scoped*
+/// worker thread and the dispatcher waits at most `limit`; if the kernel hasn't returned by then the
+/// delegation is reported as [`Delegation::TimedOut`] and the worker is abandoned. This is the
+/// runner-plane bound on a *hung* job (the breaker/governor/quarantine don't cover the time axis).
+///
+/// Note: `std::thread::scope` joins the worker before returning, so for an *in-process* fake that
+/// merely runs long the dispatcher still waits for it to finish after classifying the timeout (the
+/// classification is what matters — the late result is discarded). The **P3** invoker shells out to a
+/// real kernel subprocess and hard-kills it at the deadline (attractor's "interrupt"; Archon's
+/// `dockerStop`), so the worker returns promptly and the join does not linger. The runner stays
+/// delegate-only: it bounds and classifies the wait; the kernel owns *how* the work runs.
+fn run_delegation(
+    invoker: &(dyn KernelInvoker + Sync),
+    plan: &KernelPlan,
+    job: &JobSpec,
+    deadline: Option<std::time::Duration>,
+) -> Delegation {
+    let Some(limit) = deadline else {
+        return match invoker.invoke(plan, job) {
+            Ok(cost) => Delegation::Delivered(cost),
+            Err(e) => Delegation::Failed(e),
+        };
+    };
+    use std::sync::mpsc;
+    std::thread::scope(|scope| {
+        let (tx, rx) = mpsc::channel();
+        scope.spawn(move || {
+            let _ = tx.send(invoker.invoke(plan, job));
+        });
+        match rx.recv_timeout(limit) {
+            Ok(Ok(cost)) => Delegation::Delivered(cost),
+            Ok(Err(e)) => Delegation::Failed(e),
+            Err(mpsc::RecvTimeoutError::Timeout) => Delegation::TimedOut(limit),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Delegation::Failed("kernel worker disconnected before reporting".into())
+            }
+        }
+    })
+}
+
+/// Shared handling for a failed/timed-out delegation: advise recovery (retry-with-backoff →
+/// escalate, per `kind`) and record the failure against the quarantine ledger (latching the
+/// fingerprint once it reaches the threshold). A free function — not a closure — so it does not hold
+/// the `retry`/`quarantine` mutable borrows across the delegation `match`'s success arm.
+#[allow(clippy::too_many_arguments)]
+fn handle_failure(
+    policy: &RecoveryPolicy,
+    retry: &mut RetryLedger,
+    quarantine_policy: &QuarantinePolicy,
+    quarantine: &mut QuarantineLedger,
+    sink: &dyn EventSink,
+    job: &JobSpec,
+    program: &str,
+    fp: &str,
+    kind: FailureKind,
+    outcome: Outcome,
+    lead: String,
+) -> DispatchResponse {
+    let directive = policy.decide(retry, fp, kind);
+    let now_quarantined = quarantine_policy.on_failure(quarantine, fp);
+    let detail = format!(
+        "{lead} | {}{}",
+        directive.summary(),
+        if now_quarantined {
+            format!(
+                " | fingerprint quarantined ({}x failures ≥ threshold {})",
+                quarantine.failures(fp),
+                quarantine_policy.threshold()
+            )
+        } else {
+            String::new()
+        }
+    );
+    sink.emit(
+        &DispatchEvent::for_job(outcome, job)
+            .with_kernel(program)
+            .with_recovery(directive.clone())
+            .with_detail(&detail),
+    );
+    DispatchResponse::rejected(detail).with_recovery(directive)
 }
 
 /// Creates an isolated per-job work area as a real temp directory and guarantees its teardown on
@@ -173,7 +269,7 @@ impl EventSink for RoutingSink {
 #[allow(clippy::too_many_arguments)]
 fn handle_request(
     key: &[u8],
-    invoker: &dyn KernelInvoker,
+    invoker: &(dyn KernelInvoker + Sync),
     constitution: &ConstitutionStatus,
     approval: &ApprovalPolicy,
     guard: &mut LoopGuard,
@@ -182,6 +278,7 @@ fn handle_request(
     retry: &mut RetryLedger,
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
+    deadline: &DeadlinePolicy,
     sink: &dyn EventSink,
     raw: &[u8],
 ) -> DispatchResponse {
@@ -329,8 +426,12 @@ fn handle_request(
     let plan = router::route(&job);
     let program = plan.kernel.program();
     let fp = fingerprint(&job);
-    match invoker.invoke(&plan, &job) {
-        Ok(cost) => {
+    // Effective wall-clock deadline for THIS delegation: the tighter of the operator ceiling
+    // (FXRUN_DEFAULT_DEADLINE_SECS) and the job's own envelope request. `None` → no bound (the
+    // watchdog stays disengaged and the invoker is called directly — the default, unchanged path).
+    let effective_deadline = deadline.effective(req.deadline_secs);
+    match run_delegation(invoker, &plan, &job, effective_deadline) {
+        Delegation::Delivered(cost) => {
             // Charge the cost atc reported so the NEXT admit sees it (fail-open: ZERO is a no-op).
             governor.charge(cost);
             // A clean delegation clears this fingerprint's retry budget AND its quarantine failure
@@ -357,34 +458,40 @@ fn handle_request(
                 recovery: None,
             }
         }
-        Err(e) => {
-            // A kernel error is usually transient → recovery advises a backed-off retry of the same
-            // job, escalating to a human only once the retry ceiling is exceeded.
-            let directive = policy.decide(retry, &fp, FailureKind::KernelFailed);
-            // Record the failure against the quarantine ledger: once a fingerprint reaches the
-            // failure threshold it latches into quarantine and the NEXT dispatch is refused outright.
-            let now_quarantined = quarantine_policy.on_failure(quarantine, &fp);
-            let detail = format!(
-                "kernel `{program}` invocation failed: {e} | {}{}",
-                directive.summary(),
-                if now_quarantined {
-                    format!(
-                        " | fingerprint quarantined ({}x failures ≥ threshold {})",
-                        quarantine.failures(&fp),
-                        quarantine_policy.threshold()
-                    )
-                } else {
-                    String::new()
-                }
-            );
-            sink.emit(
-                &DispatchEvent::for_job(Outcome::KernelFailed, &job)
-                    .with_kernel(program)
-                    .with_recovery(directive.clone())
-                    .with_detail(&detail),
-            );
-            DispatchResponse::rejected(detail).with_recovery(directive)
-        }
+        // A kernel error is usually transient → recovery advises a backed-off retry, escalating to a
+        // human only once the retry ceiling is exceeded; the failure also feeds the quarantine ledger.
+        Delegation::Failed(e) => handle_failure(
+            policy,
+            retry,
+            quarantine_policy,
+            quarantine,
+            sink,
+            &job,
+            program,
+            &fp,
+            FailureKind::KernelFailed,
+            Outcome::KernelFailed,
+            format!("kernel `{program}` invocation failed: {e}"),
+        ),
+        // A hung / over-long delegation: bounded by the wall-clock deadline, abandoned, and routed
+        // through the same recovery + quarantine path as a kernel error (the time axis the breaker /
+        // governor / quarantine-by-failure don't otherwise cover).
+        Delegation::TimedOut(limit) => handle_failure(
+            policy,
+            retry,
+            quarantine_policy,
+            quarantine,
+            sink,
+            &job,
+            program,
+            &fp,
+            FailureKind::DeadlineExceeded,
+            Outcome::DeadlineExceeded,
+            format!(
+                "kernel `{program}` exceeded its {}s wall-clock deadline (hung / ran long) — abandoned",
+                limit.as_secs()
+            ),
+        ),
     }
 }
 
@@ -395,7 +502,7 @@ fn handle_request(
 fn serve_once(
     listener: &std::os::unix::net::UnixListener,
     key: &[u8],
-    invoker: &dyn KernelInvoker,
+    invoker: &(dyn KernelInvoker + Sync),
     constitution: &Constitution,
     approval: &ApprovalPolicy,
     guard: &mut LoopGuard,
@@ -404,6 +511,7 @@ fn serve_once(
     retry: &mut RetryLedger,
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
+    deadline: &DeadlinePolicy,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::io::Write;
@@ -423,6 +531,7 @@ fn serve_once(
         retry,
         quarantine_policy,
         quarantine,
+        deadline,
         sink,
         &raw,
     );
@@ -441,7 +550,7 @@ fn serve_once(
 fn serve(
     socket_path: &std::path::Path,
     key: &[u8],
-    invoker: &dyn KernelInvoker,
+    invoker: &(dyn KernelInvoker + Sync),
     constitution: &Constitution,
     approval: &ApprovalPolicy,
     guard: &mut LoopGuard,
@@ -450,6 +559,7 @@ fn serve(
     retry: &mut RetryLedger,
     quarantine_policy: &QuarantinePolicy,
     quarantine: &mut QuarantineLedger,
+    deadline: &DeadlinePolicy,
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
@@ -472,8 +582,12 @@ fn serve(
     } else {
         "quarantine: off".to_string()
     };
+    let deadline_note = match deadline.default_secs() {
+        Some(s) => format!("deadline: {s}s cap"),
+        None => "deadline: none".to_string(),
+    };
     eprintln!(
-        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {})",
+        "fxrun-dispatch: listening on {} (loop breaker: {} identical / window {}; dispatch budget: {}; recovery: {} retries / {}s base backoff; {}; {}; {}; {})",
         socket_path.display(),
         guard.trip_threshold(),
         guard.window(),
@@ -481,6 +595,7 @@ fn serve(
         policy.max_retries(),
         policy.base_backoff_secs(),
         quarantine_note,
+        deadline_note,
         approval_note,
         constitution_note
     );
@@ -497,6 +612,7 @@ fn serve(
             retry,
             quarantine_policy,
             quarantine,
+            deadline,
             sink,
         ) {
             eprintln!("fxrun-dispatch: connection error: {e}");
@@ -637,6 +753,10 @@ fn main() -> anyhow::Result<()> {
                 .unwrap_or(0);
             let quarantine_policy = QuarantinePolicy::new(quarantine_threshold);
             let mut quarantine = QuarantineLedger::new();
+            // Per-job wall-clock deadline ceiling: FXRUN_DEFAULT_DEADLINE_SECS bounds a *hung*
+            // delegation (the time axis the breaker/governor/quarantine don't cover). 0/unset = no
+            // cap (behaviour-preserving) — a job may still request a tighter deadline on its envelope.
+            let deadline = DeadlinePolicy::from_secs(env_u64("FXRUN_DEFAULT_DEADLINE_SECS"));
             // Constitution: seal the runner's own governing files (comma-separated paths in
             // FXRUN_CONSTITUTION) at startup; a mid-run change refuses all dispatch. Inert if unset.
             let constitution = {
@@ -703,6 +823,7 @@ fn main() -> anyhow::Result<()> {
                 &mut retry,
                 &quarantine_policy,
                 &mut quarantine,
+                &deadline,
                 sink.as_ref(),
             )?;
             return Ok(());
@@ -765,6 +886,18 @@ mod tests {
         }
     }
 
+    /// An invoker that blocks for `sleep` before succeeding — exercises the deadline watchdog (a
+    /// kernel that hangs / runs long). `Sync` (no interior mutability), as the watchdog requires.
+    struct SlowInvoker {
+        sleep: std::time::Duration,
+    }
+    impl KernelInvoker for SlowInvoker {
+        fn invoke(&self, _plan: &KernelPlan, _job: &JobSpec) -> Result<JobCost, String> {
+            std::thread::sleep(self.sleep);
+            Ok(JobCost::ZERO)
+        }
+    }
+
     fn ci_spec(from_fork: bool) -> JobSpec {
         JobSpec {
             id: "job-1".into(),
@@ -793,6 +926,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -818,6 +952,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -842,6 +977,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -863,6 +999,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             b"this is not json",
         );
@@ -899,6 +1036,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&ok).unwrap(),
         );
@@ -914,6 +1052,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &sink,
             &serde_json::to_vec(&forked).unwrap(),
         );
@@ -929,6 +1068,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &sink,
             b"garbage",
         );
@@ -972,6 +1112,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -995,6 +1136,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1022,6 +1164,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1040,6 +1183,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1077,6 +1221,7 @@ mod tests {
                 &mut RetryLedger::new(),
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
             )
@@ -1131,6 +1276,7 @@ mod tests {
                 &mut RetryLedger::new(),
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
             )
@@ -1177,6 +1323,7 @@ mod tests {
                     &mut RetryLedger::new(),
                     &QuarantinePolicy::disabled(),
                     &mut QuarantineLedger::new(),
+                    &DeadlinePolicy::disabled(),
                     &NullSink,
                     &raw
                 )
@@ -1231,6 +1378,7 @@ mod tests {
                 &mut retry,
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &DeadlinePolicy::disabled(),
                 &sink,
                 &serde_json::to_vec(&frame).unwrap(),
             )
@@ -1287,6 +1435,7 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -1327,6 +1476,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1349,6 +1499,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1385,6 +1536,7 @@ mod tests {
                 r,
                 &qpolicy,
                 q,
+                &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
             )
@@ -1415,6 +1567,7 @@ mod tests {
             &mut retry,
             &qpolicy,
             &mut qledger,
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1444,6 +1597,7 @@ mod tests {
             &mut retry,
             &qpolicy,
             &mut qledger,
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1474,6 +1628,7 @@ mod tests {
                 &mut RetryLedger::new(),
                 &qpolicy,
                 &mut qledger,
+                &DeadlinePolicy::disabled(),
                 &NullSink,
                 &raw,
             );
@@ -1482,6 +1637,89 @@ mod tests {
         }
         assert_eq!(qledger.quarantined_count(), 0);
         assert_eq!(fail.calls(), 10, "every dispatch still reached the kernel");
+    }
+
+    #[test]
+    fn deadline_watchdog_times_out_a_slow_delegation_and_passes_a_fast_one() {
+        use std::time::Duration;
+        let plan = router::route(&ci_spec(false));
+        let job = ci_spec(false);
+
+        // A fast invoker under a deadline → delivered (the watchdog does not interfere).
+        let fast = RecordingInvoker::default();
+        assert!(matches!(
+            run_delegation(&fast, &plan, &job, Some(Duration::from_millis(500))),
+            Delegation::Delivered(_)
+        ));
+
+        // A slow invoker over a short deadline → timed out (the hung-job bound fires).
+        let slow = SlowInvoker {
+            sleep: Duration::from_millis(150),
+        };
+        assert!(matches!(
+            run_delegation(&slow, &plan, &job, Some(Duration::from_millis(20))),
+            Delegation::TimedOut(_)
+        ));
+
+        // No deadline configured → the invoker is called directly; even a "slow" one delivers (the
+        // default path is unchanged — the watchdog is not engaged).
+        assert!(matches!(
+            run_delegation(&slow, &plan, &job, None),
+            Delegation::Delivered(_)
+        ));
+    }
+
+    #[test]
+    fn envelope_deadline_drives_a_timeout_through_recovery_and_the_audit_log() {
+        use runner_core::events::DispatchEvent;
+        use runner_core::recovery::RecoveryVerb;
+        use std::cell::RefCell;
+        struct Rec(RefCell<Vec<DispatchEvent>>);
+        impl EventSink for Rec {
+            fn emit(&self, e: &DispatchEvent) {
+                self.0.borrow_mut().push(e.clone());
+            }
+        }
+        let sink = Rec(RefCell::new(Vec::new()));
+
+        // The kernel sleeps ~1.1s; the job requests a 1s deadline on its envelope (no operator cap).
+        let slow = SlowInvoker {
+            sleep: std::time::Duration::from_millis(1100),
+        };
+        let mut frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        frame.deadline_secs = Some(1);
+
+        let resp = handle_request(
+            b"k",
+            &slow,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(), // no operator cap — the per-job envelope deadline applies
+            &sink,
+            &serde_json::to_vec(&frame).unwrap(),
+        );
+
+        assert!(!resp.accepted, "a timed-out job is not accepted");
+        assert!(resp.error.as_deref().unwrap().contains("deadline"));
+        // First attempt of a transient timeout → recovery advises a backed-off retry.
+        let d = resp
+            .recovery
+            .expect("deadline carries a recovery directive");
+        assert_eq!(d.action, RecoveryVerb::Retry);
+        // The audit log records the timeout as an Execution-category DeadlineExceeded event.
+        let events = sink.0.into_inner();
+        let timeout = events
+            .iter()
+            .find(|e| e.outcome == Outcome::DeadlineExceeded)
+            .expect("a DeadlineExceeded event was audited");
+        assert_eq!(timeout.category(), EventCategory::Execution);
+        assert_eq!(timeout.kernel.as_deref(), Some("loop"));
     }
 
     #[test]
@@ -1507,6 +1745,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1528,6 +1767,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1551,6 +1791,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &raw,
         );
@@ -1588,6 +1829,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
@@ -1617,6 +1859,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&approved_frame).unwrap(),
         );
@@ -1637,6 +1880,7 @@ mod tests {
             &mut retry,
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&forged).unwrap(),
         );
@@ -1651,19 +1895,21 @@ mod tests {
     #[test]
     fn workspace_is_torn_down_even_when_the_kernel_fails() {
         use runner_core::workspace::{JobWorkspace, WorkspaceProvider};
-        use std::cell::RefCell;
+        use std::sync::Mutex;
 
         // A provider that creates a real temp dir and records the path it handed out, so the test
-        // can assert the directory is gone after the (failing) invocation returns.
+        // can assert the directory is gone after the (failing) invocation returns. `Mutex` (not
+        // `RefCell`) so the invoker is `Sync` — `handle_request` now needs `KernelInvoker + Sync`
+        // for the deadline watchdog's scoped worker thread.
         struct RecordingProvider {
-            created: RefCell<Vec<std::path::PathBuf>>,
+            created: Mutex<Vec<std::path::PathBuf>>,
         }
         impl WorkspaceProvider for RecordingProvider {
             fn acquire(&self, label: &str) -> Result<JobWorkspace, String> {
                 let root = std::env::temp_dir()
                     .join(format!("fxrun-wstest-{}-{label}", std::process::id()));
                 std::fs::create_dir_all(&root).unwrap();
-                self.created.borrow_mut().push(root.clone());
+                self.created.lock().unwrap().push(root.clone());
                 let cleanup_root = root.clone();
                 Ok(JobWorkspace::new(root, move || {
                     std::fs::remove_dir_all(&cleanup_root).map_err(|e| e.to_string())
@@ -1686,7 +1932,7 @@ mod tests {
 
         let inv = FailAfterWorkspace {
             provider: RecordingProvider {
-                created: RefCell::new(Vec::new()),
+                created: Mutex::new(Vec::new()),
             },
         };
         let frame = sign_frame(b"k", &ci_spec(false)).unwrap();
@@ -1701,11 +1947,12 @@ mod tests {
             &mut RetryLedger::new(),
             &QuarantinePolicy::disabled(),
             &mut QuarantineLedger::new(),
+            &DeadlinePolicy::disabled(),
             &NullSink,
             &serde_json::to_vec(&frame).unwrap(),
         );
         assert!(!resp.accepted, "the kernel failed");
-        let created = inv.provider.created.into_inner();
+        let created = inv.provider.created.into_inner().unwrap();
         assert_eq!(created.len(), 1);
         assert!(
             !created[0].exists(),
@@ -1786,6 +2033,7 @@ mod tests {
                 &mut RetryLedger::new(),
                 &QuarantinePolicy::disabled(),
                 &mut QuarantineLedger::new(),
+                &DeadlinePolicy::disabled(),
                 &NullSink,
             )
             .unwrap();

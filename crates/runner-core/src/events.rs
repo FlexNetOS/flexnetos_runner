@@ -45,6 +45,8 @@ pub enum Outcome {
     Delegated,
     /// Delegation to the kernel failed.
     KernelFailed,
+    /// The delegation exceeded its wall-clock deadline and was abandoned (the kernel hung / ran long).
+    DeadlineExceeded,
 }
 
 impl Outcome {
@@ -59,7 +61,9 @@ impl Outcome {
     /// ([`EventCategory::Policy`]) — the stream where guardrail tampering is detectable by lineage.
     pub fn category(&self) -> EventCategory {
         match self {
-            Outcome::Delegated | Outcome::KernelFailed => EventCategory::Execution,
+            Outcome::Delegated | Outcome::KernelFailed | Outcome::DeadlineExceeded => {
+                EventCategory::Execution
+            }
             Outcome::ConstitutionViolated
             | Outcome::Unparseable
             | Outcome::VerifyFailed
@@ -242,6 +246,10 @@ mod tests {
         // Execution = the kernel actually ran (or was attempted).
         assert_eq!(Outcome::Delegated.category(), EventCategory::Execution);
         assert_eq!(Outcome::KernelFailed.category(), EventCategory::Execution);
+        assert_eq!(
+            Outcome::DeadlineExceeded.category(),
+            EventCategory::Execution
+        );
         // Everything else is an admission/guardrail (policy) decision.
         for o in [
             Outcome::ConstitutionViolated,

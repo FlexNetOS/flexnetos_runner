@@ -31,6 +31,10 @@ use std::collections::HashMap;
 pub enum FailureKind {
     /// The kernel was invoked but returned an error — usually transient (retryable).
     KernelFailed,
+    /// The delegation exceeded its wall-clock deadline — treated as transient (the kernel hung or ran
+    /// long once; a backed-off retry may complete). Persistent timeouts escalate via the retry
+    /// ceiling and latch the quarantine ledger like any repeated failure.
+    DeadlineExceeded,
     /// The runaway-loop breaker tripped — the same work is already looping (NOT retryable: retrying
     /// is exactly what's going wrong; a human must look).
     LoopTripped,
@@ -47,7 +51,10 @@ pub enum FailureKind {
 impl FailureKind {
     /// Whether a backed-off retry of the *same* job could plausibly succeed.
     fn is_retryable(self) -> bool {
-        matches!(self, FailureKind::KernelFailed)
+        matches!(
+            self,
+            FailureKind::KernelFailed | FailureKind::DeadlineExceeded
+        )
     }
 }
 
@@ -153,7 +160,9 @@ impl RecoveryPolicy {
                     "job fingerprint is quarantined after repeated kernel failures — re-dispatching \
                      cannot succeed; a human must investigate and re-arm the runner"
                 }
-                FailureKind::KernelFailed => unreachable!("KernelFailed is retryable"),
+                FailureKind::KernelFailed | FailureKind::DeadlineExceeded => {
+                    unreachable!("retryable failures take the retry branch")
+                }
             };
             return RecoveryDirective {
                 action: RecoveryVerb::Escalate,
@@ -164,6 +173,10 @@ impl RecoveryPolicy {
             };
         }
 
+        let cause = match failure {
+            FailureKind::DeadlineExceeded => "deadline exceeded",
+            _ => "kernel failed",
+        };
         let attempt = ledger.bump(fingerprint);
         if attempt <= self.max_retries {
             RecoveryDirective {
@@ -172,7 +185,7 @@ impl RecoveryPolicy {
                 max_retries: self.max_retries,
                 backoff_secs: self.backoff_for(attempt),
                 reason: format!(
-                    "kernel failed (transient); retry {attempt} of {} after backoff",
+                    "{cause} (transient); retry {attempt} of {} after backoff",
                     self.max_retries
                 ),
             }
@@ -183,7 +196,7 @@ impl RecoveryPolicy {
                 max_retries: self.max_retries,
                 backoff_secs: 0,
                 reason: format!(
-                    "kernel failed {attempt} times (> {} retries) — escalating to human review",
+                    "{cause} {attempt} times (> {} retries) — escalating to human review",
                     self.max_retries
                 ),
             }
@@ -296,6 +309,21 @@ mod tests {
         assert_eq!(d.action, RecoveryVerb::Escalate);
         assert_eq!(d.attempt, 0, "a held job consumes no retry budget");
         assert!(d.reason.contains("requires human approval"));
+    }
+
+    #[test]
+    fn deadline_exceeded_retries_with_backoff_like_a_transient_failure() {
+        let policy = RecoveryPolicy::new(1, 5);
+        let mut ledger = RetryLedger::new();
+        // Attempt 1 → retry (transient), with the deadline-specific reason.
+        let d1 = policy.decide(&mut ledger, FP, FailureKind::DeadlineExceeded);
+        assert_eq!(d1.action, RecoveryVerb::Retry);
+        assert_eq!(d1.attempt, 1);
+        assert!(d1.reason.contains("deadline exceeded"));
+        // Attempt 2 → over the 1-retry ceiling → escalate.
+        let d2 = policy.decide(&mut ledger, FP, FailureKind::DeadlineExceeded);
+        assert_eq!(d2.action, RecoveryVerb::Escalate);
+        assert!(d2.reason.contains("deadline exceeded"));
     }
 
     #[test]

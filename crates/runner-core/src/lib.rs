@@ -19,6 +19,9 @@
 //! - [`quarantine`] — cross-dispatch quarantine of a repeatedly-failing job (terminal refuse after N
 //!   kernel failures of the same fingerprint; adapted from `automaton`'s child `→ dead` lifecycle —
 //!   the enforcement teeth behind recovery's escalate advice).
+//! - [`deadline`] — per-job wall-clock deadline policy (bound a *hung* delegation by time — the axis
+//!   the breaker/governor/quarantine don't cover; adapted from `attractor`'s `timeout` node +
+//!   `Archon`/`kclaw0` per-op timeouts).
 //! - [`cost`] — per-job cost report (the `atc → runner` cost seam; tokens + USD).
 //! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch over jobs/tokens/USD;
 //!   adapted from kclaw0 `dark-factory.js::enforceBudget` + `survival.js`).
@@ -36,6 +39,7 @@ pub mod agent;
 pub mod approval;
 pub mod constitution;
 pub mod cost;
+pub mod deadline;
 pub mod error;
 pub mod events;
 pub mod governor;
@@ -54,6 +58,7 @@ pub use agent::{Agent, ApiStyle};
 pub use approval::ApprovalPolicy;
 pub use constitution::{Constitution, ConstitutionStatus};
 pub use cost::JobCost;
+pub use deadline::DeadlinePolicy;
 pub use error::{CoreError, Result};
 pub use events::{DispatchEvent, EventCategory, EventSink, NullSink, Outcome};
 pub use governor::{Admission, Budget, Governor, Spend, SurvivalTier};
