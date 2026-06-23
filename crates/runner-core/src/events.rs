@@ -41,6 +41,8 @@ pub enum Outcome {
     ApprovalRequired,
     /// Refused: the envelope submitter's authority tier is below the route's configured floor.
     AuthorityDenied,
+    /// Refused: the routed kernel is not in the operator's target allowlist.
+    TargetDenied,
     /// Refused: this job's fingerprint is quarantined (it failed at the kernel too many times).
     Quarantined,
     /// Refused for timing: the dispatch rate window is full, or the job's route is in failure cooldown.
@@ -84,6 +86,7 @@ impl Outcome {
             | Outcome::ForkRejected
             | Outcome::ApprovalRequired
             | Outcome::AuthorityDenied
+            | Outcome::TargetDenied
             | Outcome::Quarantined
             | Outcome::RateLimited
             | Outcome::LoopTripped
@@ -299,6 +302,7 @@ mod tests {
             Outcome::ForkRejected,
             Outcome::ApprovalRequired,
             Outcome::AuthorityDenied,
+            Outcome::TargetDenied,
             Outcome::Quarantined,
             Outcome::RateLimited,
             Outcome::LoopTripped,

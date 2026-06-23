@@ -34,6 +34,8 @@
 //! - [`risk`] — history-calibrated pre-route risk score (advice-only: blend a static base rate with
 //!   the live per-fingerprint failure rate, surfaced in the audit trail; adapted from `kclaw0`'s
 //!   `path-simulator.js`). The soft, continuous companion to the hard breaker/quarantine latches.
+//! - [`targets`] — delegation-target allowlist (kernel reachability registry for loop/atc/hf/weave;
+//!   adapted from fail-closed allowlist / egress-control prior art).
 //! - [`cost`] — per-job cost report (the `atc → runner` cost seam; tokens + USD).
 //! - [`governor`] — dispatch budget governor (bounded-autonomy kill-switch over jobs/tokens/USD;
 //!   adapted from kclaw0 `dark-factory.js::enforceBudget` + `survival.js`).
@@ -68,6 +70,7 @@ pub mod risk;
 pub mod router;
 pub mod safety;
 pub mod scan;
+pub mod targets;
 pub mod wire;
 pub mod workspace;
 
@@ -88,5 +91,6 @@ pub use recovery::{FailureKind, RecoveryDirective, RecoveryPolicy, RecoveryVerb,
 pub use redact::{RedactingSink, Redactor};
 pub use risk::{RiskBand, RiskLedger, RiskModel, RiskPolicy, RiskScore};
 pub use scan::{scan, Finding, ScanPolicy, ScanReport, Severity};
+pub use targets::{TargetAllowlist, TargetDecision};
 pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};
 pub use workspace::{JobWorkspace, NoopWorkspaceProvider, TeardownReport, WorkspaceProvider};

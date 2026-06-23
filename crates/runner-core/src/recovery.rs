@@ -56,6 +56,9 @@ pub enum FailureKind {
     /// The envelope submitter lacks the route's required authority tier (NOT retryable by the runner:
     /// a higher-authority actor must submit/approve the privileged route).
     AuthorityDenied,
+    /// The routed kernel target is not allowed by operator policy (NOT retryable by the runner: an
+    /// operator must change the allowlist or route the work elsewhere).
+    TargetDenied,
     /// The job's fingerprint is quarantined after repeated kernel failures (NOT retryable: the same
     /// work keeps failing the same way; a human must investigate and re-arm the runner).
     Quarantined,
@@ -209,6 +212,10 @@ impl RecoveryPolicy {
                 FailureKind::AuthorityDenied => {
                     "submitter authority is below the route floor — a higher-authority actor must \
                      submit or approve this privileged dispatch"
+                }
+                FailureKind::TargetDenied => {
+                    "routed kernel target is not in the operator allowlist — an operator must \
+                     update the allowlist or route the work elsewhere"
                 }
                 FailureKind::Quarantined => {
                     "job fingerprint is quarantined after repeated kernel failures — re-dispatching \
