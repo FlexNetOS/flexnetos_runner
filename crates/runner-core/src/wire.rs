@@ -28,6 +28,11 @@ pub struct DispatchRequest {
     pub spec_json: String,
     /// `sha256=<hex>` HMAC over `spec_json`'s bytes.
     pub signature: String,
+    /// Optional `sha256=<hex>` HMAC over the full dispatch envelope's mutable authority-relevant
+    /// fields. Legacy frames omit this and remain valid only when gates that trust envelope facts
+    /// (for example authority rules) are disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envelope_signature: Option<String>,
     /// Optional human-approval grant (present only on a re-dispatch *after* a human approved a job
     /// whose class requires it — see [`crate::approval`]). Absent on a normal first dispatch, so
     /// older App frames stay valid.
@@ -128,6 +133,17 @@ impl DispatchResponse {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct EnvelopeAuthMaterial<'a> {
+    version: u8,
+    spec_json: &'a str,
+    signature: &'a str,
+    approval: &'a Option<Approval>,
+    submitter: &'a Option<Submitter>,
+    deadline_secs: &'a Option<u64>,
+    idle_timeout_secs: &'a Option<u64>,
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum WireError {
     #[error("malformed dispatch frame: {0}")]
@@ -143,6 +159,7 @@ pub fn sign_frame(key: &[u8], spec: &JobSpec) -> Result<DispatchRequest, WireErr
     Ok(DispatchRequest {
         spec_json,
         signature,
+        envelope_signature: None,
         approval: None,
         submitter: None,
         deadline_secs: None,
@@ -150,11 +167,42 @@ pub fn sign_frame(key: &[u8], spec: &JobSpec) -> Result<DispatchRequest, WireErr
     })
 }
 
+/// Client side: attach/update the full-envelope signature after setting envelope facts such as
+/// submitter, approval, and deadline fields. This must be the last mutation before sending.
+pub fn sign_envelope(key: &[u8], req: &mut DispatchRequest) -> Result<(), WireError> {
+    req.envelope_signature = Some(sign_bytes(key, &envelope_auth_bytes(req)?));
+    Ok(())
+}
+
+/// Server side: verify the optional full-envelope signature. Operators call this before trusting any
+/// envelope facts (submitter authority, deadlines, approval). Legacy callers can omit it only when
+/// those gates are disabled.
+pub fn verify_envelope(key: &[u8], req: &DispatchRequest) -> Result<(), WireError> {
+    let signature = req
+        .envelope_signature
+        .as_deref()
+        .ok_or(WireError::Signature)?;
+    verify_bytes(key, &envelope_auth_bytes(req)?, signature)
+}
+
 /// Server side: verify the frame signature over the exact received bytes, THEN parse the spec.
 /// Order matters — an unverified body is never parsed.
 pub fn verify_frame(key: &[u8], req: &DispatchRequest) -> Result<JobSpec, WireError> {
     verify_bytes(key, req.spec_json.as_bytes(), &req.signature)?;
     serde_json::from_str(&req.spec_json).map_err(|e| WireError::Malformed(e.to_string()))
+}
+
+fn envelope_auth_bytes(req: &DispatchRequest) -> Result<Vec<u8>, WireError> {
+    let material = EnvelopeAuthMaterial {
+        version: 1,
+        spec_json: &req.spec_json,
+        signature: &req.signature,
+        approval: &req.approval,
+        submitter: &req.submitter,
+        deadline_secs: &req.deadline_secs,
+        idle_timeout_secs: &req.idle_timeout_secs,
+    };
+    serde_json::to_vec(&material).map_err(|e| WireError::Malformed(e.to_string()))
 }
 
 fn sign_bytes(key: &[u8], msg: &[u8]) -> String {
@@ -229,6 +277,7 @@ mod tests {
         let frame = DispatchRequest {
             spec_json: body.to_string(),
             signature: sign_bytes(b"k", body.as_bytes()),
+            envelope_signature: None,
             approval: None,
             submitter: None,
             deadline_secs: None,
@@ -289,6 +338,37 @@ mod tests {
         let legacy = r#"{"spec_json":"x","signature":"sha256=00"}"#;
         let parsed: DispatchRequest = serde_json::from_str(legacy).unwrap();
         assert_eq!(parsed.submitter, None);
+    }
+
+    #[test]
+    fn full_envelope_signature_binds_submitter_and_deadline_fields() {
+        use crate::authority::{AuthorityTier, Submitter};
+
+        let mut frame = sign_frame(b"k", &spec()).unwrap();
+        frame.submitter = Some(Submitter::new("alice", AuthorityTier::Maintainer));
+        frame.deadline_secs = Some(30);
+        sign_envelope(b"k", &mut frame).unwrap();
+        assert!(verify_envelope(b"k", &frame).is_ok());
+
+        let mut forged_tier = frame.clone();
+        forged_tier.submitter = Some(Submitter::new("alice", AuthorityTier::Owner));
+        assert_eq!(
+            verify_envelope(b"k", &forged_tier),
+            Err(WireError::Signature)
+        );
+
+        let mut forged_deadline = frame.clone();
+        forged_deadline.deadline_secs = Some(300);
+        assert_eq!(
+            verify_envelope(b"k", &forged_deadline),
+            Err(WireError::Signature)
+        );
+    }
+
+    #[test]
+    fn legacy_frame_without_envelope_signature_fails_envelope_verification() {
+        let frame = sign_frame(b"k", &spec()).unwrap();
+        assert_eq!(verify_envelope(b"k", &frame), Err(WireError::Signature));
     }
 
     #[test]

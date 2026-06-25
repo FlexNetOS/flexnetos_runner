@@ -271,27 +271,33 @@ failing tests first, implement, run local gates, open/merge a PR, then update th
 
 ### Tier 0 — must-fix security/correctness
 
-1. **Signed full-envelope authority provenance**
+1. **Signed full-envelope authority provenance** — APPLIED (current branch)
    - Gap: `DispatchRequest.submitter` is trusted by the authority gate but is not covered by the
      `spec_json` HMAC. Approval has its own HMAC; submitter currently does not.
    - Upgrade: add a versioned envelope MAC or submitter proof binding `spec_json`, job signature,
      submitter identity/tier, and trust-relevant envelope fields.
+   - Applied: `DispatchRequest.envelope_signature` signs a versioned envelope material binding
+     `spec_json`, the job signature, approval, submitter, deadline, and idle timeout;
+     `fxrun-dispatch` requires it whenever `FXRUN_AUTHORITY_RULES` is active.
    - Acceptance: replaying a valid signed `spec_json` with a forged `owner` submitter fails; legacy
      frames remain accepted only when no authority floor is configured.
 
-2. **UDS socket ownership and permission hardening**
+2. **UDS socket ownership and permission hardening** — APPLIED (current branch)
    - Gap: `serve()` removes an existing socket path and binds without proving safe parent ownership,
      file type, symlink absence, or owner-only permissions.
    - Upgrade: validate parent directory owner/mode, remove only stale sockets, reject non-socket path
      collisions, bind in a private runtime dir, and chmod the socket to owner-only.
-   - Acceptance: tests cover unsafe parent, symlink/non-socket collision, stale socket cleanup, and
-     expected mode.
+   - Applied: `prepare_socket_path()` requires a private parent directory, refuses non-socket
+     collisions/symlinks, removes only stale sockets, and `harden_bound_socket()` sets mode `0600`.
+   - Acceptance: tests cover unsafe parent, non-socket collision, and expected mode.
 
-3. **Fresh workspace acquisition by construction**
+3. **Fresh workspace acquisition by construction** — APPLIED (current branch)
    - Gap: `TempDirProvider` uses `/tmp/fxrun-ws-$PID-$jobid` plus `create_dir_all`, so residue or a
      pre-created path can be adopted despite the “fresh isolated workspace” claim.
    - Upgrade: create a unique nonce path with atomic `create_dir`/`tempfile` semantics; never adopt an
      existing path; audit the workspace id.
+   - Applied: `TempDirProvider` now uses nonce paths plus atomic `create_dir`, never
+     `create_dir_all` on a deterministic job path.
    - Acceptance: pre-created candidate path is refused or bypassed; repeated same-job acquisitions are
      distinct; teardown still proves zero residue.
 
@@ -301,10 +307,12 @@ failing tests first, implement, run local gates, open/merge a PR, then update th
    - Upgrade: sample monotonic time after accept/read, immediately before `handle_request()`.
    - Acceptance: a cooldown/window can expire while the server is idle before the next connection.
 
-5. **Actions runner artifact verification**
+5. **Actions runner artifact verification** — APPLIED (current branch)
    - Gap: `fxrun-actions install` downloads and extracts the upstream runner tarball without checksum
      or attestation verification.
    - Upgrade: verify GitHub-published SHA256 and/or artifact attestation before extraction.
+   - Applied: `fxrun-actions install` accepts `--sha256`/`RUNNER_SHA256`, otherwise downloads the
+     release `.sha256` asset, verifies SHA-256 before extraction, and fails closed on mismatch.
    - Acceptance: bad digest refuses before `tar`; latest-version install verifies automatically.
 
 6. **Actions registration token non-argv path**
@@ -313,9 +321,10 @@ failing tests first, implement, run local gates, open/merge a PR, then update th
      minimize lifetime, and emit an explicit audited fallback warning.
    - Acceptance: normal registration path has no token in argv; fallback is opt-in/visible.
 
-7. **CI supply-chain gate**
+7. **CI supply-chain gate** — APPLIED (current branch)
    - Gap: local `cargo audit` passes, but CI does not enforce advisory or dependency policy checks.
    - Upgrade: add CI jobs for `cargo audit` and, if policy is adopted, `cargo deny`.
+   - Applied: CI now includes a `Cargo audit` job (`cargo audit --deny warnings`).
    - Acceptance: PR checks fail on vulnerable advisories or denied crates/licenses.
 
 8. **Ledger/docs drift guard**

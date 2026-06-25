@@ -16,6 +16,7 @@ use runner_core::{
     lifecycle::{JitConfigRequest, State},
     safety::Rails,
 };
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -80,6 +81,10 @@ enum Cmd {
         /// Runner architecture.
         #[arg(long, env = "RUNNER_ARCH", default_value = "x64")]
         arch: String,
+        /// Expected SHA-256 for the runner archive. If omitted, install fetches the release's
+        /// .sha256 asset and still fails closed when no checksum can be obtained.
+        #[arg(long, env = "RUNNER_SHA256")]
+        sha256: Option<String>,
     },
     /// Register an ephemeral runner and run one job.
     RunOnce {
@@ -123,7 +128,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match &cli.cmd {
         Cmd::Doctor => doctor(&cli),
-        Cmd::Install { version, arch } => install(&cli, version.as_deref(), arch),
+        Cmd::Install {
+            version,
+            arch,
+            sha256,
+        } => install(&cli, version.as_deref(), arch, sha256.as_deref()),
         Cmd::RunOnce {
             scope,
             repo,
@@ -171,7 +180,12 @@ fn doctor(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn install(cli: &Cli, version: Option<&str>, arch: &str) -> Result<()> {
+fn install(
+    cli: &Cli,
+    version: Option<&str>,
+    arch: &str,
+    expected_sha256: Option<&str>,
+) -> Result<()> {
     require_confirm(cli)?;
     require_cmd("curl")?;
     require_cmd("tar")?;
@@ -193,11 +207,16 @@ fn install(cli: &Cli, version: Option<&str>, arch: &str) -> Result<()> {
     }
     let archive = format!("actions-runner-linux-{arch}-{version}.tar.gz");
     let url = format!("https://github.com/actions/runner/releases/download/v{version}/{archive}");
+    let checksum_url = format!("{url}.sha256");
 
     if cli.dry_run {
         println!("DRY-RUN: would install actions runner v{version}");
         println!("  home: {}", cli.home.display());
         println!("  url : {url}");
+        println!(
+            "  sha : {}",
+            expected_sha256.unwrap_or("<fetch release .sha256 asset>")
+        );
         return Ok(());
     }
 
@@ -209,6 +228,22 @@ fn install(cli: &Cli, version: Option<&str>, arch: &str) -> Result<()> {
             .arg(&archive_path)
             .arg(&url))?;
     }
+    let expected_sha256 = match expected_sha256 {
+        Some(value) => normalize_sha256(value)?,
+        None => {
+            let checksum_path = cli.home.join(format!("{archive}.sha256"));
+            if !checksum_path.exists() {
+                run(Command::new("curl")
+                    .args(["-fsSL", "-o"])
+                    .arg(&checksum_path)
+                    .arg(&checksum_url))?;
+            }
+            let checksum_text = fs::read_to_string(&checksum_path)
+                .with_context(|| format!("read {}", checksum_path.display()))?;
+            parse_sha256_checksum(&checksum_text, &archive)?
+        }
+    };
+    verify_file_sha256(&archive_path, &expected_sha256)?;
     run(Command::new("tar")
         .arg("xzf")
         .arg(&archive_path)
@@ -427,6 +462,45 @@ fn meets_min_runner_version(version: &str) -> bool {
     }
 }
 
+fn normalize_sha256(value: &str) -> Result<String> {
+    let hash = value
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| anyhow!("empty SHA-256 checksum"))?
+        .trim()
+        .trim_start_matches("sha256:")
+        .trim_start_matches("sha256=")
+        .to_ascii_lowercase();
+    if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        bail!("invalid SHA-256 checksum `{value}`");
+    }
+    Ok(hash)
+}
+
+fn parse_sha256_checksum(text: &str, archive: &str) -> Result<String> {
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let mut parts = line.split_whitespace();
+        let Some(hash) = parts.next() else { continue };
+        let filename = parts.next().unwrap_or(archive).trim_start_matches('*');
+        if filename == archive || parts.next().is_none() {
+            return normalize_sha256(hash);
+        }
+    }
+    bail!("checksum file did not contain SHA-256 for {archive}")
+}
+
+fn verify_file_sha256(path: &Path, expected: &str) -> Result<()> {
+    let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let actual = hex::encode(Sha256::digest(&bytes));
+    if actual != expected {
+        bail!(
+            "SHA-256 mismatch for {}: expected {expected}, got {actual}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
 fn latest_runner_version() -> Result<String> {
     require_cmd("gh")?;
     let out = Command::new("gh")
@@ -545,6 +619,44 @@ fn default_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checksum_parser_accepts_sha256sum_formats_and_rejects_invalid_hashes() {
+        let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert_eq!(normalize_sha256(hash).unwrap(), hash);
+        assert_eq!(normalize_sha256(&format!("sha256={hash}")).unwrap(), hash);
+        assert_eq!(
+            parse_sha256_checksum(
+                &format!("{hash}  actions-runner-linux-x64-2.329.0.tar.gz\n"),
+                "actions-runner-linux-x64-2.329.0.tar.gz"
+            )
+            .unwrap(),
+            hash
+        );
+        assert_eq!(
+            parse_sha256_checksum(
+                &format!("{hash} *actions-runner-linux-x64-2.329.0.tar.gz\n"),
+                "actions-runner-linux-x64-2.329.0.tar.gz"
+            )
+            .unwrap(),
+            hash
+        );
+        assert!(normalize_sha256("not-a-sha").is_err());
+    }
+
+    #[test]
+    fn verify_file_sha256_detects_mismatch() {
+        let path = env::temp_dir().join(format!("fxrun-actions-sha-test-{}", std::process::id()));
+        fs::write(&path, b"runner").unwrap();
+        let actual = hex::encode(Sha256::digest(b"runner"));
+        verify_file_sha256(&path, &actual).unwrap();
+        assert!(verify_file_sha256(
+            &path,
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        )
+        .is_err());
+        let _ = fs::remove_file(path);
+    }
 
     #[test]
     fn min_version_floor_is_enforced() {

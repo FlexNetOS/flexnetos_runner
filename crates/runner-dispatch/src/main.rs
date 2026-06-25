@@ -45,7 +45,7 @@ use runner_core::scan::{self, ScanPolicy};
 use runner_core::singleflight::{FlightLease, SingleFlight};
 use runner_core::stategate::{StateGateDecision, StateGatePolicy};
 use runner_core::targets::{TargetAllowlist, TargetDecision};
-use runner_core::wire::{verify_frame, DispatchRequest, DispatchResponse};
+use runner_core::wire::{verify_envelope, verify_frame, DispatchRequest, DispatchResponse};
 use runner_core::workspace::{JobWorkspace, WorkspaceProvider};
 use std::io::Read;
 
@@ -161,23 +161,55 @@ struct TempDirProvider;
 #[cfg(unix)]
 impl WorkspaceProvider for TempDirProvider {
     fn acquire(&self, label: &str) -> Result<JobWorkspace, String> {
-        // A unique, isolated directory per job. (P3: a tmpfs worktree under the rails' work dir.)
+        // A unique, isolated directory per job. Use create_dir (not create_dir_all) so a leftover or
+        // pre-created path is never adopted as a workspace. (P3: a tmpfs worktree under the rails'
+        // work dir; this has the same fresh-by-construction contract.)
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        static NEXT_WORKSPACE: AtomicU64 = AtomicU64::new(0);
+
         let safe: String = label
             .chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
             .collect();
-        let root = std::env::temp_dir().join(format!("fxrun-ws-{}-{safe}", std::process::id()));
-        std::fs::create_dir_all(&root).map_err(|e| format!("workspace create failed: {e}"))?;
-        let cleanup_root = root.clone();
-        Ok(JobWorkspace::new(root, move || {
-            std::fs::remove_dir_all(&cleanup_root).map_err(|e| e.to_string())
-        })
-        .with_residue_reporter(|root, reason| {
-            eprintln!(
-                "fxrun-dispatch: WORKSPACE RESIDUE — failed to remove {} ({reason})",
-                root.display()
-            );
-        }))
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("workspace clock failed: {e}"))?
+            .as_nanos();
+        let base = std::env::temp_dir();
+        let mut last_err = None;
+        for _ in 0..32 {
+            let seq = NEXT_WORKSPACE.fetch_add(1, Ordering::Relaxed);
+            let root = base.join(format!(
+                "fxrun-ws-{}-{now}-{seq}-{safe}",
+                std::process::id()
+            ));
+            match std::fs::create_dir(&root) {
+                Ok(()) => {
+                    let cleanup_root = root.clone();
+                    return Ok(JobWorkspace::new(root, move || {
+                        std::fs::remove_dir_all(&cleanup_root).map_err(|e| e.to_string())
+                    })
+                    .with_residue_reporter(|root, reason| {
+                        eprintln!(
+                            "fxrun-dispatch: WORKSPACE RESIDUE — failed to remove {} ({reason})",
+                            root.display()
+                        );
+                    }));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    last_err = Some(e);
+                }
+                Err(e) => return Err(format!("workspace create failed: {e}")),
+            }
+        }
+        Err(format!(
+            "workspace create failed after collision retries: {}",
+            last_err
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "unknown collision".into())
+        ))
     }
 }
 
@@ -622,6 +654,16 @@ fn handle_request(
         }
     };
 
+    if authority.is_active() {
+        if let Err(e) = verify_envelope(key, &req) {
+            let detail = format!(
+                "frame rejected: authority provenance requires full-envelope signature: {e}"
+            );
+            sink.emit(&DispatchEvent::for_job(Outcome::VerifyFailed, &job).with_detail(&detail));
+            return DispatchResponse::rejected(detail);
+        }
+    }
+
     // Dispatch provenance / authority gate (automaton authority tiers + access-broker prior art):
     // the envelope can state *who* submitted the dispatch, and the operator can set per-route floors
     // for privileged classes. This is intentionally before structural/content inspection: once the
@@ -1043,12 +1085,12 @@ fn handle_request(
     }
 }
 
-/// Accept exactly one connection, handle its frame, and write the reply. Factored out so the loop
-/// (and tests) can drive a single round-trip.
+/// Handle one already-accepted connection and write the reply. The caller supplies `now_secs` so
+/// long-idle servers can sample the clock after `accept()` returns, immediately before admission.
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
-fn serve_once(
-    listener: &std::os::unix::net::UnixListener,
+fn serve_stream(
+    mut stream: std::os::unix::net::UnixStream,
     key: &[u8],
     invoker: &(dyn KernelInvoker + Sync),
     constitution: &Constitution,
@@ -1075,7 +1117,6 @@ fn serve_once(
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::io::Write;
-    let (mut stream, _addr) = listener.accept()?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
     // Re-verify the runner's constitution against the files on disk right now (I/O lives here).
@@ -1116,6 +1157,120 @@ fn serve_once(
     Ok(())
 }
 
+/// Accept exactly one connection, handle its frame, and write the reply. Factored out so the loop
+/// (and tests) can drive a single round-trip. Tests pass explicit `now_secs`; the production loop
+/// uses [`serve_stream`] directly so it can sample time after accept.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+#[cfg_attr(not(test), allow(dead_code))]
+fn serve_once(
+    listener: &std::os::unix::net::UnixListener,
+    key: &[u8],
+    invoker: &(dyn KernelInvoker + Sync),
+    constitution: &Constitution,
+    approval: &ApprovalPolicy,
+    authority: &AuthorityPolicy,
+    target_allowlist: &TargetAllowlist,
+    state_gate: &StateGatePolicy,
+    state_defer_secs: u64,
+    singleflight: &mut SingleFlight,
+    guard: &mut LoopGuard,
+    governor: &mut Governor,
+    policy: &RecoveryPolicy,
+    retry: &mut RetryLedger,
+    quarantine_policy: &QuarantinePolicy,
+    quarantine: &mut QuarantineLedger,
+    rate_limiter: &mut RateLimiter,
+    now_secs: u64,
+    scan_policy: &ScanPolicy,
+    risk_policy: &RiskPolicy,
+    risk_ledger: &mut RiskLedger,
+    deadline: &DeadlinePolicy,
+    liveness: &LivenessPolicy,
+    redactor: &Redactor,
+    sink: &dyn EventSink,
+) -> std::io::Result<()> {
+    let (stream, _addr) = listener.accept()?;
+    serve_stream(
+        stream,
+        key,
+        invoker,
+        constitution,
+        approval,
+        authority,
+        target_allowlist,
+        state_gate,
+        state_defer_secs,
+        singleflight,
+        guard,
+        governor,
+        policy,
+        retry,
+        quarantine_policy,
+        quarantine,
+        rate_limiter,
+        now_secs,
+        scan_policy,
+        risk_policy,
+        risk_ledger,
+        deadline,
+        liveness,
+        redactor,
+        sink,
+    )
+}
+
+#[cfg(unix)]
+fn prepare_socket_path(socket_path: &std::path::Path) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+
+    let parent = socket_path.parent().ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            "socket path must have a private parent directory",
+        )
+    })?;
+    let parent_meta = std::fs::metadata(parent)?;
+    let parent_mode = parent_meta.permissions().mode() & 0o777;
+    if parent_mode & 0o077 != 0 {
+        return Err(Error::new(
+            ErrorKind::PermissionDenied,
+            format!(
+                "socket parent {} must be private (mode {:03o}; require no group/world permissions)",
+                parent.display(),
+                parent_mode
+            ),
+        ));
+    }
+
+    match std::fs::symlink_metadata(socket_path) {
+        Ok(meta) => {
+            if !meta.file_type().is_socket() {
+                return Err(Error::new(
+                    ErrorKind::AlreadyExists,
+                    format!(
+                        "refusing to replace non-socket path {}",
+                        socket_path.display()
+                    ),
+                ));
+            }
+            std::fs::remove_file(socket_path)?;
+        }
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn harden_bound_socket(socket_path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))
+}
+
 /// Bind `socket_path` and serve forever (one job per connection — the ephemeral-runner model).
 /// Removes a stale socket first; a per-connection error is logged and the loop continues. The
 /// [`LoopGuard`] is owned here so its runaway-loop history spans connections.
@@ -1148,13 +1303,12 @@ fn serve(
     sink: &dyn EventSink,
 ) -> std::io::Result<()> {
     use std::os::unix::net::UnixListener;
-    if socket_path.exists() {
-        std::fs::remove_file(socket_path)?;
-    }
+    prepare_socket_path(socket_path)?;
     // Monotonic clock for the rate limiter: seconds since the server started. Read per connection in
     // the loop below (clock I/O lives in the binary; runner-core's RateLimiter stays clock-free).
     let started = std::time::Instant::now();
     let listener = UnixListener::bind(socket_path)?;
+    harden_bound_socket(socket_path)?;
     let constitution_note = if constitution.is_empty() {
         "constitution: none".to_string()
     } else {
@@ -1247,11 +1401,18 @@ fn serve(
         constitution_note
     );
     loop {
-        // Read the monotonic clock just before each connection is served. Under load `accept`
-        // returns promptly so this is fresh; under idle the staleness is irrelevant (no rate pressure).
+        let (stream, _addr) = match listener.accept() {
+            Ok(accepted) => accepted,
+            Err(e) => {
+                eprintln!("fxrun-dispatch: connection error: {e}");
+                continue;
+            }
+        };
+        // Sample the monotonic clock after accept returns (not before the blocking wait), so the
+        // first request after an idle period observes elapsed cooldown/window time correctly.
         let now_secs = started.elapsed().as_secs();
-        if let Err(e) = serve_once(
-            &listener,
+        if let Err(e) = serve_stream(
+            stream,
             key,
             invoker,
             constitution,
@@ -1687,7 +1848,9 @@ mod tests {
     use super::*;
     use runner_core::authority::{AuthorityTier, Submitter};
     use runner_core::jobspec::{JobKind, JobSpec};
-    use runner_core::wire::sign_frame;
+    use runner_core::wire::{sign_envelope, sign_frame};
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Default)]
@@ -1718,6 +1881,60 @@ mod tests {
             self.calls.fetch_add(1, Ordering::Relaxed);
             Delegation::Delivered(self.cost)
         }
+    }
+
+    #[cfg(unix)]
+    fn private_test_dir(stem: &str) -> std::path::PathBuf {
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("fxrun-unit-{}-{stem}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn socket_path_refuses_broad_parent_and_non_socket_collision() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let broad = private_test_dir("broad-parent");
+        std::fs::set_permissions(&broad, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let err = prepare_socket_path(&broad.join("d.sock")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+
+        let private = private_test_dir("collision");
+        let path = private.join("d.sock");
+        std::fs::write(&path, "not a socket").unwrap();
+        let err = prepare_socket_path(&path).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn socket_path_sets_bound_socket_private_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::net::UnixListener;
+
+        let dir = private_test_dir("socket-mode");
+        let path = dir.join("d.sock");
+        prepare_socket_path(&path).unwrap();
+        let _listener = UnixListener::bind(&path).unwrap();
+        harden_bound_socket(&path).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temp_workspace_provider_never_reuses_live_workspace_path() {
+        let provider = TempDirProvider;
+        let first = provider.acquire("same/job").unwrap();
+        let second = provider.acquire("same/job").unwrap();
+        assert_ne!(first.root(), second.root());
+        assert!(first.root().is_dir());
+        assert!(second.root().is_dir());
     }
 
     /// An invoker that always fails — exercises the kernel-failure → recovery path.
@@ -1855,10 +2072,52 @@ mod tests {
     }
 
     #[test]
+    fn authority_gate_rejects_unsigned_submitter_provenance_before_delegation() {
+        let inv = RecordingInvoker::default();
+        let mut frame = sign_frame(b"k", &ci_spec(false)).unwrap();
+        frame.submitter = Some(Submitter::new("alice", AuthorityTier::Maintainer));
+        let raw = serde_json::to_vec(&frame).unwrap();
+        let resp = handle_request(
+            b"k",
+            &inv,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::from_rules("ci=maintainer").unwrap(),
+            &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
+            &mut SingleFlight::new(),
+            &mut LoopGuard::default(),
+            &mut Governor::unlimited(),
+            &RecoveryPolicy::default(),
+            &mut RetryLedger::new(),
+            &QuarantinePolicy::disabled(),
+            &mut QuarantineLedger::new(),
+            &mut RateLimiter::disabled(),
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!resp.accepted);
+        assert!(resp
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("full-envelope signature"));
+        assert_eq!(inv.calls(), 0);
+    }
+
+    #[test]
     fn authority_gate_denies_low_tier_submitter_before_delegation() {
         let inv = RecordingInvoker::default();
         let mut frame = sign_frame(b"k", &ci_spec(false)).unwrap();
         frame.submitter = Some(Submitter::new("bot", AuthorityTier::Agent));
+        sign_envelope(b"k", &mut frame).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
         let resp = handle_request(
             b"k",
@@ -1908,6 +2167,7 @@ mod tests {
         let inv = RecordingInvoker::default();
         let mut frame = sign_frame(b"k", &ci_spec(false)).unwrap();
         frame.submitter = Some(Submitter::new("alice", AuthorityTier::Maintainer));
+        sign_envelope(b"k", &mut frame).unwrap();
         let raw = serde_json::to_vec(&frame).unwrap();
         let resp = handle_request(
             b"k",

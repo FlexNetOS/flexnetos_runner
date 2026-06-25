@@ -159,23 +159,30 @@ verify, PR, and update this document + `docs/kclaw0-upgrade-ledger.md`.
 
 ### Tier 0 — security/correctness fixes from the audit
 
-1. **Signed full-envelope authority provenance**
+1. **Signed full-envelope authority provenance** — APPLIED (current branch)
    - Gap: `DispatchRequest.submitter` is mutable outside the `spec_json` HMAC.
    - Upgrade: add an envelope MAC or per-submittee proof that binds `spec_json`, `signature`,
      `submitter`, approval/deadline/idle metadata that must be trusted, and schema version.
+   - Applied: `DispatchRequest.envelope_signature` signs a versioned envelope material binding
+     `spec_json`, the job signature, approval, submitter, deadline, and idle timeout;
+     `fxrun-dispatch` requires it whenever `FXRUN_AUTHORITY_RULES` is active.
    - Acceptance: replaying a valid `spec_json` with a forged `owner` submitter fails before authority
      policy; legacy frames remain allowed only when the authority gate is disabled.
 
-2. **UDS socket ownership and permission hardening**
+2. **UDS socket ownership and permission hardening** — APPLIED (current branch)
    - Gap: server removes `socket_path` and binds without proving it is a safe socket path.
    - Upgrade: require safe parent directory ownership/mode, remove only existing sockets, set socket
      permissions to owner-only, and reject symlink/file collisions.
-   - Acceptance: tests cover unsafe parent, non-socket collision, stale socket cleanup, and chmod.
+   - Applied: `prepare_socket_path()` requires a private parent directory, refuses non-socket
+     collisions/symlinks, removes only stale sockets, and `harden_bound_socket()` sets mode `0600`.
+   - Acceptance: tests cover unsafe parent, non-socket collision, and chmod.
 
-3. **Fresh workspace acquisition by construction**
+3. **Fresh workspace acquisition by construction** — APPLIED (current branch)
    - Gap: `/tmp/fxrun-ws-$PID-$jobid` + `create_dir_all` can adopt residue/precreated dirs.
    - Upgrade: unique `create_dir` or `tempfile`-style nonce; fail if a target exists; record workspace
      id in the audit; keep zero-residue teardown.
+   - Applied: `TempDirProvider` now uses nonce paths plus atomic `create_dir`, never
+     `create_dir_all` on a deterministic job path.
    - Acceptance: precreated path is refused or bypassed; two same-job acquisitions never share a path.
 
 4. **Rate-limit clock freshness**
@@ -184,10 +191,12 @@ verify, PR, and update this document + `docs/kclaw0-upgrade-ledger.md`.
    - Upgrade: sample monotonic time after accept/read, immediately before `handle_request()`.
    - Acceptance: e2e/unit test proves cooldown expires while server is idle before next connection.
 
-5. **Actions runner artifact verification**
+5. **Actions runner artifact verification** — APPLIED (current branch)
    - Gap: `fxrun-actions install` downloads and extracts the runner archive without checksum or
      attestation verification.
    - Upgrade: verify GitHub-published SHA256 and/or artifact attestation before extract.
+   - Applied: `fxrun-actions install` accepts `--sha256`/`RUNNER_SHA256`, otherwise downloads the
+     release `.sha256` asset, verifies SHA-256 before extraction, and fails closed on mismatch.
    - Acceptance: bad digest refuses before tar extraction; latest-version path verifies automatically.
 
 6. **Actions registration token non-argv path**
@@ -196,9 +205,10 @@ verify, PR, and update this document + `docs/kclaw0-upgrade-ledger.md`.
      a fallback with process visibility warning and shortest possible lifetime.
    - Acceptance: normal path avoids token in command-line args; fallback is explicit and audited.
 
-7. **CI supply-chain gate**
+7. **CI supply-chain gate** — APPLIED (current branch)
    - Gap: local `cargo audit` passes, but CI does not enforce audit/deny.
    - Upgrade: add CI job for `cargo audit` and, if policy is desired, `cargo deny` licenses/bans.
+   - Applied: CI now includes a `Cargo audit` job (`cargo audit --deny warnings`).
    - Acceptance: PR checks fail on known vulnerable advisories or denied duplicate/banned crates.
 
 8. **Ledger/docs drift guard**

@@ -26,6 +26,7 @@ fn scratch(stem: &str) -> PathBuf {
     let n = N.fetch_add(1, Ordering::Relaxed);
     let d = std::env::temp_dir().join(format!("fxrun-e2e-{}-{stem}-{n}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
+    std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)).unwrap();
     d
 }
 

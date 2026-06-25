@@ -102,5 +102,8 @@ pub use scan::{scan, Finding, ScanPolicy, ScanReport, Severity};
 pub use singleflight::{FlightLease, SingleFlight, SingleFlightDenied, TargetKey};
 pub use stategate::{StateGateDecision, StateGatePolicy};
 pub use targets::{TargetAllowlist, TargetDecision};
-pub use wire::{sign_frame, verify_frame, Approval, DispatchRequest, DispatchResponse, WireError};
+pub use wire::{
+    sign_envelope, sign_frame, verify_envelope, verify_frame, Approval, DispatchRequest,
+    DispatchResponse, WireError,
+};
 pub use workspace::{JobWorkspace, NoopWorkspaceProvider, TeardownReport, WorkspaceProvider};

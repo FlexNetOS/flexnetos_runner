@@ -57,8 +57,11 @@ Automation boundaries:
   with explicit confirmation.
 - **User/operator today:** approvals, budget/quarantine/constitution re-arm, runner install/register
   confirmation, policy/secrets/socket/log configuration.
-- **Planned:** signed full-envelope provenance, UDS/socket hardening, fresh workspace by construction,
-  artifact verification, structured kernel result/status, desktop approval/re-arm flow.
+- **Automated/hardened on this branch:** full-envelope authority signatures, private UDS parent and
+  `0600` socket mode, nonce-based fresh workspaces, Actions runner SHA-256 verification, CI cargo
+  audit.
+- **Planned:** Actions registration token non-argv path, rate-limit clock freshness, structured kernel
+  result/status, desktop approval/re-arm flow.
 
 See [`docs/automation-and-user-story.md`](docs/automation-and-user-story.md) for the full component
 inventory, data-flow diagrams, fresh backlog, agent automation story, and user communication flow.
@@ -112,10 +115,12 @@ ephemeral job, or install a persistent service. Install enforces GitHub's mandat
 version (`≥ 2.329.0`, changelog 2026-06-12) — below it GitHub refuses registration / pauses job
 queuing and the runner is exposed to the Runner-Escape host-secret leak, so the supervisor fails
 closed on a stale pin. The UDS dispatch + kernel invocation, envctl-style secret injection, and
-provenance gates are wired seams; the fresh backlog now hardens full-envelope provenance, socket
-permissions, workspace freshness, supply-chain verification, and structured result status; the confirmed P3 recipe is GitHub Artifact
-Attestations (`actions/attest-build-provenance@v3`, SLSA Build L2 via OIDC + Sigstore), verified
-with `cosign verify-attestation` / `slsa-verifier`.
+provenance gates are wired seams. Current hardening adds full-envelope authority signatures, private
+UDS socket binding, nonce-based fresh workspaces, pre-extract runner SHA-256 verification, and CI
+`cargo audit`; the remaining backlog covers registration-token argv removal, rate-limit clock
+freshness, structured kernel result/status, and desktop approval/re-entry. The confirmed P3 recipe for
+first-party artifacts remains GitHub Artifact Attestations (`actions/attest-build-provenance@v3`,
+SLSA Build L2 via OIDC + Sigstore), verified with `cosign verify-attestation` / `slsa-verifier`.
 
 ## Build
 
