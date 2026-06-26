@@ -1,8 +1,9 @@
 //! `fxrun-actions` — self-hosted GitHub Actions runner supervisor (ADR-0008 §2).
 //!
 //! This binary owns the operational Actions-runner path: install the upstream runner,
-//! mint short-lived repo/org registration tokens through `gh`, register an ephemeral
-//! runner, and run exactly one job. Tokens are never printed.
+//! mint short-lived org/repo registration tokens through `gh`, register an ephemeral
+//! runner, and run exactly one job. FlexNetOS defaults to one org-scoped runner;
+//! repo scope is an explicit exception only. Tokens are never printed.
 
 use std::{
     env, fs,
@@ -88,8 +89,8 @@ enum Cmd {
     },
     /// Register an ephemeral runner and run one job.
     RunOnce {
-        /// Registration scope.
-        #[arg(long, value_enum, env = "RUNNER_SCOPE", default_value_t = Scope::Repo)]
+        /// Registration scope (defaults to org; repo is an explicit sandbox/exception).
+        #[arg(long, value_enum, env = "RUNNER_SCOPE", default_value_t = Scope::Org)]
         scope: Scope,
         /// Repository name when scope=repo.
         #[arg(long, env = "RUNNER_REPO")]
@@ -100,8 +101,8 @@ enum Cmd {
     },
     /// Register a persistent runner, optionally installed as a system service.
     Register {
-        /// Registration scope.
-        #[arg(long, value_enum, env = "RUNNER_SCOPE", default_value_t = Scope::Repo)]
+        /// Registration scope (defaults to org; repo is an explicit sandbox/exception).
+        #[arg(long, value_enum, env = "RUNNER_SCOPE", default_value_t = Scope::Org)]
         scope: Scope,
         /// Repository name when scope=repo.
         #[arg(long, env = "RUNNER_REPO")]
@@ -118,10 +119,23 @@ enum Cmd {
     },
 }
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum Scope {
     Org,
     Repo,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum RegistrationKind {
+    Org,
+    Repo,
+    Other,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct LocalRunnerConfig {
+    git_hub_url: String,
+    agent_name: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -153,6 +167,11 @@ fn doctor(cli: &Cli) -> Result<()> {
     let req = JitConfigRequest::new(default_name(), 0, labels_vec(&cli.labels));
     println!("fxrun-actions");
     println!("  rails safe         : {}", rails.is_safe());
+    println!("  canonical scope    : org (repo scope is explicit exception only)");
+    println!(
+        "  canonical org url  : {}",
+        registration_url(&cli.org, Scope::Org, None)?
+    );
     println!("  labels             : {:?}", labels_vec(&cli.labels));
     println!("  home               : {}", cli.home.display());
     println!("  work dir           : {}", cli.work_dir.display());
@@ -165,6 +184,22 @@ fn doctor(cli: &Cli) -> Result<()> {
         "  run.sh             : {}",
         cli.home.join("run.sh").is_file()
     );
+    match read_local_runner_config(&cli.home)? {
+        Some(config) => {
+            let kind = classify_runner_url(&cli.org, &config.git_hub_url);
+            println!(
+                "  local config       : {} ({})",
+                config.git_hub_url,
+                registration_kind_label(&kind)
+            );
+            if kind == RegistrationKind::Repo {
+                println!(
+                    "  local config drift : repo-scoped; register an org-scoped runner before retiring this config"
+                );
+            }
+        }
+        None => println!("  local config       : unconfigured"),
+    }
     println!("  gh                 : {}", has_cmd("gh"));
     println!("  curl               : {}", has_cmd("curl"));
     println!("  tar                : {}", has_cmd("tar"));
@@ -337,15 +372,10 @@ fn configure_runner(
         );
     }
 
-    let url = match scope {
-        Scope::Org => format!("https://github.com/{}", cli.org),
-        Scope::Repo => {
-            let repo = repo.ok_or_else(|| anyhow!("--repo is required when --scope repo"))?;
-            format!("https://github.com/{}/{}", cli.org, repo)
-        }
-    };
+    warn_if_repo_scope(*scope);
+    let url = registration_url(&cli.org, *scope, repo)?;
     let name = cli.name.clone().unwrap_or_else(default_name);
-    let token = mint_registration_token(&cli.org, scope, repo)?;
+    let existing = read_local_runner_config(&cli.home)?;
 
     if cli.dry_run {
         let kind = if ephemeral {
@@ -360,8 +390,20 @@ fn configure_runner(
         println!("  svc home : {}", cli.service_home.display());
         println!("  name     : {name}");
         println!("  labels   : {}", cli.labels);
+        match existing {
+            Some(config) => println!(
+                "  existing : {} ({})",
+                config.git_hub_url,
+                registration_kind_label(&classify_runner_url(&cli.org, &config.git_hub_url))
+            ),
+            None => println!("  existing : unconfigured"),
+        }
+        println!("  token    : <not minted during dry-run>");
         return Ok(name);
     }
+
+    guard_existing_runner_target(&cli.home, existing.as_ref(), &url, &cli.org)?;
+    let token = mint_registration_token(&cli.org, scope, repo)?;
 
     fs::create_dir_all(&cli.work_dir)
         .with_context(|| format!("create {}", cli.work_dir.display()))?;
@@ -386,6 +428,95 @@ fn configure_runner(
     }
     run(Command::new(&config).args(args).current_dir(&cli.home))?;
     Ok(name)
+}
+
+fn registration_url(org: &str, scope: Scope, repo: Option<&str>) -> Result<String> {
+    match scope {
+        Scope::Org => Ok(format!("https://github.com/{org}")),
+        Scope::Repo => {
+            let repo = repo.ok_or_else(|| anyhow!("--repo is required when --scope repo"))?;
+            Ok(format!("https://github.com/{org}/{repo}"))
+        }
+    }
+}
+
+fn read_local_runner_config(home: &Path) -> Result<Option<LocalRunnerConfig>> {
+    let path = home.join(".runner");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let text = text.trim_start_matches('\u{feff}');
+    let json: serde_json::Value = serde_json::from_str(text)
+        .with_context(|| format!("parse {} as runner config JSON", path.display()))?;
+    let git_hub_url = json
+        .get("gitHubUrl")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow!("{} is missing gitHubUrl", path.display()))?
+        .to_string();
+    let agent_name = json
+        .get("agentName")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    Ok(Some(LocalRunnerConfig {
+        git_hub_url,
+        agent_name,
+    }))
+}
+
+fn classify_runner_url(org: &str, url: &str) -> RegistrationKind {
+    let org_url = format!("https://github.com/{org}");
+    if url == org_url {
+        return RegistrationKind::Org;
+    }
+    if let Some(rest) = url.strip_prefix(&(org_url + "/")) {
+        if !rest.is_empty() && !rest.contains('/') {
+            return RegistrationKind::Repo;
+        }
+    }
+    RegistrationKind::Other
+}
+
+fn registration_kind_label(kind: &RegistrationKind) -> &'static str {
+    match kind {
+        RegistrationKind::Org => "org-scoped",
+        RegistrationKind::Repo => "repo-scoped",
+        RegistrationKind::Other => "non-FlexNetOS/unknown",
+    }
+}
+
+fn warn_if_repo_scope(scope: Scope) {
+    if scope == Scope::Repo {
+        eprintln!(
+            "WARN: repo-scoped GitHub Actions runners are an explicit exception; \
+             FlexNetOS production/default is one org-scoped runner shared by meta peers."
+        );
+    }
+}
+
+fn guard_existing_runner_target(
+    home: &Path,
+    existing: Option<&LocalRunnerConfig>,
+    target_url: &str,
+    org: &str,
+) -> Result<()> {
+    let Some(existing) = existing else {
+        return Ok(());
+    };
+    if existing.git_hub_url == target_url {
+        return Ok(());
+    }
+
+    let existing_kind = registration_kind_label(&classify_runner_url(org, &existing.git_hub_url));
+    let target_kind = registration_kind_label(&classify_runner_url(org, target_url));
+    bail!(
+        "runner home {} is already configured for {} ({existing_kind}); refusing to mutate it \
+         in-place to {target_url} ({target_kind}). Strict upgrade path: register the org-scoped \
+         runner in a clean RUNNER_HOME while the old runner remains available, verify FlexNetOS/meta \
+         and FlexNetOS/envctl consume the shared labels, then retire the repo-scoped service/config.",
+        home.display(),
+        existing.git_hub_url
+    )
 }
 
 fn service_unit_name(org: &str, scope: &Scope, repo: Option<&str>, name: &str) -> Result<String> {
@@ -656,6 +787,110 @@ mod tests {
         )
         .is_err());
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn registration_scope_defaults_to_org() {
+        let cli = Cli::try_parse_from(["fxrun-actions", "register"]).unwrap();
+        match cli.cmd {
+            Cmd::Register { scope, repo, .. } => {
+                assert_eq!(scope, Scope::Org);
+                assert_eq!(repo, None);
+            }
+            _ => panic!("expected register command"),
+        }
+
+        let cli = Cli::try_parse_from(["fxrun-actions", "run-once"]).unwrap();
+        match cli.cmd {
+            Cmd::RunOnce { scope, repo, .. } => {
+                assert_eq!(scope, Scope::Org);
+                assert_eq!(repo, None);
+            }
+            _ => panic!("expected run-once command"),
+        }
+    }
+
+    #[test]
+    fn registration_url_requires_repo_only_for_repo_scope() {
+        assert_eq!(
+            registration_url("FlexNetOS", Scope::Org, None).unwrap(),
+            "https://github.com/FlexNetOS"
+        );
+        assert_eq!(
+            registration_url("FlexNetOS", Scope::Repo, Some("envctl")).unwrap(),
+            "https://github.com/FlexNetOS/envctl"
+        );
+        assert!(registration_url("FlexNetOS", Scope::Repo, None).is_err());
+    }
+
+    #[test]
+    fn classifies_flexnetos_runner_urls() {
+        assert_eq!(
+            classify_runner_url("FlexNetOS", "https://github.com/FlexNetOS"),
+            RegistrationKind::Org
+        );
+        assert_eq!(
+            classify_runner_url("FlexNetOS", "https://github.com/FlexNetOS/envctl"),
+            RegistrationKind::Repo
+        );
+        assert_eq!(
+            classify_runner_url("FlexNetOS", "https://github.com/Other/envctl"),
+            RegistrationKind::Other
+        );
+        assert_eq!(
+            classify_runner_url("FlexNetOS", "https://github.com/FlexNetOS/envctl/extra"),
+            RegistrationKind::Other
+        );
+    }
+
+    #[test]
+    fn local_runner_config_reads_github_url() {
+        let dir = env::temp_dir().join(format!(
+            "fxrun-actions-runner-config-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join(".runner"),
+            "\u{feff}{\"gitHubUrl\":\"https://github.com/FlexNetOS/envctl\",\"agentName\":\"fxrun\"}",
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_local_runner_config(&dir).unwrap(),
+            Some(LocalRunnerConfig {
+                git_hub_url: "https://github.com/FlexNetOS/envctl".into(),
+                agent_name: Some("fxrun".into()),
+            })
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn existing_runner_target_guard_refuses_scope_mutation() {
+        let config = LocalRunnerConfig {
+            git_hub_url: "https://github.com/FlexNetOS/envctl".into(),
+            agent_name: None,
+        };
+
+        assert!(guard_existing_runner_target(
+            Path::new("/runner"),
+            Some(&config),
+            "https://github.com/FlexNetOS/envctl",
+            "FlexNetOS"
+        )
+        .is_ok());
+        let err = guard_existing_runner_target(
+            Path::new("/runner"),
+            Some(&config),
+            "https://github.com/FlexNetOS",
+            "FlexNetOS",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("refusing to mutate it in-place"));
+        assert!(err.contains("Strict upgrade path"));
     }
 
     #[test]

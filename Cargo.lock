@@ -236,6 +236,7 @@ dependencies = [
  "clap",
  "hex",
  "runner-core",
+ "serde_json",
  "sha2",
 ]
 

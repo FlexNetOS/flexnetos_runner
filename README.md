@@ -110,17 +110,26 @@ Implemented and tested: the signed job-spec contract + signature verification (S
 router (delegate map), the fork-PR isolation policy, and the JIT lifecycle state machine.
 
 The Actions supervisor is live: `fxrun-actions` can install the upstream GitHub Actions runner,
-mint short-lived registration tokens with `gh`, register repo/org-scoped runners, run one
-ephemeral job, or install a persistent service. Install enforces GitHub's mandated minimum runner
-version (`≥ 2.329.0`, changelog 2026-06-12) — below it GitHub refuses registration / pauses job
-queuing and the runner is exposed to the Runner-Escape host-secret leak, so the supervisor fails
-closed on a stale pin. The UDS dispatch + kernel invocation, envctl-style secret injection, and
-provenance gates are wired seams. Current hardening adds full-envelope authority signatures, private
-UDS socket binding, nonce-based fresh workspaces, pre-extract runner SHA-256 verification, and CI
-`cargo audit`; the remaining backlog covers registration-token argv removal, rate-limit clock
-freshness, structured kernel result/status, and desktop approval/re-entry. The confirmed P3 recipe for
-first-party artifacts remains GitHub Artifact Attestations (`actions/attest-build-provenance@v3`,
-SLSA Build L2 via OIDC + Sigstore), verified with `cosign verify-attestation` / `slsa-verifier`.
+mint short-lived registration tokens with `gh`, register the canonical FlexNetOS org-scoped runner
+by default, run one ephemeral job, or install a persistent service. Repo-scoped runner registration
+is an explicit sandbox/exception only — never the default for `envctl`, `meta`, or any other peer.
+Install enforces GitHub's mandated minimum runner version (`≥ 2.329.0`, changelog 2026-06-12) —
+below it GitHub refuses registration / pauses job queuing and the runner is exposed to the
+Runner-Escape host-secret leak, so the supervisor fails closed on a stale pin. The UDS dispatch +
+kernel invocation, envctl-style secret injection, and provenance gates are wired seams. Current
+hardening adds full-envelope authority signatures, private UDS socket binding, nonce-based fresh
+workspaces, pre-extract runner SHA-256 verification, and CI `cargo audit`; the remaining backlog
+covers registration-token argv removal, rate-limit clock freshness, structured kernel result/status,
+and desktop approval/re-entry. The confirmed P3 recipe for first-party artifacts remains GitHub
+Artifact Attestations (`actions/attest-build-provenance@v3`, SLSA Build L2 via OIDC + Sigstore),
+verified with `cosign verify-attestation` / `slsa-verifier`.
+
+Canonical operation is one org-scoped FlexNetOS runner, shared by meta peer repositories through the
+labels `self-hosted,linux,x64,local,flexnetos`. A local `.runner` that points at
+`https://github.com/FlexNetOS/<repo>` is scope drift, not a new default. Strict upgrade path: stand
+up the org-scoped runner in a clean `RUNNER_HOME`, verify the shared labels service the required
+meta peers, then retire the old repo-scoped service/config. Do not mutate a live repo-scoped runner
+home in place, and do not create a repo-scoped `envctl`/`meta` runner as a special-case fix.
 
 ## Build
 
