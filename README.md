@@ -146,6 +146,33 @@ cargo clippy --workspace --all-targets -- -D warnings
 fxrun doctor
 ```
 
+
+## Live runner evaluation
+
+Use `scripts/eval-runners.sh` to evaluate both repo-local FlexNetOS org runner slots in real time.
+The tool dispatches the committed `runner-smoke.yml` workflow once per slot, isolates the target by
+stopping its peer by default, streams run status while it waits, and restores both services on exit.
+
+```bash
+scripts/eval-runners.sh
+# optional: scripts/eval-runners.sh --no-isolate --poll-secs 2 --timeout-secs 600
+```
+
+The evaluator writes a timestamped proof bundle under `_work/evals/<timestamp>/`:
+
+| Artifact | Purpose |
+|---|---|
+| `summary.md` | Human scorecard with per-runner conclusion, accuracy, timing table, task output, failures, and lessons learned. |
+| `metrics.jsonl` | Machine-readable one-record-per-runner metrics including dispatch-to-visible, dispatch-to-created, pickup latency, execution time, total turnaround, step durations, assertions, output, failures, and lessons. |
+| `api-*.json` | Before/after GitHub org runner API snapshots for online/busy/label state. |
+| `run-*.json` / `run-*.log` | GitHub run metadata plus raw job log output used for accuracy checks. |
+| `journal-*.log` / `diag-*.log` | Local systemd and runner diagnostic tails around the probe. |
+
+A result is accurate only when the workflow succeeds, the log reports the expected runner name, and
+`RUNNER_WORKSPACE` is under that slot's repo-local `_work/actions-runner-0N-work/` directory. The
+pickup-latency metric is the GitHub run creation time to job start time; total turnaround is local
+dispatch to job completion.
+
 ## Safety posture
 
 Untrusted **fork PRs never run on self-hosted hardware** (routed to GitHub-hosted/sandboxed);
