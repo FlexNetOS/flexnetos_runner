@@ -250,7 +250,7 @@ fn install(
         println!("  url : {url}");
         println!(
             "  sha : {}",
-            expected_sha256.unwrap_or("<fetch release .sha256 asset>")
+            expected_sha256.unwrap_or("<fetch release checksum>")
         );
         return Ok(());
     }
@@ -268,14 +268,23 @@ fn install(
         None => {
             let checksum_path = cli.home.join(format!("{archive}.sha256"));
             if !checksum_path.exists() {
-                run(Command::new("curl")
+                let status = Command::new("curl")
                     .args(["-fsSL", "-o"])
                     .arg(&checksum_path)
-                    .arg(&checksum_url))?;
+                    .arg(&checksum_url)
+                    .status()
+                    .context("download runner checksum asset")?;
+                if !status.success() {
+                    let _ = fs::remove_file(&checksum_path);
+                }
             }
-            let checksum_text = fs::read_to_string(&checksum_path)
-                .with_context(|| format!("read {}", checksum_path.display()))?;
-            parse_sha256_checksum(&checksum_text, &archive)?
+            if checksum_path.exists() {
+                let checksum_text = fs::read_to_string(&checksum_path)
+                    .with_context(|| format!("read {}", checksum_path.display()))?;
+                parse_sha256_checksum(&checksum_text, &archive)?
+            } else {
+                release_notes_sha256(&version, arch, &archive)?
+            }
         }
     };
     verify_file_sha256(&archive_path, &expected_sha256)?;
@@ -620,6 +629,48 @@ fn parse_sha256_checksum(text: &str, archive: &str) -> Result<String> {
     bail!("checksum file did not contain SHA-256 for {archive}")
 }
 
+fn parse_release_notes_sha256(text: &str, arch: &str, archive: &str) -> Result<String> {
+    let marker = format!("BEGIN SHA {arch}");
+    for line in text.lines().map(str::trim) {
+        if !(line.contains(archive) || line.contains(&marker)) {
+            continue;
+        }
+        for candidate in line.split(|c: char| !c.is_ascii_hexdigit()) {
+            if candidate.len() == 64 && candidate.chars().all(|c| c.is_ascii_hexdigit()) {
+                return normalize_sha256(candidate);
+            }
+        }
+    }
+    bail!("release notes did not contain SHA-256 for {archive}")
+}
+
+fn release_notes_sha256(version: &str, arch: &str, archive: &str) -> Result<String> {
+    require_cmd("gh")?;
+    let tag = format!("v{}", version.trim_start_matches('v'));
+    let out = Command::new("gh")
+        .args([
+            "release",
+            "view",
+            &tag,
+            "--repo",
+            "actions/runner",
+            "--json",
+            "body",
+            "--jq",
+            ".body",
+        ])
+        .output()
+        .with_context(|| format!("query actions/runner {tag} release notes"))?;
+    if !out.status.success() {
+        bail!(
+            "gh release notes query failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let body = String::from_utf8(out.stdout)?;
+    parse_release_notes_sha256(&body, arch, archive)
+}
+
 fn verify_file_sha256(path: &Path, expected: &str) -> Result<()> {
     let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let actual = hex::encode(Sha256::digest(&bytes));
@@ -773,6 +824,30 @@ mod tests {
             hash
         );
         assert!(normalize_sha256("not-a-sha").is_err());
+    }
+
+    #[test]
+    fn release_notes_parser_accepts_runner_sha_comments() {
+        let hash = "4ef2f25285f0ae4477f1fe1e346db76d2f3ebf03824e2ddd1973a2819bf6c8cf";
+        let body = format!(
+            "- actions-runner-linux-x64-2.335.1.tar.gz <!-- BEGIN SHA linux-x64 -->{hash}<!-- END SHA linux-x64 -->\n"
+        );
+
+        assert_eq!(
+            parse_release_notes_sha256(
+                &body,
+                "linux-x64",
+                "actions-runner-linux-x64-2.335.1.tar.gz"
+            )
+            .unwrap(),
+            hash
+        );
+        assert!(parse_release_notes_sha256(
+            &body,
+            "linux-arm64",
+            "actions-runner-linux-arm64-2.335.1.tar.gz"
+        )
+        .is_err());
     }
 
     #[test]
