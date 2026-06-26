@@ -33,21 +33,21 @@ struct Cli {
     #[arg(
         long,
         env = "RUNNER_HOME",
-        default_value = "/home/drdave/_work/repos/actions-runner"
+        default_value = "/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01"
     )]
     home: PathBuf,
     /// Runner work directory passed to config.sh.
     #[arg(
         long,
         env = "RUNNER_WORK_DIR",
-        default_value = "/home/drdave/_work/actions-runner-work"
+        default_value = "/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-01-work"
     )]
     work_dir: PathBuf,
     /// HOME/GIT_CONFIG_GLOBAL sandbox used by the systemd service.
     #[arg(
         long,
         env = "RUNNER_SERVICE_HOME",
-        default_value = "/home/drdave/_work/runner-home"
+        default_value = "/home/drdave/Desktop/meta/flexnetos_runner/_work/runner-home-01"
     )]
     service_home: PathBuf,
     /// Comma-separated runner labels.
