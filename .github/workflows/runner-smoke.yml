@@ -1,0 +1,45 @@
+name: Runner Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_runner:
+        description: Expected GitHub Actions runner name
+        required: true
+        type: string
+      expected_slot:
+        description: Expected repo-local runner slot suffix, for example 01 or 02
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Runner smoke
+    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    steps:
+      - name: Verify runner identity and repo-local paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "expected_runner=${{ inputs.expected_runner }}"
+          echo "actual_runner=${RUNNER_NAME}"
+          echo "expected_slot=${{ inputs.expected_slot }}"
+          echo "runner_os=${RUNNER_OS}"
+          echo "runner_arch=${RUNNER_ARCH}"
+          echo "runner_tracking_id=${RUNNER_TRACKING_ID:-unset}"
+          echo "runner_workspace=${RUNNER_WORKSPACE}"
+          echo "pwd=$(pwd)"
+          echo "hostname=$(hostname)"
+          echo "whoami=$(whoami)"
+          echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          test "${RUNNER_NAME}" = "${{ inputs.expected_runner }}"
+          case "${RUNNER_WORKSPACE}" in
+            /home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-${{ inputs.expected_slot }}-work/*) ;;
+            *)
+              echo "RUNNER_WORKSPACE is not under the expected repo-local slot" >&2
+              exit 1
+              ;;
+          esac
