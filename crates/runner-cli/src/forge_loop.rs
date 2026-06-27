@@ -1640,6 +1640,20 @@ mod tests {
     }
 
     #[test]
+    fn ci_runs_components_audit_guard() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let ci =
+            fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read CI workflow");
+        assert!(
+            ci.contains("forge-loop components-audit --strict"),
+            "CI must enforce the forge-loop component contract"
+        );
+    }
+
+    #[test]
     fn ci_runs_docs_drift_guard() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()

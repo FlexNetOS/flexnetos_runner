@@ -1,0 +1,15 @@
+# Project-scoped Codex defaults for the forge-loop harness.
+# Loaded only when this trusted repo's .codex layer is active.
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+model_instructions_file = "prompts/forge-loop.md"
+
+[features]
+hooks = true
+
+[agents]
+max_threads = 6
+max_depth = 1
+job_max_runtime_seconds = 1800

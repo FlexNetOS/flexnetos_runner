@@ -1,0 +1,21 @@
+# Forge-loop command policy examples for Codex execpolicy.
+# Keep destructive filesystem operations blocked even if wrapped by a shell.
+prefix_rule(
+    pattern = ["rm", "-rf", "/"],
+    decision = "forbidden",
+    justification = "Never remove the filesystem root; use targeted cleanup scripts with explicit paths.",
+    match = ["rm -rf /"],
+    not_match = ["rm -rf target/tmp"],
+)
+
+# Allow read-only PR inspection commands that the runner-health diagnostic consumes.
+prefix_rule(
+    pattern = ["gh", "pr", "view"],
+    decision = "allow",
+    justification = "Read-only PR status inspection is required for forge-loop runner-health diagnostics.",
+    match = [
+        "gh pr view 76 --json statusCheckRollup",
+        "gh pr view --repo FlexNetOS/flexnetos_runner 76 --json title,state",
+    ],
+    not_match = ["gh pr merge 76 --auto --squash"],
+)

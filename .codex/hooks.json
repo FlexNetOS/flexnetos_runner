@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/forge_loop_session_start.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking forge-loop session readiness"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/forge_loop_stop_summary.py\"",
+            "timeout": 30,
+            "statusMessage": "Summarizing forge-loop component status"
+          }
+        ]
+      }
+    ]
+  }
+}
