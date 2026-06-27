@@ -2156,6 +2156,11 @@ mod tests {
         let workflow = fs::read_to_string(root.join(".github/workflows/codex-forge-loop.yml"))
             .expect("read Codex workflow");
 
+        assert!(
+            !workflow.contains("if: ${{ secrets."),
+            "GitHub Actions does not allow secrets in job-level if expressions"
+        );
+
         for required in [
             "openai/codex-action@v1",
             "prompt-file:",
