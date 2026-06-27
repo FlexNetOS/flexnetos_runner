@@ -992,6 +992,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "Codex PreCompact/PostCompact hooks preserve target-mining continuity across context compaction.",
         },
         LoopComponent {
+            id: "hook-manifest",
+            surface: "hooks",
+            path: ".codex/hooks/forge-loop-hooks.manifest.json",
+            rationale: "A machine-readable hook manifest keeps lifecycle event coverage, script paths, and expected JSON keys auditable.",
+        },
+        LoopComponent {
             id: "rules",
             surface: "rules",
             path: ".codex/rules/forge-loop.rules",
@@ -1068,6 +1074,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "worktrees",
             path: ".codex/worktrees/forge-loop-isolation.toml",
             rationale: "Forge-loop cycles need an explicit worktree isolation contract so concurrent mutating runs cannot trample one another.",
+        },
+        LoopComponent {
+            id: "cycle-evidence-checklist",
+            surface: "checklists",
+            path: ".codex/checklists/forge-loop-cycle.toml",
+            rationale: "Every forge-loop cycle needs a durable evidence checklist for tests, audits, PR state, merge evidence, and main fast-forward proof.",
         },
         LoopComponent {
             id: "deep-research-exhaustion-report",
@@ -2023,7 +2035,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 21);
+        assert_eq!(report.checked_components, 23);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -2126,6 +2138,76 @@ mod tests {
                 compact_prompt.contains(required),
                 "compact prompt missing {required}"
             );
+        }
+    }
+
+    #[test]
+    fn forge_loop_cycle_evidence_checklist_requires_merge_proof() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let checklist = fs::read_to_string(root.join(".codex/checklists/forge-loop-cycle.toml"))
+            .expect("read cycle checklist");
+        let prompt = fs::read_to_string(root.join(".codex/prompts/forge-loop.md"))
+            .expect("read forge-loop prompt");
+
+        for required in [
+            "strict_upgrade_only = true",
+            "commit_push_pr_required = true",
+            "component_audit",
+            "target_mining_audit",
+            "forge_loop_tests",
+            "required_checks_green = true",
+            "merged_at = true",
+            "main_fast_forwarded = true",
+        ] {
+            assert!(
+                checklist.contains(required),
+                "cycle checklist missing {required}"
+            );
+        }
+        assert!(prompt.contains(".codex/checklists/forge-loop-cycle.toml"));
+    }
+
+    #[test]
+    fn forge_loop_hook_manifest_covers_registered_events() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let manifest = fs::read_to_string(root.join(".codex/hooks/forge-loop-hooks.manifest.json"))
+            .expect("read hook manifest");
+        let hooks = fs::read_to_string(root.join(".codex/hooks.json")).expect("read hooks");
+
+        for required in [
+            "SessionStart",
+            "PreToolUse",
+            "PermissionRequest",
+            "PostToolUse",
+            "PreCompact",
+            "PostCompact",
+            "SubagentStart",
+            "SubagentStop",
+            "Stop",
+            "expected_json_key",
+        ] {
+            assert!(
+                manifest.contains(required),
+                "hook manifest missing {required}"
+            );
+        }
+        for script in [
+            "forge_loop_session_start.py",
+            "forge_loop_pre_tool_use.py",
+            "forge_loop_permission_request.py",
+            "forge_loop_post_tool_use.py",
+            "forge_loop_compact_summary.py",
+            "forge_loop_subagent_summary.py",
+            "forge_loop_stop_summary.py",
+        ] {
+            assert!(manifest.contains(script), "hook manifest missing {script}");
+            assert!(hooks.contains(script), "hooks.json missing {script}");
         }
     }
 
