@@ -3171,6 +3171,10 @@ mod tests {
             "*/5 * * * *",
             "runs-on: ubuntu-latest",
             "actions: write",
+            "MIN_SUSTAIN_BACKLOG: '2'",
+            "target_sustain_backlog",
+            "if [ \"$target_sustain_backlog\" -gt 4 ]; then target_sustain_backlog=4; fi",
+            "dispatching Runner Sustain backlog top-up",
             "gh workflow run runner-sustain.yml --ref main",
             "duration_minutes=6",
             "runner-flow-audit",
@@ -3186,7 +3190,8 @@ mod tests {
             );
         }
         assert!(target.contains("Runner Black Factor Watch"));
-        assert!(target.contains("refills `Runner Sustain`"));
+        assert!(target.contains("tops up a small `Runner Sustain` active/queued backlog"));
+        assert!(target.contains("clamped to 1-4"));
         assert!(target.contains("latest 12-hour proof window"));
     }
 
