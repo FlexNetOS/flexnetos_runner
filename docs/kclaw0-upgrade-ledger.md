@@ -256,9 +256,10 @@ watchdog (2) · outcome simulation (2). These six are the highest-confidence net
 **Cycle 17 applied FATAL-first taxonomy, cycle 18 applied dispatch provenance/authority, cycle 19
 applied the delegation-target allowlist, cycle 20 applied the buildable per-target single-flight
 mutex, cycle 21 applied the idle/liveness watchdog, cycle 22 applied deterministic route selection,
-and cycle 23 applied state-gated route admission (PR #31).** The only remaining Tier-1 slice is the
-**global max-in-flight cap**, which is still concurrent-serve-gated; continue with the remaining
-P3/result/lifecycle backlog and the post-audit hardening tasks below.
+cycle 23 applied state-gated route admission (PR #31), and the current branch applied rate-limit
+clock freshness.** The remaining slices are the open Tier-0 hardening tasks (registration token
+non-argv path, docs drift guard), Tier-1 automation expansion, and the P3/result/lifecycle backlog
+below.
 
 ## Cycle-23 deep code audit backlog (fresh tasks)
 
@@ -301,10 +302,14 @@ failing tests first, implement, run local gates, open/merge a PR, then update th
    - Acceptance: pre-created candidate path is refused or bypassed; repeated same-job acquisitions are
      distinct; teardown still proves zero residue.
 
-4. **Rate-limit clock freshness**
+4. **Rate-limit clock freshness** — APPLIED (current branch)
    - Gap: `now_secs` is sampled before blocking `accept()`, so the next request after idle can be
      evaluated with stale time.
    - Upgrade: sample monotonic time after accept/read, immediately before `handle_request()`.
+   - Applied: the production serve loop now accepts the connection first, then samples the
+     server-lifetime monotonic clock and passes that fresh timestamp into `serve_stream()` /
+     `handle_request()`, preserving `runner-core` as clock-injected and avoiding stale idle-time
+     cooldown/window decisions.
    - Acceptance: a cooldown/window can expire while the server is idle before the next connection.
 
 5. **Actions runner artifact verification** — APPLIED (current branch)

@@ -4193,6 +4193,89 @@ mod tests {
     }
 
     #[test]
+    fn route_failure_cooldown_expires_for_the_next_idle_connection() {
+        let failing = FailingInvoker::default();
+        let recovered = RecordingInvoker::default();
+        let mut guard = LoopGuard::default();
+        let mut gov = Governor::unlimited();
+        let mut retry = RetryLedger::new();
+        let mut q = QuarantineLedger::new();
+        // No window cap; a 30s per-route cooldown after a failure.
+        let mut rl = RateLimiter::new(RateLimitPolicy::new(0, 1, 30));
+        let raw = serde_json::to_vec(&sign_frame(b"k", &ci_spec(false)).unwrap()).unwrap();
+
+        // First request fails at t=0 and starts the route cooldown.
+        let first = handle_request(
+            b"k",
+            &failing,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
+            &mut SingleFlight::new(),
+            &mut guard,
+            &mut gov,
+            &RecoveryPolicy::default(),
+            &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut q,
+            &mut rl,
+            0,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(!first.accepted);
+        assert_eq!(failing.calls(), 1);
+
+        // The next connection arrives after the server sat idle past the cooldown. Production
+        // `serve()` samples this timestamp after `accept()` returns; once that fresh time is supplied,
+        // the old cooldown must not hold the route or poison the retry ledger.
+        let later = handle_request(
+            b"k",
+            &recovered,
+            &ConstitutionStatus::Intact,
+            &ApprovalPolicy::none(),
+            &AuthorityPolicy::disabled(),
+            &TargetAllowlist::disabled(),
+            &StateGatePolicy::disabled(),
+            60,
+            &mut SingleFlight::new(),
+            &mut guard,
+            &mut gov,
+            &RecoveryPolicy::default(),
+            &mut retry,
+            &QuarantinePolicy::disabled(),
+            &mut q,
+            &mut rl,
+            31,
+            &ScanPolicy::disabled(),
+            &RiskPolicy::disabled(),
+            &mut RiskLedger::new(),
+            &DeadlinePolicy::disabled(),
+            &LivenessPolicy::disabled(),
+            &NullSink,
+            &raw,
+        );
+        assert!(
+            later.accepted,
+            "a route cooldown must expire while the server is idle before the next connection"
+        );
+        assert_eq!(recovered.calls(), 1);
+        assert_eq!(
+            retry.tracked(),
+            0,
+            "clean delegation clears prior retry state"
+        );
+    }
+
+    #[test]
     fn content_scan_blocks_an_injection_job_and_escalates_without_reaching_the_kernel() {
         use runner_core::scan::Severity;
         let inv = RecordingInvoker::default();

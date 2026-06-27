@@ -185,10 +185,13 @@ verify, PR, and update this document + `docs/kclaw0-upgrade-ledger.md`.
      `create_dir_all` on a deterministic job path.
    - Acceptance: precreated path is refused or bypassed; two same-job acquisitions never share a path.
 
-4. **Rate-limit clock freshness**
+4. **Rate-limit clock freshness** — APPLIED (current branch)
    - Gap: `now_secs` is sampled before blocking `accept()`, so the first request after idle can use
      stale time.
    - Upgrade: sample monotonic time after accept/read, immediately before `handle_request()`.
+   - Applied: the production serve loop now accepts a connection first, samples the server-lifetime
+     monotonic clock after `accept()` returns, and passes that fresh timestamp through
+     `serve_stream()` to `handle_request()`.
    - Acceptance: e2e/unit test proves cooldown expires while server is idle before next connection.
 
 5. **Actions runner artifact verification** — APPLIED (current branch)
