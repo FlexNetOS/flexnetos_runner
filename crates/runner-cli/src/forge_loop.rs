@@ -12,6 +12,7 @@ const DEFAULT_CODEX: &str = "/home/drdave/Desktop/meta/.toolchains/codex/bin/cod
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
+const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum ForgeLoopCommand {
@@ -188,6 +189,8 @@ struct CheckRollupEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CycleManifest {
+    #[serde(default = "default_cycle_manifest_schema_version")]
+    pub schema_version: u8,
     pub goal: String,
     pub pr_title: String,
     pub prompt_sha256: String,
@@ -781,6 +784,14 @@ fn parse_cycle_manifest(path: &Path) -> Result<CycleManifest> {
 }
 
 fn validate_cycle_manifest(manifest: &CycleManifest) -> Result<()> {
+    if manifest.schema_version != CYCLE_MANIFEST_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "schema_version {} does not match supported version {}",
+            manifest.schema_version,
+            CYCLE_MANIFEST_SCHEMA_VERSION
+        ));
+    }
+
     let expected_pr_title = cycle_pr_title(&manifest.goal);
     if manifest.pr_title != expected_pr_title {
         return Err(anyhow!(
@@ -815,6 +826,10 @@ fn validate_cycle_manifest(manifest: &CycleManifest) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn default_cycle_manifest_schema_version() -> u8 {
+    CYCLE_MANIFEST_SCHEMA_VERSION
 }
 
 fn validate_eval_input(input: &EvalInput) -> Result<()> {
@@ -876,6 +891,7 @@ fn cycle_number_from_goal(goal: &str) -> Option<u8> {
 fn cycle_manifest(args: &RunArgs) -> CycleManifest {
     let prompt = cycle_prompt(&args.goal, args.auto_merge);
     CycleManifest {
+        schema_version: CYCLE_MANIFEST_SCHEMA_VERSION,
         goal: args.goal.clone(),
         pr_title: cycle_pr_title(&args.goal),
         prompt_sha256: runner_core::constitution::hash(prompt.as_bytes()),
@@ -1058,6 +1074,19 @@ mod tests {
     }
 
     #[test]
+    fn cycle_manifest_records_schema_version() {
+        let manifest = cycle_manifest(&RunArgs {
+            goal: "upgrade manifest schema witness".into(),
+            out: PathBuf::from("_work/forge-loop"),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        });
+
+        assert_eq!(manifest.schema_version, CYCLE_MANIFEST_SCHEMA_VERSION);
+    }
+
+    #[test]
     fn cycle_manifest_records_once_strict_phase_contract() {
         let manifest = cycle_manifest(&RunArgs {
             goal: "cycle 05 reliability upgrade".into(),
@@ -1146,6 +1175,36 @@ mod tests {
         assert!(
             error.root_cause().to_string().contains("prompt_sha256"),
             "error should name the invalid manifest witness: {error}"
+        );
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn eval_manifest_rejects_schema_version_mismatch() {
+        let path = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-bad-schema-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &path,
+            r#"{
+                "schema_version": 2,
+                "goal": "upgrade manifest schema witness",
+                "pr_title": "chore: forge loop self-upgrade",
+                "prompt_sha256": "ignored",
+                "once": true,
+                "auto_merge": true,
+                "strict_upgrade_only": true,
+                "phases": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]
+            }"#,
+        )
+        .expect("manifest");
+
+        let error = parse_cycle_manifest(&path).expect_err("schema mismatch must fail");
+        assert!(
+            error.root_cause().to_string().contains("schema_version"),
+            "error should name the unsupported schema version: {error}"
         );
 
         fs::remove_file(path).ok();
