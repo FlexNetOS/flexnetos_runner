@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_CODEX: &str = "/home/drdave/Desktop/meta/.toolchains/codex/bin/codex";
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
+const MAX_EVAL_RETRY_COUNT: u8 = 10;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum ForgeLoopCommand {
@@ -573,7 +574,21 @@ pub fn evaluate(input: EvalInput) -> EvalReport {
 fn parse_eval_metrics(path: &Path) -> Result<EvalInput> {
     let text =
         fs::read_to_string(path).with_context(|| format!("read metrics {}", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("parse metrics {}", path.display()))
+    let input: EvalInput =
+        serde_json::from_str(&text).with_context(|| format!("parse metrics {}", path.display()))?;
+    validate_eval_input(&input).with_context(|| format!("validate metrics {}", path.display()))?;
+    Ok(input)
+}
+
+fn validate_eval_input(input: &EvalInput) -> Result<()> {
+    if input.retry_count > MAX_EVAL_RETRY_COUNT {
+        return Err(anyhow!(
+            "retry_count {} exceeds maximum supported retry count {}",
+            input.retry_count,
+            MAX_EVAL_RETRY_COUNT
+        ));
+    }
+    Ok(())
 }
 
 impl EvalInput {
@@ -711,6 +726,37 @@ mod tests {
             !report.reasons.contains(&"diff size is reviewable"),
             "a zero-diff run is not a reviewable upgrade diff"
         );
+    }
+
+    #[test]
+    fn metrics_parser_rejects_impossible_retry_count() {
+        let path = std::env::temp_dir().join(format!(
+            "fxrun-eval-metrics-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::write(
+            &path,
+            r#"{
+                "red_test_first": true,
+                "gates_passed": true,
+                "retry_count": 255,
+                "useful_research_items": 1,
+                "runtime_secs": 120,
+                "diff_files": 1
+            }"#,
+        )
+        .expect("metrics");
+
+        let error = parse_eval_metrics(&path).expect_err("impossible retry count must fail");
+        assert!(
+            error.root_cause().to_string().contains("retry_count"),
+            "error should name the invalid field: {error}"
+        );
+
+        fs::remove_file(path).ok();
     }
 
     #[test]
