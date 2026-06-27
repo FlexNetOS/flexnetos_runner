@@ -5,3 +5,22 @@
 .env
 _work/
 .DS_Store
+
+# === handoff continuity kernel — canonical .handoff durability policy (ADR-0016 / ADR-0018 D1) ===
+# REGENERABLE .handoff state — the LOCAL rebuild cache (the binary ledger is re-derived from the
+# committed `.handoff/ledger.events.jsonl` via `hf import`) + ephemeral runtime + out-of-tree
+# migration artifacts: never commit. The committed continuity truth is the JSONL export and the
+# rendered views (packets/, active.md, deliveries/) — those are DURABLE and intentionally absent
+# here so they stay committed (ADR-0018 D1).
+# CONTENTS-FORM only — NEVER a bare `.handoff/` or `.claude/` ignore: Git cannot re-include a
+# path past an excluded parent dir, so a dir-form ignore silently SWALLOWS durable ledgers
+# (tasks/, decisions/, loop/*.md). Run `hf gitignore --check` (or `hf doctor`) to detect it.
+.handoff/**/ledger.db
+.handoff/**/*.db-wal
+.handoff/**/*.db-shm
+.handoff/**/*.rvf
+.handoff/**/*.rvf.lock
+.handoff/**/*.sqlite.bak
+.handoff/**/*.redb.tmp
+/.handoff/workspaces/
+/.handoff/locks/
