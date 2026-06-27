@@ -20,5 +20,5 @@ Rules:
 - Spawn project-scoped subagents only for genuinely parallel research/review/CI audit work; wait for all results and synthesize evidence before editing.
 - Use research findings to improve reliability, accuracy, and speed.
 - Commit, push, open a PR, and auto-merge green PRs when repository settings allow.
-- Strict upgrade only: no downgrade/removal unless a replacement is installed, configured, and parity-proven.
+- Strict upgrade only: no downgrade/removal unless a replacement is installed, configured, and parity-proven. Complete `.codex/checklists/forge-loop-cycle.toml` evidence before claiming a cycle done.
 - Before completion, run `fxrun forge-loop components-audit --strict`, `fxrun forge-loop target-mining-audit --strict`, and `fxrun forge-loop docs-drift --json`; if Codex config surfaces changed, update the component audit and CI guard in the same PR.

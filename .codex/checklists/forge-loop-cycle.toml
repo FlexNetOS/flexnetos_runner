@@ -1,0 +1,24 @@
+# Required evidence checklist for every Codex forge-loop harness cycle.
+# This is the durable completion contract used before a cycle may claim done.
+schema_version = 1
+strict_upgrade_only = true
+commit_push_pr_required = true
+auto_merge_when_green = true
+wait_for_merge_before_next_cycle = true
+
+[required_evidence]
+red_or_guard_test = true
+component_audit = "cargo run -q -p runner-cli -- forge-loop components-audit --strict"
+target_mining_audit = "cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
+docs_drift = "cargo run -q -p runner-cli -- forge-loop docs-drift --json"
+forge_loop_tests = "cargo test -p runner-cli --all-features forge_loop::tests"
+workspace_tests = "cargo test --workspace --all-features"
+clippy = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+audit = "cargo audit --deny warnings"
+
+[required_pr_evidence]
+pr_url = true
+auto_merge_armed = true
+required_checks_green = true
+merged_at = true
+main_fast_forwarded = true
