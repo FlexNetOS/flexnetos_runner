@@ -18,7 +18,13 @@
   "test_commands": [
     "rtk meta project list --json",
     "rtk meta git status",
-    "gh pr view <PR> --json statusCheckRollup,mergeStateStatus"
+    "rtk gh pr view 3 --repo FlexNetOS/vox --json statusCheckRollup,mergeStateStatus,headRefName,baseRefName,state",
+    "rtk gh pr view 3 --repo FlexNetOS/ruflo --json statusCheckRollup,mergeStateStatus,headRefName,baseRefName,state",
+    "rtk gh pr view 2 --repo FlexNetOS/kasetto --json statusCheckRollup,mergeStateStatus,headRefName,baseRefName,state",
+    "rtk python3 -m json.tool .handoff/pr-repair/scans/2026-06-27-task-prr-0016-selected-prs.json",
+    "rtk python3 -m json.tool .handoff/pr-repair/scans/2026-06-27-task-prr-0016-live-refresh.json",
+    "rtk jq -e . .handoff/pr-repair/queue/2026-06-27-task-prr-0016-manual-proof.jsonl",
+    "rtk /usr/bin/test -s .handoff/pr-repair/reports/2026-06-27-task-prr-0016-manual-proof.md"
   ],
   "dependencies": [
     "TASK-PRR-0008",
