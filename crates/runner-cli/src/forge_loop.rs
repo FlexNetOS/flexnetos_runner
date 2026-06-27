@@ -3158,7 +3158,7 @@ mod tests {
 
         for required in [
             "duration_minutes",
-            "default: '6'",
+            "default: '5'",
             "*/5 * * * *",
             "timeout-minutes: 10",
             "while [",
@@ -3200,13 +3200,14 @@ mod tests {
             "*/5 * * * *",
             "runs-on: ubuntu-latest",
             "actions: write",
-            "MIN_SUSTAIN_BACKLOG: '2'",
+            "MIN_SUSTAIN_BACKLOG: '4'",
             "target_sustain_backlog",
             "if [ \"$target_sustain_backlog\" -gt 4 ]; then target_sustain_backlog=4; fi",
             "gh workflow run runner-sustain.yml --ref main",
-            "duration_minutes=6",
+            "duration_minutes=5",
             "tick_seconds=30",
             "lane_slot=",
+            "skipping Runner Sustain backlog top-up because",
             "dispatching Runner Sustain lane",
             "runner-flow-audit",
             "--strict",
@@ -3223,6 +3224,7 @@ mod tests {
         assert!(target.contains("Runner Black Factor Watch"));
         assert!(target.contains("tops up a small `Runner Sustain` active/queued backlog"));
         assert!(target.contains("clamped to 1-4"));
+        assert!(target.contains("defaults to 4"));
         assert!(target.contains("latest 12-hour proof window"));
     }
 
@@ -3259,7 +3261,7 @@ mod tests {
             "4000-step",
             "12+ hour",
             "24/7 autonomous",
-            "two separate one-lane `Runner Sustain` workflow runs with lane-scoped concurrency groups",
+            "up to four active/queued one-lane `Runner Sustain` workflow runs with lane-scoped concurrency groups",
             "duration-proven workflow-run opportunities",
             "every 30 seconds",
             "preserving seamless PR flow",

@@ -6,7 +6,7 @@ on:
       duration_minutes:
         description: Minutes to keep the reserve-safe local runner lane doing useful audit work
         required: false
-        default: '6'
+        default: '5'
       tick_seconds:
         description: Seconds between useful audit ticks
         required: false
@@ -74,14 +74,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          DURATION_MINUTES: ${{ inputs.duration_minutes || '6' }}
+          DURATION_MINUTES: ${{ inputs.duration_minutes || '5' }}
           TICK_SECONDS: ${{ inputs.tick_seconds || '30' }}
           SLOT: ${{ inputs.lane_slot || '1' }}
         run: |
           set -euo pipefail
-          duration_minutes="${DURATION_MINUTES:-6}"
+          duration_minutes="${DURATION_MINUTES:-5}"
           tick_seconds="${TICK_SECONDS:-30}"
-          case "$duration_minutes" in (*[!0-9]*|'') duration_minutes=6 ;; esac
+          case "$duration_minutes" in (*[!0-9]*|'') duration_minutes=5 ;; esac
           case "$tick_seconds" in (*[!0-9]*|'') tick_seconds=30 ;; esac
           if [ "$duration_minutes" -lt 1 ]; then duration_minutes=1; fi
           if [ "$duration_minutes" -gt 8 ]; then duration_minutes=8; fi
