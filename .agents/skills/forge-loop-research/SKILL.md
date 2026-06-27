@@ -29,4 +29,4 @@ Constraints:
 - Prefer strict-upgrade-only changes.
 - Do not recommend downgrades or removals without parity proof.
 - Prefer improvements that can be evaluated automatically on every loop run.
-- When changing Codex loop components or configs, update `fxrun forge-loop components-audit` and CI so the new surface is machine-checkable.
+- When changing Codex loop components or configs, update `fxrun forge-loop components-audit`, `fxrun forge-loop target-mining-audit`, and CI so the new surface is machine-checkable.

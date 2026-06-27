@@ -40,6 +40,9 @@ jobs:
       - name: Forge-loop component audit
         shell: bash
         run: cargo run -p runner-cli -- forge-loop components-audit --strict
+      - name: Forge-loop target mining audit
+        shell: bash
+        run: cargo run -p runner-cli -- forge-loop target-mining-audit --strict
       - name: Cargo audit
         shell: bash
         run: |
