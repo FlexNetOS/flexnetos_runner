@@ -13,6 +13,14 @@ const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
 const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
+const REQUIRED_GATE_COMMANDS: &[&str] = &[
+    "cargo fmt --all -- --check",
+    "cargo test -p runner-cli --all-features forge_loop::tests",
+    "cargo run -q -p runner-cli -- forge-loop docs-drift --json",
+    "cargo test --workspace --all-features",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo audit --deny warnings",
+];
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum ForgeLoopCommand {
@@ -344,7 +352,8 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
         "merge_policy": "auto-merge green when repository settings allow; otherwise merge after green checks",
         "strict_upgrade_only": true,
         "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
-        "required_local_checks": REQUIRED_LOCAL_CHECKS
+        "required_local_checks": REQUIRED_LOCAL_CHECKS,
+        "required_gate_commands": REQUIRED_GATE_COMMANDS
     });
     println!("{}", serde_json::to_string_pretty(&plan)?);
     if args.dry_run || !allowed {
@@ -373,7 +382,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "auto_merge_green": true,
         "strict_upgrade_only": true,
         "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
-        "required_local_checks": REQUIRED_LOCAL_CHECKS
+        "required_local_checks": REQUIRED_LOCAL_CHECKS,
+        "required_gate_commands": REQUIRED_GATE_COMMANDS
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -384,6 +394,10 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         println!("  phases             : red → implement → gate → evaluate → research → upgrade");
         println!("  auto-merge policy  : green PRs when repository settings allow");
         println!("  strict upgrade     : enabled");
+        println!("  required gates     :");
+        for command in REQUIRED_GATE_COMMANDS {
+            println!("    - {command}");
+        }
         println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
         println!(
             "  required checks    : {}",
@@ -1408,6 +1422,23 @@ mod tests {
         assert!(ids.contains(&"kclaw0"));
 
         fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn doctor_json_exports_required_gate_contract() {
+        let report = serde_json::json!({
+            "required_gate_commands": REQUIRED_GATE_COMMANDS,
+        });
+        let gates = report["required_gate_commands"]
+            .as_array()
+            .expect("gate commands");
+
+        assert!(gates
+            .iter()
+            .any(|gate| gate == "cargo audit --deny warnings"));
+        assert!(gates
+            .iter()
+            .any(|gate| gate == "cargo run -q -p runner-cli -- forge-loop docs-drift --json"));
     }
 
     #[test]
