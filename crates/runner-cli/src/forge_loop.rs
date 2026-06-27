@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const DEFAULT_CODEX: &str = "/home/drdave/Desktop/meta/.toolchains/codex/bin/codex";
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
+const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum ForgeLoopCommand {
@@ -164,6 +165,7 @@ pub struct RunnerHealthReport {
     pub pending_local_checks: Vec<String>,
     pub passed_local_checks: Vec<String>,
     pub failed_local_checks: Vec<String>,
+    pub missing_local_checks: Vec<String>,
     pub runner_pressure: bool,
     pub recommendation: &'static str,
 }
@@ -396,6 +398,12 @@ fn runner_health(args: RunnerHealthArgs) -> Result<()> {
         } else {
             println!("  runner pressure    : clear");
         }
+        if !report.missing_local_checks.is_empty() {
+            println!("  missing local checks:");
+            for check in &report.missing_local_checks {
+                println!("    - {check}");
+            }
+        }
         println!("  recommendation     : {}", report.recommendation);
     }
     Ok(())
@@ -436,6 +444,13 @@ fn classify_runner_health(checks: &[CheckRollupEntry]) -> RunnerHealthReport {
     let mut pending_local_checks = Vec::new();
     let mut passed_local_checks = Vec::new();
     let mut failed_local_checks = Vec::new();
+    let mut missing_local_checks = Vec::new();
+
+    for required in REQUIRED_LOCAL_CHECKS {
+        if !local_check_states.contains_key(*required) {
+            missing_local_checks.push((*required).to_string());
+        }
+    }
 
     for (name, state) in local_check_states {
         match state {
@@ -446,16 +461,20 @@ fn classify_runner_health(checks: &[CheckRollupEntry]) -> RunnerHealthReport {
     }
 
     let runner_pressure = !pending_local_checks.is_empty();
+    let recommendation = if runner_pressure {
+        "inspect self-hosted runner services and queued external jobs before waiting indefinitely"
+    } else if !missing_local_checks.is_empty() {
+        "verify required local checks were scheduled before trusting branch-protection state"
+    } else {
+        "local self-hosted required checks are not currently queued"
+    };
     RunnerHealthReport {
         pending_local_checks,
         passed_local_checks,
         failed_local_checks,
+        missing_local_checks,
         runner_pressure,
-        recommendation: if runner_pressure {
-            "inspect self-hosted runner services and queued external jobs before waiting indefinitely"
-        } else {
-            "local self-hosted required checks are not currently queued"
-        },
+        recommendation,
     }
 }
 
@@ -489,7 +508,7 @@ fn check_state(check: &CheckRollupEntry) -> CheckState {
 }
 
 fn is_local_runner_check(name: &str) -> bool {
-    matches!(name, "Local Linux CI" | "Semantic PR Title")
+    REQUIRED_LOCAL_CHECKS.contains(&name)
 }
 
 fn docs_drift(args: DocsDriftArgs) -> Result<()> {
@@ -1242,6 +1261,25 @@ mod tests {
         );
         assert!(report.failed_local_checks.is_empty());
         assert!(!report.runner_pressure);
+    }
+
+    #[test]
+    fn runner_health_flags_missing_required_local_checks() {
+        let payload = CheckRollupPayload {
+            status_check_rollup: vec![CheckRollupEntry {
+                name: "Local Linux CI".into(),
+                status: "COMPLETED".into(),
+                conclusion: "SUCCESS".into(),
+            }],
+        };
+
+        let report = classify_runner_health(&payload.status_check_rollup);
+
+        assert_eq!(
+            report.missing_local_checks,
+            vec!["Semantic PR Title".to_string()]
+        );
+        assert!(report.recommendation.contains("required local checks"));
     }
 
     #[test]
