@@ -141,6 +141,7 @@ parallel slot uses the same layout with suffix `-02`. Do not place active runner
 Runner dispatch depends on GitHub's org runner-group repository access, not only local runner
 registration. The normal user `gh` token may lack `admin:org`, so org-runner inspection/repair uses
 envctl's GitHub App token minted by `secretctl` instead of asking operators to re-authenticate `gh`.
+The script resolves `secretctl` from `FXRUN_SECRETCTL`, `PATH`, or a discovered `META_ROOT`.
 
 ```bash
 scripts/repair-org-runner-group.sh          # dry-run + evidence under _work/org-runner-repair/
