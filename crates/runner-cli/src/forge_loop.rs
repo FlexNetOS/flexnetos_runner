@@ -1646,6 +1646,26 @@ mod tests {
     }
 
     #[test]
+    fn forge_loop_skill_references_codex_config_and_action_docs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let skill = fs::read_to_string(root.join(".agents/skills/forge-loop-research/SKILL.md"))
+            .expect("read forge-loop skill");
+
+        for required in [
+            "https://developers.openai.com/codex/config-advanced",
+            "https://developers.openai.com/codex/github-action",
+            "components-audit",
+            "model flags",
+            "custom agents/subagents",
+        ] {
+            assert!(skill.contains(required), "skill missing {required}");
+        }
+    }
+
+    #[test]
     fn codex_github_action_workflow_uses_documented_controls() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
