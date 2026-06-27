@@ -1,0 +1,87 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-9999",
+  "title": "[verifier] Deliver full `.idea` PR-repair intent end-to-end",
+  "status": "backlog",
+  "priority": "P0",
+  "objective": "Final capstone: prove the full `.handoff/.idea` intended outcome exists as a working agentic PR-failure repair control loop: durable queue/state, meta-native scan/classify/lane/assign/watch/merge surface, live-session routing, platform lanes, verifier gatekeeper, runner/GitHub App integration, durable learning, and multiple real PR repair outcomes.",
+  "path_scope": [
+    ".handoff/.idea/**",
+    ".handoff/pr-repair/**",
+    ".handoff/tasks/**",
+    "external:meta pr-repair",
+    "external:FlexNetOS PRs",
+    "external:runner/GitHub App integration"
+  ],
+  "acceptance_criteria": [
+    "All prerequisite TASK-PRR-0001 through TASK-PRR-0016 are done or superseded by stronger implemented evidence.",
+    "A single documented command surface or prototype can scan open PRs, classify failures, create/update lanes, assign/nudge workers, watch CI, and merge/automerge green PRs with JSON evidence.",
+    "At least one shared incident and at least 2-3 individual PR repair flows have reached merged/automerge/superseded/blocked-with-evidence states.",
+    "Verifier gate prevents red required-check merges, out-of-scope diffs, stale/superseded PRs, and multi-owner lane conflicts.",
+    "Agent-surface parity is checked or generated for Claude/Codex with CLI fallback, and canonical plugin source identity is resolved.",
+    "Failure signatures are retrievable from ICM and projected into `.handoff/pr-repair/lessons` where useful.",
+    "Final `.handoff/packets/latest.md` explains the implemented system, open limitations, exact commands, and proof artifacts."
+  ],
+  "test_commands": [
+    "hf status --json",
+    "rtk meta pr-repair scan --json || scripts/pr-repair scan --json",
+    "gh pr list --owner FlexNetOS --state open --json repository,number,title"
+  ],
+  "dependencies": [
+    "TASK-PRR-0001",
+    "TASK-PRR-0002",
+    "TASK-PRR-0003",
+    "TASK-PRR-0004",
+    "TASK-PRR-0005",
+    "TASK-PRR-0006",
+    "TASK-PRR-0007",
+    "TASK-PRR-0008",
+    "TASK-PRR-0009",
+    "TASK-PRR-0010",
+    "TASK-PRR-0011",
+    "TASK-PRR-0012",
+    "TASK-PRR-0013",
+    "TASK-PRR-0014",
+    "TASK-PRR-0015",
+    "TASK-PRR-0016"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0001",
+    "TASK-PRR-0002",
+    "TASK-PRR-0003",
+    "TASK-PRR-0004",
+    "TASK-PRR-0005",
+    "TASK-PRR-0006",
+    "TASK-PRR-0007",
+    "TASK-PRR-0008",
+    "TASK-PRR-0009",
+    "TASK-PRR-0010",
+    "TASK-PRR-0011",
+    "TASK-PRR-0012",
+    "TASK-PRR-0013",
+    "TASK-PRR-0014",
+    "TASK-PRR-0015",
+    "TASK-PRR-0016"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-full-idea-capstone-20260627",
+  "role": "verifier",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:18439488baefb3c0bd53c472cedd16ab33840fcb7d892803a531b40fac79da33",
+    "path_scope_hash": "blake3:920dee708b1db623327e3b2add9025dd15a3a36b511f094eaf1db8d52499596c",
+    "acceptance_hash": "blake3:916bfa7868aef5e4042c4b991411b22a49c08bca61d3e7c12fc287dc9a4cd2a0"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0014",
+  "title": "[architect] Resolve meta plugin canonical source identity",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Resolve and, if FlexNetOS/meta is canonical, repair the plugin/marketplace source ambiguity where Codex cache and marketplace metadata point at `gitkb/meta` while this environment treats `FlexNetOS/meta` as local source of truth.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:meta plugin metadata",
+    "external:Codex plugin cache",
+    "external:marketplace metadata"
+  ],
+  "acceptance_criteria": [
+    "Decision artifact states whether `FlexNetOS/meta`, `gitkb/meta`, or another repo is canonical for this environment.",
+    "If FlexNetOS/meta is canonical, source marketplace/plugin metadata is updated or a follow-up implementation PR is created with parity proof.",
+    "Codex/Claude parity checks use the canonical source decision and no longer leave plugin package identity ambiguous.",
+    "No plugin metadata is changed without proving equivalent behavior or documenting the migration path."
+  ],
+  "test_commands": [
+    "rtk meta --help",
+    "/usr/bin/find ~/.codex /home/drdave/Desktop/meta -path \"*plugin*\" -maxdepth 6 2>/dev/null | head -100"
+  ],
+  "dependencies": [
+    "TASK-PRR-0004"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0004"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-meta-plugin-source-canonicalization-20260627",
+  "role": "architect",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:471aee0a00437e531ec0141a3741a93d787689df4f7909c08df0acdaba693c24",
+    "path_scope_hash": "blake3:28df1c85f77da73b0e99bf753f3db1e338693288c4de2600323d40f676f6d735",
+    "acceptance_hash": "blake3:51719d9e3f0e115b5940602348748eb9eb133c73c4f5d4c0b41503dbbc6d9748"
+  }
+}

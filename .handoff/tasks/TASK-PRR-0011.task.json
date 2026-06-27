@@ -1,0 +1,52 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0011",
+  "title": "[verifier] Implement PR-repair verifier and merge gatekeeper",
+  "status": "backlog",
+  "priority": "P0",
+  "objective": "Implement/prove the verifier component that owns merge decisions: inspect lane status, diff scope, required checks, review state, dirty state, supersession, and mergeability before enabling automerge or merging green PRs.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:meta pr-repair verifier",
+    "external:GitHub PRs"
+  ],
+  "acceptance_criteria": [
+    "Verifier checks `rtk meta git worktree status <lane>`, `rtk meta git worktree diff <lane> --base <base>`, PR checks, merge state, draft/review status, and supersession evidence.",
+    "Merge/automerge is refused unless branch diff matches intended scope, required checks are green, no blocking review remains, no unrelated dirty state remains, and PR is not superseded.",
+    "Verifier can close/regenerate superseded PRs only with explicit replacement evidence.",
+    "Verifier emits JSON evidence suitable for `.handoff/pr-repair/queue.jsonl` and final handoff packets."
+  ],
+  "test_commands": [
+    "rtk meta git worktree status <lane>",
+    "gh pr view <PR> --json mergeStateStatus,isDraft,reviewDecision,statusCheckRollup"
+  ],
+  "dependencies": [
+    "TASK-PRR-0002",
+    "TASK-PRR-0010"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0002",
+    "TASK-PRR-0010"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-verifier-gatekeeper-20260627",
+  "role": "verifier",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:8a64d5cfcb4a348c2232972288771f9a7cb6922ce980e94f8b2be3683b2f7ae6",
+    "path_scope_hash": "blake3:4206435569d685ee2af3eda38d77b671812203de96412be96aa231c8edbf1ae5",
+    "acceptance_hash": "blake3:e9ad84b9e642ae8d2a052c9a67d02c391cffc8cb7ccf688554d8b9fd413f9ee4"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0015",
+  "title": "[supervisor] Add fleet snapshot and dependency-aware verification planning",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Add the safe fleet discipline from `.idea`: require meta fleet snapshots/restore plans before broad repair operations and use scoped `meta exec` includes/tags with dependency-ordered validation plans for repair lanes.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:meta git snapshot",
+    "external:meta exec"
+  ],
+  "acceptance_criteria": [
+    "Supervisor runbooks require `rtk meta git status` and a snapshot/restore decision before any broad multi-repo repair operation.",
+    "Repair tickets include a narrow reproducer first, then scoped `meta exec --include/--tag` commands, and `--ordered` when dependency order matters.",
+    "Snapshot restore instructions are documented for failed broad operations, with evidence capture before rollback.",
+    "The verification planner avoids broad expensive checks when targeted checks prove the failure/fix, but escalates to full required gates before merge."
+  ],
+  "test_commands": [
+    "rtk meta git status",
+    "rtk meta exec --help || true",
+    "rtk meta git snapshot --help || true"
+  ],
+  "dependencies": [
+    "TASK-PRR-0005"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0005"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-safe-fleet-verification-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:5edd7ffc92bb2c178bb26dbbc6d11af6eaa7dd20723b18914c4f91674f1afa75",
+    "path_scope_hash": "blake3:257b8193db8e008464b89e6be2735b87f3d7327ba7e7b5177af91079a49ca28a",
+    "acceptance_hash": "blake3:1db1899bc6acf3b5c2fec6faae1354c45c46970f5b1d794d20ae7729a5a45337"
+  }
+}
