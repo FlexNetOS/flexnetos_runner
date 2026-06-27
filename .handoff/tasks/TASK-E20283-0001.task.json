@@ -1,0 +1,29 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-E20283-0001",
+  "title": "[architect] Create a handoff ADR that defines cloud_ultra as a symbolic ",
+  "status": "done",
+  "priority": "P1",
+  "objective": "Explain: Create a handoff ADR that defines cloud_ultra as a symbolic reviewer role and future agent team identity, records FlexNetOS/flexnetos_runner as the GitHub operations control plane for reviewer resolution policy, and add/track the work through a .handoff task.",
+  "path_scope": [
+    ".handoff/**"
+  ],
+  "acceptance_criteria": [
+    "[architect] The deliverable is captured as a reviewable artifact and the existing suite stays green under `cargo test`.",
+    "Drift audit passes: no out-of-scope write (edits stay within path_scope) and the intent_lock is unchanged."
+  ],
+  "test_commands": [
+    "cargo test"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "allows_network": false,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-cloud-ultra-reviewer-adr-20260627",
+  "role": "architect",
+  "intent_lock": {
+    "objective_hash": "blake3:9d39b0d4936474ca9bc6862ed8c1a4e726ce689abca48cdb14da40bce85a5e0c",
+    "path_scope_hash": "blake3:32c7b3bfd6fa8d18102b3d53b57432518b3c19009c499ea7cb6dcea0ab10d3f1",
+    "acceptance_hash": "blake3:dc862c85a245fb22a68db8c4d615ce48b08c14b3a10473b21b29076aac1c5b5e"
+  }
+}
