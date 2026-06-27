@@ -1,0 +1,46 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0008",
+  "title": "[supervisor] Triage current PR pile and clear green/stale/superseded work",
+  "status": "backlog",
+  "priority": "P0",
+  "objective": "Run the immediate PR-pile triage intended by `.handoff/.idea`: prioritize runner-smoke/meta CI, meta/envctl infrastructure, repeated Linux integration failures, Dependabot/release PRs, and old stale PRs; rerun stale queued checks once, update behind green candidates, merge/automerge green PRs, and close/rebase/regenerate superseded PRs with evidence.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:FlexNetOS GitHub PRs"
+  ],
+  "acceptance_criteria": [
+    "A fresh FlexNetOS open-PR scan is captured with repository, number, title, head/base, merge state, required/advisory checks, and last run ids.",
+    "Every green_candidate is either merged/automerge armed, updated if behind, or documented with a blocker.",
+    "Every stale_queued item is rerun once before any repair worker is assigned.",
+    "Every superseded or old stale PR is closed/rebased/regenerated or documented with exact reason it remains open.",
+    "The triage result is committed under `.handoff/pr-repair/scans` or `.handoff/pr-repair/queue.jsonl` and lessons/signatures are stored when reusable."
+  ],
+  "test_commands": [
+    "rtk meta git status",
+    "gh search prs --owner FlexNetOS --state open --json repository,number,title,url,headRefName,updatedAt"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-current-pile-triage-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:89e8aea4abd3f773cd025b30211d4595141d36b9e426f81420fbd912acbd8ad3",
+    "path_scope_hash": "blake3:beac96b162790da66599ae4c22c9c3aea74dc817a399f2d017e621fc720f5204",
+    "acceptance_hash": "blake3:ee908d853615109c0714685df2ccac8e6c60e3393d5299a5fb832a6c949daf16"
+  }
+}

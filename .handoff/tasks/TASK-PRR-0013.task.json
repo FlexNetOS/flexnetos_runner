@@ -1,0 +1,53 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0013",
+  "title": "[architect] Decide GitHub App, trigger, secrets, and runner metrics integration",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Resolve FlexNetOS runner/GitHub App integration for the supervisor: choose trigger mode (cron/polling, GitHub webhook through flexnetos_github_app, manual command, workflow_dispatch, or handoff loop), decide where repair agents run, define secret minting/scoping, and feed runner evaluator metrics into lane-capacity decisions.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:flexnetos_runner",
+    "external:flexnetos_github_app",
+    "external:envctl secretctl"
+  ],
+  "acceptance_criteria": [
+    "A committed architecture note chooses the supervisor trigger path for v1 and records rejected alternatives with reasons.",
+    "Secret minting/scoping is defined, including GitHub App permissions and TTLs for scan, rerun, update-branch, push, and merge operations.",
+    "Decision records whether workers run as local sessions, GitHub Actions jobs, or hybrid lanes, and how that affects runner capacity.",
+    "Runner evaluator outputs are mapped into supervisor capacity/health decisions instead of relying on ad-hoc runner-status assumptions."
+  ],
+  "test_commands": [
+    "scripts/eval-runners.sh --help",
+    "gh auth status || true"
+  ],
+  "dependencies": [
+    "TASK-PRR-0005",
+    "TASK-PRR-0007"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0005",
+    "TASK-PRR-0007"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-github-app-runner-integration-20260627",
+  "role": "architect",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:7525fab315f2f4549df3af2b038b47e67f714fd5a1f2cf7fa7390b09e242ae4c",
+    "path_scope_hash": "blake3:410e6fd7897716bcd45cf7003162e9f1275ceefd696f95b29e00e2faa83ad179",
+    "acceptance_hash": "blake3:ce3a0bb523c420c64b3063d94981663f471e8c9f9315f7ad237733737411ddb6"
+  }
+}

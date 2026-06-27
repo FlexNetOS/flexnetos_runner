@@ -1,0 +1,51 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0012",
+  "title": "[supervisor] Build durable failure-signature learning system",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Turn repeated CI failures into durable learning: define signature taxonomy, ICM storage rules, `.handoff/pr-repair/lessons` projection, replay/recall workflow, and noise controls so recurring failures become repair playbooks instead of chat-only notes.",
+  "path_scope": [
+    ".handoff/pr-repair/lessons/**",
+    ".handoff/pr-repair/**",
+    "external:ICM"
+  ],
+  "acceptance_criteria": [
+    "A failure-signature schema captures repo/check/command/root-cause/affected PRs/fix/playbook/confidence/staleness.",
+    "Confirmed repeated/root-caused failures are stored in ICM with stable keywords and projected into `.handoff/pr-repair/lessons` when useful.",
+    "Transient logs are not stored as durable memory unless reduced to a reusable signature.",
+    "Supervisor classification consults prior signatures before creating duplicate lanes.",
+    "At least one existing envctl gates signature is migrated or validated against the schema."
+  ],
+  "test_commands": [
+    "icm recall-context \"pr-repair failure signature\" --limit 5 || true",
+    "rtk meta git status"
+  ],
+  "dependencies": [
+    "TASK-PRR-0003"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0003"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-durable-learning-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:904293e924766260e02888d720685bb2ca34adee560dfbd69e0d05d32a67037b",
+    "path_scope_hash": "blake3:74727530ab5821d32248996f897d38dad2694fa4085bbad66f62da3ca32f7d4a",
+    "acceptance_hash": "blake3:fc7e4bff16c87f4503f632855bc8a7be1e5a07b4017c5df016ef8521fd26b3c3"
+  }
+}

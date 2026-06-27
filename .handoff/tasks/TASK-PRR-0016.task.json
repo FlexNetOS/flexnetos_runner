@@ -1,0 +1,56 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0016",
+  "title": "[supervisor] Prove manual workflow on 2-3 failed PRs",
+  "status": "backlog",
+  "priority": "P0",
+  "objective": "Satisfy the v3 immediate implementation order by proving the manual supervisor workflow on 2-3 real failed PRs, not just one documentation/self PR: scan, classify, rerun stale checks, create lanes or route live-session nudges, assign workers, verify outcomes, and record merge/block/supersede results.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:2-3 selected FlexNetOS PRs"
+  ],
+  "acceptance_criteria": [
+    "At least 2-3 real failed or blocked PRs are selected with no owner-lane ambiguity or with owner routing explicitly resolved.",
+    "Each selected PR has a classification, lane/nudge decision, repair/verification evidence, and final state: merged, automerge armed, superseded/closed, or blocked with exact evidence.",
+    "The proof uses existing commands first and does not require the final automated supervisor to exist.",
+    "Lessons and repeated signatures are stored when encountered."
+  ],
+  "test_commands": [
+    "rtk meta project list --json",
+    "rtk meta git status",
+    "gh pr view <PR> --json statusCheckRollup,mergeStateStatus"
+  ],
+  "dependencies": [
+    "TASK-PRR-0008",
+    "TASK-PRR-0009",
+    "TASK-PRR-0011",
+    "TASK-PRR-0012"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0008",
+    "TASK-PRR-0009",
+    "TASK-PRR-0011",
+    "TASK-PRR-0012"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-manual-2-3-proof-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:f764788cf7b8cca61dc0ea30d882391414dc1adf639758898b9920d3dc53e9c8",
+    "path_scope_hash": "blake3:6c877b088bc3a1b9129a908ca11707c0379ec1c01d3266273c5148ee9fc95fbe",
+    "acceptance_hash": "blake3:b0e131a290ec12b35f240c36af1b93197622a952153477c816f875a67e2c8cc1"
+  }
+}

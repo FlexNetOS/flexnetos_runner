@@ -1,0 +1,51 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0009",
+  "title": "[supervisor] Implement live-session ownership and nudge routing",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Build/prove the routing rule from `.idea`: discover whether a failing PR is owned by a live/original session or existing lane; send that session an exact failure-payload nudge when ownership is clear; otherwise spawn or assign a clean repair worker lane.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:weave/session state",
+    "external:meta worktree metadata",
+    "external:agent runtime"
+  ],
+  "acceptance_criteria": [
+    "Ownership discovery checks current meta worktrees, branch ownership metadata, PR author/head ref, and any available live session registry before assignment.",
+    "A live-session nudge template is materialized with PR URL, failing checks, log links/excerpts, scope, validation commands, and stop conditions.",
+    "If ownership is stale/unclear, the supervisor records why a clean worker is required and creates/updates the repair lane instead of reviving stale context.",
+    "No PR can have more than one active repair owner unless supervisor explicitly reclassifies it as a shared incident."
+  ],
+  "test_commands": [
+    "rtk meta git worktree list --json",
+    "rtk meta git status"
+  ],
+  "dependencies": [
+    "TASK-PRR-0003"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0003"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-live-session-routing-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:0c0aeaaeda181d84f735b02fb12aecd4c04778a8f81283a160ec15a6af2811f0",
+    "path_scope_hash": "blake3:53d80b6b7d2a056035eb635958cd400a3e2085f659fc563477e81530db23fffc",
+    "acceptance_hash": "blake3:924d3f9024efd80edfac4b0640f454d202675e362ec5a1817a99923260f98fbf"
+  }
+}

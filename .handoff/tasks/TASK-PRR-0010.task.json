@@ -1,0 +1,50 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0010",
+  "title": "[architect] Define platform lanes and per-repo required check policy",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Create explicit Linux, Windows, and macOS/platform-specific PR repair lane policy plus a per-repo required-vs-advisory check map so verifier and supervisor can route platform failures correctly and avoid merging red required checks.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:GitHub branch protection/check rules",
+    "external:.github/workflows/**"
+  ],
+  "acceptance_criteria": [
+    "A committed policy artifact lists required and advisory checks per high-priority repo or explains how they are discovered from GitHub branch protection.",
+    "Windows-only, macOS-only, Linux integration, and repeated cross-platform failures have distinct classifications and lane naming rules.",
+    "Verifier policy says red required checks block merge; advisory/non-required reds require explicit documented rationale before merge.",
+    "Platform lane prompts include OS-specific reproducer/log commands and fallback behavior when local reproduction is unavailable."
+  ],
+  "test_commands": [
+    "gh pr view <PR> --json statusCheckRollup,mergeStateStatus",
+    "gh api repos/<OWNER>/<REPO>/branches/<BRANCH>/protection || true"
+  ],
+  "dependencies": [
+    "TASK-PRR-0003"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0003"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-platform-policy-20260627",
+  "role": "architect",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Expanded from .handoff/.idea intent after the initial TASK-PRR set proved too broad.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v5-control-plane-map.md",
+      ".handoff/.idea/meta-skill-loading-parity-map.md",
+      ".handoff/.idea/pr-repair-control-plane-map.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:eea03737810a77649240474cbda23dccbbb3b8b0bdbbec98203f264b764cefe1",
+    "path_scope_hash": "blake3:861b20bc264b42b5217bf9d0adc7c1f0c260e45451ceb06c46e6caa6f2ebdb48",
+    "acceptance_hash": "blake3:1344d093d1caa2aa9ce1040b90031381ed5a571a6645aa17f1d0d90498ccfed6"
+  }
+}
