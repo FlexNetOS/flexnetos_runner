@@ -679,6 +679,24 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "Codex custom agents live under .codex/agents and can encode narrow reviewer or auditor roles with model and sandbox defaults.",
         },
         LoopComponent {
+            id: "subagent-roster",
+            surface: "agents",
+            path: ".codex/agents/forge-loop-researcher.toml",
+            rationale: "Codex subagent docs recommend narrow project-scoped custom agents for parallelizable research and review work.",
+        },
+        LoopComponent {
+            id: "ci-sentinel-subagent",
+            surface: "agents",
+            path: ".codex/agents/forge-loop-ci-sentinel.toml",
+            rationale: "Programmatic Codex Action runs need a focused CI/release readiness reviewer for workflow, artifact, and gate evidence.",
+        },
+        LoopComponent {
+            id: "permission-profile-blueprint",
+            surface: "permissions",
+            path: ".codex/permissions/forge-loop-workspace.toml",
+            rationale: "Codex permission profiles provide a least-privilege migration target, but must stay separate while sandbox_mode remains active.",
+        },
+        LoopComponent {
             id: "skill",
             surface: "skills",
             path: ".agents/skills/forge-loop-research/SKILL.md",
@@ -695,6 +713,18 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "tools",
             path: ".github/workflows/codex-forge-loop.yml",
             rationale: "Codex GitHub Action docs describe openai/codex-action with prompt-file, codex-args, model, effort, sandbox, output-file, and safety controls for programmatic loop runs.",
+        },
+        LoopComponent {
+            id: "codex-output-schema",
+            surface: "tools",
+            path: ".github/codex/schemas/forge-loop-output.schema.json",
+            rationale: "Codex GitHub Action docs allow --output-schema through codex-args so forge-loop automation can require structured evidence.",
+        },
+        LoopComponent {
+            id: "target-mining-ledger",
+            surface: "docs",
+            path: "docs/forge-loop/codex-target-mining.md",
+            rationale: "Deep target mining needs a source-attributed extraction ledger so future loops can distinguish applied upgrades from unmined leads.",
         },
     ]
 }
@@ -1615,7 +1645,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 8);
+        assert_eq!(report.checked_components, 13);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -1636,7 +1666,15 @@ mod tests {
             .collect::<Vec<_>>();
 
         for required in [
-            "prompt", "config", "hooks", "rules", "agents", "skills", "tools",
+            "prompt",
+            "config",
+            "hooks",
+            "rules",
+            "agents",
+            "permissions",
+            "skills",
+            "tools",
+            "docs",
         ] {
             assert!(
                 surfaces.contains(&required),
@@ -1657,9 +1695,13 @@ mod tests {
         for required in [
             "https://developers.openai.com/codex/config-advanced",
             "https://developers.openai.com/codex/github-action",
+            "https://developers.openai.com/codex/permissions",
+            "https://developers.openai.com/codex/subagents",
             "components-audit",
             "model flags",
             "custom agents/subagents",
+            "permission profiles",
+            "structured output schemas",
         ] {
             assert!(skill.contains(required), "skill missing {required}");
         }
@@ -1678,13 +1720,65 @@ mod tests {
             "openai/codex-action@v1",
             "prompt-file:",
             "codex-args:",
+            "--output-schema",
+            ".github/codex/schemas/forge-loop-output.schema.json",
             "model:",
             "effort:",
             "sandbox: workspace-write",
             "safety-strategy: drop-sudo",
+            "allow-bots:",
             "output-file:",
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
+        }
+    }
+
+    #[test]
+    fn codex_deep_target_mining_surfaces_are_guarded() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let config = fs::read_to_string(root.join(".codex/config.toml")).expect("read config");
+        let hooks = fs::read_to_string(root.join(".codex/hooks.json")).expect("read hooks");
+        let permissions =
+            fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
+                .expect("read permission blueprint");
+        let ledger = fs::read_to_string(root.join("docs/forge-loop/codex-target-mining.md"))
+            .expect("read mining ledger");
+
+        assert!(
+            config.contains("sandbox_mode"),
+            "active config should still use the older sandbox surface"
+        );
+        assert!(
+            permissions.contains("default_permissions")
+                && permissions.contains("**/*.env")
+                && permissions.contains("developers.openai.com")
+                && permissions.contains("github.com"),
+            "permission blueprint must encode least-privilege filesystem and network intent"
+        );
+        assert!(
+            !config.contains("default_permissions"),
+            "do not mix active permission profiles with sandbox_mode"
+        );
+        for required in [
+            "PreToolUse",
+            "SubagentStart",
+            "SubagentStop",
+            "forge_loop_pre_tool_use.py",
+            "forge_loop_subagent_summary.py",
+        ] {
+            assert!(hooks.contains(required), "hooks missing {required}");
+        }
+        for required in [
+            "developers.openai.com/codex/github-action",
+            "developers.openai.com/codex/permissions",
+            "developers.openai.com/codex/subagents",
+            "RoggeOhta/awesome-codex-cli",
+            "Yeachan-Heo/oh-my-codex",
+        ] {
+            assert!(ledger.contains(required), "ledger missing {required}");
         }
     }
 

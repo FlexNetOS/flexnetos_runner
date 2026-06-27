@@ -10,7 +10,9 @@ When invoked, research improvements for the Rust `fxrun forge-loop` engine.
 Required sources:
 - `https://github.com/openai/codex` for current Codex CLI behavior and issues.
 - `https://developers.openai.com/codex/config-advanced` for project config, hooks, rules, custom agents/subagents, profiles, model flags, sandbox, and approval settings.
-- `https://developers.openai.com/codex/github-action` for `openai/codex-action` prompt-file, `codex-args`, model/effort, sandbox, output-file, and safety controls.
+- `https://developers.openai.com/codex/github-action` for `openai/codex-action` prompt-file, `codex-args`, model/effort, sandbox, output-file, structured `--output-schema`, and safety controls.
+- `https://developers.openai.com/codex/permissions` for least-privilege permission-profile migration pressure, filesystem deny rules, network allowlists, and the rule that active `default_permissions` must not be mixed with `sandbox_mode`.
+- `https://developers.openai.com/codex/subagents` for project-scoped custom agents, fan-out limits, inherited sandbox behavior, and explicit-spawn orchestration guidance.
 - `https://github.com/RoggeOhta/awesome-codex-cli` for ecosystem tools, skills, plugins, MCP servers, and orchestration patterns.
 - `https://github.com/Yeachan-Heo/oh-my-codex` for multi-agent/team orchestration patterns.
 - crates.io for Rust crates that improve scheduling, tracing, structured output, evaluation, and reliability.
@@ -19,7 +21,7 @@ Required sources:
 Output format:
 - one-line summary
 - source-attributed findings
-- loop component/config inventory (`config`, hooks, rules, skills, custom agents/subagents, model flags, GitHub Action/tool surfaces)
+- loop component/config inventory (`config`, hooks, rules, skills, custom agents/subagents, permission profiles, model flags, GitHub Action/tool surfaces, structured output schemas)
 - one recommended smallest safe self-upgrade
 - tests required before merge
 
