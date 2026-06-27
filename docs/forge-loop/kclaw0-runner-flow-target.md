@@ -25,6 +25,10 @@ The target is not considered complete if there are no active/queued runs and no 
 
 This still does not by itself prove the 12+ hour kclaw0 persistence target; that proof requires an observed window of repeated successful sustain runs and green PR flow over the full target interval. The 5-minute cadence plus 6-minute default duration creates queued/active overlap with more than the required 72 sustain opportunities over 12 hours while preserving seamless PR flow as the higher-priority invariant.
 
+## Runner Black Factor Watch and refill policy
+
+`runner-black-factor-watch.yml` runs from GitHub-hosted capacity so it does not consume the local self-hosted runner pool. It captures run and PR history, refills `Runner Sustain` when no active or queued sustain work exists, proves instantaneous `runner-flow-audit --strict`, records non-strict black-factor progress, and uploads the run/PR/audit files as evidence artifacts.
+
 ## Observed-window black-factor audit
 
 `fxrun forge-loop runner-black-factor-audit --strict` is the proof gate for any claim that this repo exceeded the kclaw0 target. It requires:

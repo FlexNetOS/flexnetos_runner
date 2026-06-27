@@ -1463,6 +1463,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "Runner sustain automation keeps self-hosted runner slots doing useful forge-loop audits on a schedule and by manual dispatch.",
         },
         LoopComponent {
+            id: "runner-black-factor-watch-workflow",
+            surface: "tools",
+            path: ".github/workflows/runner-black-factor-watch.yml",
+            rationale: "The black-factor watch workflow audits runner flow, refills Runner Sustain when sustain work disappears, and uploads run/PR evidence artifacts for the 12-hour proof window.",
+        },
+        LoopComponent {
             id: "codex-github-action",
             surface: "tools",
             path: ".github/workflows/codex-forge-loop.yml",
@@ -2464,7 +2470,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 25);
+        assert_eq!(report.checked_components, 26);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -3070,6 +3076,40 @@ mod tests {
         }
         assert!(target.contains("Bridge-duration sustain policy"));
         assert!(target.contains("12+ hour kclaw0 persistence target"));
+    }
+
+    #[test]
+    fn runner_black_factor_watch_refills_and_artifacts_evidence() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow =
+            fs::read_to_string(root.join(".github/workflows/runner-black-factor-watch.yml"))
+                .expect("read runner black-factor watch workflow");
+        let target = fs::read_to_string(root.join("docs/forge-loop/kclaw0-runner-flow-target.md"))
+            .expect("read kclaw0 runner target");
+
+        for required in [
+            "Runner Black Factor Watch",
+            "*/5 * * * *",
+            "runs-on: ubuntu-latest",
+            "actions: write",
+            "gh workflow run runner-sustain.yml --ref main",
+            "duration_minutes=6",
+            "runner-flow-audit",
+            "--strict",
+            "runner-black-factor-audit",
+            "createdAt,updatedAt",
+            "actions/upload-artifact@v4",
+        ] {
+            assert!(
+                workflow.contains(required),
+                "black-factor watch missing {required}"
+            );
+        }
+        assert!(target.contains("Runner Black Factor Watch"));
+        assert!(target.contains("refills `Runner Sustain`"));
     }
 
     #[test]
