@@ -445,14 +445,27 @@ fn applied_doc_features() -> Vec<AppliedDocFeature> {
             title: "Per-target single-flight mutex",
             module_path: "crates/runner-core/src/singleflight.rs",
         },
+        AppliedDocFeature {
+            title: "Rule-citation audit schema",
+            module_path: "crates/runner-core/src/events.rs",
+        },
     ]
 }
 
 fn markdown_blocks_containing(text: &str, needle: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut current = Vec::new();
+    let mut context = Vec::new();
 
     for line in text.lines() {
+        if line.starts_with("## ") || line.starts_with("### ") {
+            if !current.is_empty() {
+                blocks.push(current.join("\n"));
+                current.clear();
+            }
+            context.retain(|heading: &&str| heading.starts_with("## ") && line.starts_with("### "));
+            context.push(line);
+        }
         let starts_block = line.starts_with("- ")
             || line
                 .chars()
@@ -461,6 +474,9 @@ fn markdown_blocks_containing(text: &str, needle: &str) -> Vec<String> {
         if starts_block && !current.is_empty() {
             blocks.push(current.join("\n"));
             current.clear();
+        }
+        if starts_block {
+            current.extend(context.iter().copied());
         }
         current.push(line);
     }
@@ -475,11 +491,18 @@ fn markdown_blocks_containing(text: &str, needle: &str) -> Vec<String> {
 }
 
 fn block_is_queued(block: &str) -> bool {
+    if block.contains("APPLIED") {
+        return false;
+    }
     block.contains("**Queued")
         || block.contains("— Queued")
         || block.contains("- ▷")
         || block.contains("queued after")
         || block.contains("still said “Queued”")
+        || block.contains("deep code audit backlog")
+        || block.contains("Tier 0")
+        || block.contains("Tier 1")
+        || block.contains("Tier 2")
 }
 
 pub fn evaluate(input: EvalInput) -> EvalReport {
@@ -687,6 +710,38 @@ mod tests {
         let report = docs_drift_report(&root).expect("report");
         assert_eq!(report.drift.len(), 1);
         assert!(report.drift[0].contains("State-gated route admission"));
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn docs_drift_guard_flags_exported_feature_still_in_backlog_tier() {
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-docs-drift-tier-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("docs")).expect("docs dir");
+        fs::create_dir_all(root.join("crates/runner-core/src")).expect("src dir");
+        fs::write(root.join("crates/runner-core/src/events.rs"), "").expect("module");
+        fs::write(
+            root.join("docs/kclaw0-upgrade-ledger.md"),
+            "## Applied\n\
+             | Runner upgrade | Where |\n\
+             |---|---|\n\
+             | **Rule-citation audit schema** | `runner-core::events` |\n\
+             \n\
+             ### Tier 1 — automation and orchestration expansion\n\
+             11. **Rule-citation audit schema** — every policy refusal carries denial metadata.\n\
+             ",
+        )
+        .expect("ledger");
+
+        let report = docs_drift_report(&root).expect("report");
+        assert_eq!(report.drift.len(), 1);
+        assert!(report.drift[0].contains("Rule-citation audit schema"));
 
         fs::remove_dir_all(root).ok();
     }
