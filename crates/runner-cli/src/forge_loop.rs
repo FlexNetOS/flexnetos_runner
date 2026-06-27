@@ -23,6 +23,8 @@ pub enum ForgeLoopCommand {
     SelfUpgrade(SelfUpgradeArgs),
     /// Show local readiness for the Codex-backed forge loop.
     Doctor(DoctorArgs),
+    /// Diagnose pending required checks that need local self-hosted runners.
+    RunnerHealth(RunnerHealthArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
     DocsDrift(DocsDriftArgs),
 }
@@ -90,6 +92,16 @@ pub struct DoctorArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct RunnerHealthArgs {
+    /// JSON from `gh pr view <PR> --json statusCheckRollup`.
+    #[arg(long)]
+    pub checks_json: PathBuf,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct DocsDriftArgs {
     /// Workspace root to scan.
     #[arg(long, default_value = ".")]
@@ -146,6 +158,30 @@ pub struct DocsDriftReport {
     pub drift: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerHealthReport {
+    pub pending_local_checks: Vec<String>,
+    pub passed_local_checks: Vec<String>,
+    pub failed_local_checks: Vec<String>,
+    pub runner_pressure: bool,
+    pub recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CheckRollupPayload {
+    #[serde(default, rename = "statusCheckRollup")]
+    status_check_rollup: Vec<CheckRollupEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CheckRollupEntry {
+    name: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    conclusion: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CycleManifest {
     pub goal: String,
@@ -171,6 +207,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::Research(args) => research(args),
         ForgeLoopCommand::SelfUpgrade(args) => self_upgrade(args),
         ForgeLoopCommand::Doctor(args) => doctor(args),
+        ForgeLoopCommand::RunnerHealth(args) => runner_health(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
     }
 }
@@ -294,7 +331,8 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
         "allowed": allowed,
         "branch_prefix": "codex/forge-loop-self-upgrade",
         "merge_policy": "auto-merge green when repository settings allow; otherwise merge after green checks",
-        "strict_upgrade_only": true
+        "strict_upgrade_only": true,
+        "runner_health_input": "gh pr view <PR> --json statusCheckRollup"
     });
     println!("{}", serde_json::to_string_pretty(&plan)?);
     if args.dry_run || !allowed {
@@ -321,7 +359,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "research_sources": research_sources(),
         "phases": ["red", "implement", "gate", "evaluate", "research", "upgrade"],
         "auto_merge_green": true,
-        "strict_upgrade_only": true
+        "strict_upgrade_only": true,
+        "runner_health_input": "gh pr view <PR> --json statusCheckRollup"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -332,12 +371,98 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         println!("  phases             : red → implement → gate → evaluate → research → upgrade");
         println!("  auto-merge policy  : green PRs when repository settings allow");
         println!("  strict upgrade     : enabled");
+        println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
         println!("  research sources   :");
         for source in research_sources() {
             println!("    - {} ({})", source.id, source.url);
         }
     }
     Ok(())
+}
+
+fn runner_health(args: RunnerHealthArgs) -> Result<()> {
+    let report = runner_health_report(&args.checks_json)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop runner health");
+        if report.runner_pressure {
+            println!("  runner pressure    : detected");
+            println!("  pending local checks:");
+            for check in &report.pending_local_checks {
+                println!("    - {check}");
+            }
+        } else {
+            println!("  runner pressure    : clear");
+        }
+        println!("  recommendation     : {}", report.recommendation);
+    }
+    Ok(())
+}
+
+fn runner_health_report(path: &Path) -> Result<RunnerHealthReport> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("read check rollup {}", path.display()))?;
+    let payload = parse_check_rollup(&text)
+        .with_context(|| format!("parse check rollup {}", path.display()))?;
+    Ok(classify_runner_health(&payload.status_check_rollup))
+}
+
+fn parse_check_rollup(text: &str) -> Result<CheckRollupPayload> {
+    if let Ok(payload) = serde_json::from_str::<CheckRollupPayload>(text) {
+        return Ok(payload);
+    }
+    let status_check_rollup = serde_json::from_str::<Vec<CheckRollupEntry>>(text)
+        .context("parse statusCheckRollup array")?;
+    Ok(CheckRollupPayload {
+        status_check_rollup,
+    })
+}
+
+fn classify_runner_health(checks: &[CheckRollupEntry]) -> RunnerHealthReport {
+    let mut pending_local_checks = Vec::new();
+    let mut passed_local_checks = Vec::new();
+    let mut failed_local_checks = Vec::new();
+
+    for check in checks
+        .iter()
+        .filter(|check| is_local_runner_check(&check.name))
+    {
+        let status = check.status.to_ascii_lowercase();
+        let conclusion = check.conclusion.to_ascii_lowercase();
+        if matches!(status.as_str(), "queued" | "pending" | "in_progress") || conclusion.is_empty()
+        {
+            pending_local_checks.push(check.name.clone());
+        } else if conclusion == "success" {
+            passed_local_checks.push(check.name.clone());
+        } else {
+            failed_local_checks.push(check.name.clone());
+        }
+    }
+
+    pending_local_checks.sort();
+    pending_local_checks.dedup();
+    passed_local_checks.sort();
+    passed_local_checks.dedup();
+    failed_local_checks.sort();
+    failed_local_checks.dedup();
+
+    let runner_pressure = !pending_local_checks.is_empty();
+    RunnerHealthReport {
+        pending_local_checks,
+        passed_local_checks,
+        failed_local_checks,
+        runner_pressure,
+        recommendation: if runner_pressure {
+            "inspect self-hosted runner services and queued external jobs before waiting indefinitely"
+        } else {
+            "local self-hosted required checks are not currently queued"
+        },
+    }
+}
+
+fn is_local_runner_check(name: &str) -> bool {
+    matches!(name, "Local Linux CI" | "Semantic PR Title")
 }
 
 fn docs_drift(args: DocsDriftArgs) -> Result<()> {
@@ -978,6 +1103,64 @@ mod tests {
 
         assert!(prompt.contains("Do not start another cycle."));
         assert!(prompt.contains("PR title 'chore: forge loop cycle 07'"));
+    }
+
+    #[test]
+    fn runner_health_flags_pending_local_runner_checks() {
+        let payload = CheckRollupPayload {
+            status_check_rollup: vec![
+                CheckRollupEntry {
+                    name: "Local Linux CI".into(),
+                    status: "QUEUED".into(),
+                    conclusion: String::new(),
+                },
+                CheckRollupEntry {
+                    name: "Semantic PR Title".into(),
+                    status: "IN_PROGRESS".into(),
+                    conclusion: String::new(),
+                },
+                CheckRollupEntry {
+                    name: "Analyze (rust)".into(),
+                    status: "COMPLETED".into(),
+                    conclusion: "SUCCESS".into(),
+                },
+            ],
+        };
+
+        let report = classify_runner_health(&payload.status_check_rollup);
+
+        assert!(report.runner_pressure);
+        assert_eq!(
+            report.pending_local_checks,
+            vec![
+                "Local Linux CI".to_string(),
+                "Semantic PR Title".to_string()
+            ]
+        );
+        assert!(report.recommendation.contains("self-hosted runner"));
+    }
+
+    #[test]
+    fn runner_health_accepts_gh_pr_view_status_check_rollup_json() {
+        let payload = r#"{
+            "statusCheckRollup": [
+                {"name": "Local Linux CI", "status": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "Semantic PR Title", "status": "COMPLETED", "conclusion": "SUCCESS"}
+            ]
+        }"#;
+
+        let parsed = parse_check_rollup(payload).expect("gh pr view payload");
+        let report = classify_runner_health(&parsed.status_check_rollup);
+
+        assert!(!report.runner_pressure);
+        assert!(report.pending_local_checks.is_empty());
+        assert_eq!(
+            report.passed_local_checks,
+            vec![
+                "Local Linux CI".to_string(),
+                "Semantic PR Title".to_string()
+            ]
+        );
     }
 
     #[test]
