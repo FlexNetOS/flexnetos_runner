@@ -595,11 +595,18 @@ fn research_prompt(focus: &str, sources: &[ResearchSource]) -> String {
 }
 
 fn timestamp_label() -> Result<String> {
-    let secs = SystemTime::now()
+    timestamp_label_for(SystemTime::now())
+}
+
+fn timestamp_label_for(time: SystemTime) -> Result<String> {
+    let elapsed = time
         .duration_since(UNIX_EPOCH)
-        .context("system clock before UNIX_EPOCH")?
-        .as_secs();
-    Ok(format!("cycle-{secs}"))
+        .context("system clock before UNIX_EPOCH")?;
+    Ok(format!(
+        "cycle-{}-{:09}",
+        elapsed.as_secs(),
+        elapsed.subsec_nanos()
+    ))
 }
 
 fn append_event(path: &Path, event: CycleEvent<'_>) -> Result<()> {
@@ -693,6 +700,16 @@ mod tests {
         assert!(prompt.contains("speed"));
         assert!(prompt.contains("github.com/openai/codex"));
         assert!(prompt.contains("crates.io"));
+    }
+
+    #[test]
+    fn timestamp_labels_include_subsecond_entropy() {
+        let label = timestamp_label_for(
+            UNIX_EPOCH + std::time::Duration::from_secs(1) + std::time::Duration::from_millis(1),
+        )
+        .expect("label");
+
+        assert_eq!(label, "cycle-1-001000000");
     }
 
     #[test]
