@@ -147,6 +147,7 @@ pub struct DocsDriftReport {
 pub struct CycleManifest {
     pub goal: String,
     pub pr_title: String,
+    pub prompt_sha256: String,
     pub once: bool,
     pub auto_merge: bool,
     pub strict_upgrade_only: bool,
@@ -638,9 +639,11 @@ fn cycle_number_from_goal(goal: &str) -> Option<u8> {
 }
 
 fn cycle_manifest(args: &RunArgs) -> CycleManifest {
+    let prompt = cycle_prompt(&args.goal, args.auto_merge);
     CycleManifest {
         goal: args.goal.clone(),
         pr_title: cycle_pr_title(&args.goal),
+        prompt_sha256: runner_core::constitution::hash(prompt.as_bytes()),
         once: args.once,
         auto_merge: args.auto_merge,
         strict_upgrade_only: true,
@@ -859,6 +862,26 @@ mod tests {
         });
 
         assert_eq!(manifest.pr_title, "chore: forge loop cycle 08");
+    }
+
+    #[test]
+    fn cycle_manifest_records_prompt_hash_witness() {
+        let args = RunArgs {
+            goal: "Resume the interrupted 10-cycle objective: execute isolated cycle 09 of 10"
+                .into(),
+            out: PathBuf::from("_work/forge-loop"),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        };
+
+        let manifest = cycle_manifest(&args);
+        let prompt = cycle_prompt(&args.goal, args.auto_merge);
+
+        assert_eq!(
+            manifest.prompt_sha256,
+            runner_core::constitution::hash(prompt.as_bytes())
+        );
     }
 
     #[test]
