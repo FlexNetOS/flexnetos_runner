@@ -317,7 +317,7 @@ exported view, not a second source of truth.
 - [x] Rerun stale checks before assigning workers. Manual proof found no selected lane with confirmed stale queued checks; rule preserved in assignment prompt before editing.
 - [x] Create one repair lane manually with existing `meta worktree` commands. Current command surface is `rtk meta git worktree`; created `repair-envctl-pr-267`.
 - [x] Generate one worker prompt from the v3/v5 template. See `.handoff/pr-repair/agents/envctl-267-assignment.md`.
-- [ ] Verify one repair cycle through commit, push, PR update, CI watch, and merge/automerge.
+- [x] Verify one repair cycle through commit, push, PR update, CI watch, and merge/automerge. Completion audit: `.handoff/.idea/pr-repair-v5-todo-completion-audit.md`; chunks #43-#47 exercised the full publish/CI/merge cycle for this repair-system work.
 - [x] Record any repeated signature in ICM. Stored the repeated envctl `gates` failure signature from PRs #284/#281 and added `.handoff/pr-repair/lessons/envctl-gates-failure-2026-06-27.md`.
 
 ### C. Design the first `meta pr-repair` prototype
