@@ -332,11 +332,11 @@ exported view, not a second source of truth.
 
 ### D. Add agent-surface parity work
 
-- [ ] Decide canonical source for core `meta` skills/prompts.
-- [ ] Draft `meta init codex` / `meta sync codex-skills` design.
-- [ ] Add parity verifier concept for `.claude`, `.codex`, plugin cache, and `meta-mcp` availability.
-- [ ] Mirror future PR repair front doors for Claude and Codex from the same source.
-- [ ] Ensure every worker prompt includes `rtk meta` CLI fallback commands.
+- [x] Decide canonical source for core `meta` skills/prompts. Decision: `claude-plugin/skills/*/SKILL.md` is canonical for core meta guidance; Codex-specific runtime wrappers stay in `.codex` templates.
+- [x] Draft `meta init codex` / `meta sync codex-skills` design. Captured in `pr-repair-agent-surface-parity-plan.md`.
+- [x] Add parity verifier concept for `.claude`, `.codex`, plugin cache, and `meta-mcp` availability. Captured as `meta parity check agent-surfaces --json` sketch.
+- [x] Mirror future PR repair front doors for Claude and Codex from the same source. Target surfaces documented for Claude commands/skills and Codex prompts/agents.
+- [x] Ensure every worker prompt includes `rtk meta` CLI fallback commands. Added mandatory worker prompt invariant.
 
 ### E. Operational safeguards
 
