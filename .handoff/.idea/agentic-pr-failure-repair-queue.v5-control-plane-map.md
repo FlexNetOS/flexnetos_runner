@@ -312,11 +312,11 @@ exported view, not a second source of truth.
 
 ### B. Prove manual supervisor mode
 
-- [ ] Run a manual scan of open FlexNetOS PRs and check states.
-- [ ] Classify at least 2-3 PRs into stale, real regression, platform-specific, superseded, or shared incident.
-- [ ] Rerun stale checks before assigning workers.
-- [ ] Create one repair lane manually with existing `meta worktree` commands.
-- [ ] Generate one worker prompt from the v3/v5 template.
+- [x] Run a manual scan of open FlexNetOS PRs and check states. Captured in `.handoff/pr-repair/scans/2026-06-27-open-prs.json` and manual proof notes.
+- [x] Classify at least 2-3 PRs into stale, real regression, platform-specific, superseded, or shared incident. Captured 10 live classifications in `.handoff/pr-repair/scans/2026-06-27-classifications.json`.
+- [x] Rerun stale checks before assigning workers. Manual proof found no selected lane with confirmed stale queued checks; rule preserved in assignment prompt before editing.
+- [x] Create one repair lane manually with existing `meta worktree` commands. Current command surface is `rtk meta git worktree`; created `repair-envctl-pr-267`.
+- [x] Generate one worker prompt from the v3/v5 template. See `.handoff/pr-repair/agents/envctl-267-assignment.md`.
 - [ ] Verify one repair cycle through commit, push, PR update, CI watch, and merge/automerge.
 - [ ] Record any repeated signature in ICM.
 
