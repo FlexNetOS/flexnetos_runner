@@ -2948,13 +2948,14 @@ mod tests {
 
         for required in [
             "duration_minutes",
-            "default: '5'",
+            "default: '6'",
             "*/5 * * * *",
             "timeout-minutes: 10",
             "while [",
             "runner-sustain slot=",
             "tick_seconds",
             "Yield to pull-request local checks",
+            "yielding mid-run",
             "gh pr list --state open",
         ] {
             assert!(
@@ -2999,6 +3000,7 @@ mod tests {
             "12+ hour",
             "24/7 autonomous",
             "reserve-safe local runner lane",
+            "queued/active overlap",
             "preserving seamless PR flow",
         ] {
             assert!(
