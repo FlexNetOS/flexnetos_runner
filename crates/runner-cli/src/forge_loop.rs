@@ -127,7 +127,7 @@ pub struct RunnerHealthArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct RunnerBlackFactorAuditArgs {
-    /// JSON from `gh run list --json name,status,conclusion,createdAt,event,url`.
+    /// JSON from `gh run list --json name,status,conclusion,createdAt,updatedAt,event,url`.
     #[arg(long)]
     pub runs_json: PathBuf,
     /// JSON from `gh pr list --state all --json state,mergedAt,statusCheckRollup,url`.
@@ -136,9 +136,12 @@ pub struct RunnerBlackFactorAuditArgs {
     /// Minimum observed wall-clock window in hours.
     #[arg(long, default_value_t = 12)]
     pub min_window_hours: u64,
-    /// Minimum successful Runner Sustain workflow runs in the window.
+    /// Minimum duration-proven successful Runner Sustain workflow runs in the window.
     #[arg(long, default_value_t = 72)]
     pub min_sustain_runs: usize,
+    /// Minimum wall-clock duration required before a Runner Sustain success counts as useful work.
+    #[arg(long, default_value_t = 5)]
+    pub min_sustain_duration_minutes: u64,
     /// Minimum merged PRs with clean required checks in the window.
     #[arg(long, default_value_t = 1)]
     pub min_clean_merged_prs: usize,
@@ -270,6 +273,8 @@ pub struct RunnerBlackFactorAuditReport {
     pub min_window_minutes: u64,
     pub successful_sustain_runs: usize,
     pub min_sustain_runs: usize,
+    pub min_sustain_duration_minutes: u64,
+    pub short_or_unproven_sustain_runs: usize,
     pub clean_merged_prs: usize,
     pub min_clean_merged_prs: usize,
     pub exceeded: bool,
@@ -310,6 +315,8 @@ struct WorkflowRunEntry {
     name: String,
     #[serde(default, rename = "createdAt")]
     created_at: Option<String>,
+    #[serde(default, rename = "updatedAt")]
+    updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -692,6 +699,14 @@ fn runner_black_factor_audit(args: RunnerBlackFactorAuditArgs) -> Result<()> {
             report.successful_sustain_runs
         );
         println!("  required sustain     : {}", report.min_sustain_runs);
+        println!(
+            "  min sustain duration : {} minutes",
+            report.min_sustain_duration_minutes
+        );
+        println!(
+            "  short/unproven runs  : {}",
+            report.short_or_unproven_sustain_runs
+        );
         println!("  clean merged PRs     : {}", report.clean_merged_prs);
         println!("  required clean PRs   : {}", report.min_clean_merged_prs);
         println!("  exceeded             : {}", report.exceeded);
@@ -722,9 +737,14 @@ fn runner_black_factor_audit_report(
     let successful_sustain_runs = runs
         .iter()
         .filter(|run| {
-            run.name == "Runner Sustain"
-                && run.status.eq_ignore_ascii_case("completed")
-                && run.conclusion.eq_ignore_ascii_case("success")
+            runner_sustain_duration_minutes(run, args.min_sustain_duration_minutes).is_some()
+        })
+        .count();
+    let short_or_unproven_sustain_runs = runs
+        .iter()
+        .filter(|run| is_successful_runner_sustain(run))
+        .filter(|run| {
+            runner_sustain_duration_minutes(run, args.min_sustain_duration_minutes).is_none()
         })
         .count();
 
@@ -768,11 +788,41 @@ fn runner_black_factor_audit_report(
         min_window_minutes,
         successful_sustain_runs,
         min_sustain_runs: args.min_sustain_runs,
+        min_sustain_duration_minutes: args.min_sustain_duration_minutes,
+        short_or_unproven_sustain_runs,
         clean_merged_prs,
         min_clean_merged_prs: args.min_clean_merged_prs,
         exceeded,
         missing_evidence,
     })
+}
+
+fn is_successful_runner_sustain(run: &WorkflowRunEntry) -> bool {
+    run.name == "Runner Sustain"
+        && run.status.eq_ignore_ascii_case("completed")
+        && run.conclusion.eq_ignore_ascii_case("success")
+}
+
+fn runner_sustain_duration_minutes(
+    run: &WorkflowRunEntry,
+    min_duration_minutes: u64,
+) -> Option<u64> {
+    if !is_successful_runner_sustain(run) {
+        return None;
+    }
+    let created = run
+        .created_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc_seconds)?;
+    let updated = run
+        .updated_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc_seconds)?;
+    if updated < created {
+        return None;
+    }
+    let duration_minutes = ((updated - created) / 60) as u64;
+    (duration_minutes >= min_duration_minutes).then_some(duration_minutes)
 }
 
 fn parse_rfc3339_utc_seconds(value: &str) -> Option<i64> {
@@ -2513,6 +2563,7 @@ mod tests {
             prs_json: prs,
             min_window_hours: 12,
             min_sustain_runs: 72,
+            min_sustain_duration_minutes: 5,
             min_clean_merged_prs: 1,
             json: true,
             strict: false,
@@ -2522,6 +2573,7 @@ mod tests {
         assert!(!report.exceeded);
         assert!(report.missing_evidence.contains(&"observed_12h_window"));
         assert!(report.missing_evidence.contains(&"sustain_run_count"));
+        assert_eq!(report.short_or_unproven_sustain_runs, 1);
         assert!(report.missing_evidence.contains(&"clean_merged_pr_flow"));
         fs::remove_dir_all(temp).ok();
     }
@@ -2537,14 +2589,16 @@ mod tests {
         let runs = temp.join("runs.json");
         let prs = temp.join("prs.json");
         let mut run_items = vec![
-            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T00:00:00Z"}"#.to_string(),
-            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T13:00:00Z"}"#.to_string(),
+            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"}"#.to_string(),
+            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T13:00:00Z","updatedAt":"2026-06-27T13:06:00Z"}"#.to_string(),
         ];
         for minute in 1..=71 {
             run_items.push(format!(
-                r#"{{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T{:02}:{:02}:00Z"}}"#,
+                r#"{{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T{:02}:{:02}:00Z","updatedAt":"2026-06-27T{:02}:{:02}:00Z"}}"#,
                 minute / 60,
-                minute % 60
+                minute % 60,
+                (minute + 6) / 60,
+                (minute + 6) % 60
             ));
         }
         fs::write(&runs, format!("[{}]", run_items.join(","))).expect("runs json");
@@ -2559,6 +2613,7 @@ mod tests {
             prs_json: prs,
             min_window_hours: 12,
             min_sustain_runs: 72,
+            min_sustain_duration_minutes: 5,
             min_clean_merged_prs: 1,
             json: true,
             strict: false,
@@ -2568,7 +2623,57 @@ mod tests {
         assert!(report.exceeded, "{:?}", report.missing_evidence);
         assert!(report.observed_window_minutes >= 12 * 60);
         assert!(report.successful_sustain_runs >= 72);
+        assert_eq!(report.short_or_unproven_sustain_runs, 0);
         assert_eq!(report.clean_merged_prs, 1);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_black_factor_audit_rejects_short_yielded_sustain_runs() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-black-factor-short-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        let mut run_items = vec![
+            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:01:00Z"}"#.to_string(),
+            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T13:00:00Z","updatedAt":"2026-06-27T13:01:00Z"}"#.to_string(),
+        ];
+        for minute in 1..=71 {
+            run_items.push(format!(
+                r#"{{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T{:02}:{:02}:00Z","updatedAt":"2026-06-27T{:02}:{:02}:00Z"}}"#,
+                minute / 60,
+                minute % 60,
+                (minute + 1) / 60,
+                (minute + 1) % 60
+            ));
+        }
+        fs::write(&runs, format!("[{}]", run_items.join(","))).expect("runs json");
+        fs::write(
+            &prs,
+            r#"[{"state":"MERGED","mergedAt":"2026-06-27T13:05:00Z","statusCheckRollup":[{"name":"Local Linux CI","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}]"#,
+        )
+        .expect("prs json");
+
+        let report = runner_black_factor_audit_report(&RunnerBlackFactorAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 12,
+            min_sustain_runs: 72,
+            min_sustain_duration_minutes: 5,
+            min_clean_merged_prs: 1,
+            json: true,
+            strict: false,
+        })
+        .expect("black factor report");
+
+        assert!(!report.exceeded);
+        assert_eq!(report.successful_sustain_runs, 0);
+        assert_eq!(report.short_or_unproven_sustain_runs, 73);
+        assert!(report.missing_evidence.contains(&"sustain_run_count"));
         fs::remove_dir_all(temp).ok();
     }
 
