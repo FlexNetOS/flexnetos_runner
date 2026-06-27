@@ -142,6 +142,15 @@ pub struct DocsDriftReport {
     pub drift: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CycleManifest {
+    pub goal: String,
+    pub once: bool,
+    pub auto_merge: bool,
+    pub strict_upgrade_only: bool,
+    pub phases: Vec<CyclePhase>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct CycleEvent<'a> {
     event: &'a str,
@@ -164,6 +173,10 @@ fn run(args: RunArgs) -> Result<()> {
     let cycle_dir = args.out.join(timestamp_label()?);
     fs::create_dir_all(&cycle_dir)
         .with_context(|| format!("create forge-loop artifact dir {}", cycle_dir.display()))?;
+    fs::write(
+        cycle_dir.join("cycle-manifest.json"),
+        serde_json::to_string_pretty(&cycle_manifest(&args))?,
+    )?;
     let log = cycle_dir.join("events.jsonl");
     append_event(
         &log,
@@ -583,6 +596,27 @@ fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
     )
 }
 
+fn cycle_manifest(args: &RunArgs) -> CycleManifest {
+    CycleManifest {
+        goal: args.goal.clone(),
+        once: args.once,
+        auto_merge: args.auto_merge,
+        strict_upgrade_only: true,
+        phases: required_phases(),
+    }
+}
+
+fn required_phases() -> Vec<CyclePhase> {
+    vec![
+        CyclePhase::Red,
+        CyclePhase::Implement,
+        CyclePhase::Gate,
+        CyclePhase::Evaluate,
+        CyclePhase::Research,
+        CyclePhase::Upgrade,
+    ]
+}
+
 fn research_prompt(focus: &str, sources: &[ResearchSource]) -> String {
     let list = sources
         .iter()
@@ -710,6 +744,33 @@ mod tests {
         .expect("label");
 
         assert_eq!(label, "cycle-1-001000000");
+    }
+
+    #[test]
+    fn cycle_manifest_records_once_strict_phase_contract() {
+        let manifest = cycle_manifest(&RunArgs {
+            goal: "cycle 05 reliability upgrade".into(),
+            out: PathBuf::from("_work/forge-loop"),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        });
+
+        assert_eq!(manifest.goal, "cycle 05 reliability upgrade");
+        assert!(manifest.once);
+        assert!(manifest.auto_merge);
+        assert!(manifest.strict_upgrade_only);
+        assert_eq!(
+            manifest.phases,
+            vec![
+                CyclePhase::Red,
+                CyclePhase::Implement,
+                CyclePhase::Gate,
+                CyclePhase::Evaluate,
+                CyclePhase::Research,
+                CyclePhase::Upgrade,
+            ]
+        );
     }
 
     #[test]
