@@ -15,4 +15,10 @@ components = {
     "skill": ".agents/skills/forge-loop-research/SKILL.md",
 }
 status = {name: (ROOT / path).exists() for name, path in components.items()}
-print(json.dumps({"forge_loop_stop_summary": status}, sort_keys=True))
+print(json.dumps({"forge_loop_stop_summary": {
+    "components": status,
+    "active_phase": "checkpoint-before-stop",
+    "source_coverage": "see docs/forge-loop/codex-target-mining.md and target-mining-audit",
+    "validation_state": "run components-audit, target-mining-audit, docs-drift, fmt, tests, clippy, audit",
+    "next_action": "resume from the latest failing or missing validation gate",
+}}, sort_keys=True))

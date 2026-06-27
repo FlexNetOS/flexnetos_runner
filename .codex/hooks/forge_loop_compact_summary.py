@@ -38,5 +38,9 @@ print(json.dumps({
         "auto_compaction_enabled": config.get("features", {}).get("auto_compaction") is True,
         "compact_prompt": config.get("experimental_compact_prompt_file"),
         "auto_compact_token_limit": config.get("model_auto_compact_token_limit"),
+        "active_phase": "preserve current red/implement/gate/evaluate/research/upgrade phase",
+        "source_coverage": "covered_targets plus missing_targets",
+        "validation_state": "preserve completed and remaining validation commands",
+        "next_action": "preserve exactly one next action",
     }
 }, sort_keys=True))

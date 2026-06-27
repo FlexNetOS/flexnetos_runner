@@ -2083,6 +2083,47 @@ mod tests {
     }
 
     #[test]
+    fn stop_and_compact_hooks_preserve_phase_source_validation_next_action() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let stop_hook = fs::read_to_string(root.join(".codex/hooks/forge_loop_stop_summary.py"))
+            .expect("read stop hook");
+        let compact_hook =
+            fs::read_to_string(root.join(".codex/hooks/forge_loop_compact_summary.py"))
+                .expect("read compact hook");
+        let compact_prompt =
+            fs::read_to_string(root.join(COMPACT_PROMPT_PATH)).expect("read compact prompt");
+        let output_schema =
+            fs::read_to_string(root.join(".github/codex/schemas/forge-loop-output.schema.json"))
+                .expect("read output schema");
+
+        for required in [
+            "active_phase",
+            "source_coverage",
+            "validation_state",
+            "next_action",
+        ] {
+            assert!(stop_hook.contains(required), "stop hook missing {required}");
+            assert!(
+                compact_hook.contains(required),
+                "compact hook missing {required}"
+            );
+            assert!(
+                output_schema.contains(required),
+                "output schema missing {required}"
+            );
+        }
+        for required in ["active phase", "source", "validation", "next action"] {
+            assert!(
+                compact_prompt.contains(required),
+                "compact prompt missing {required}"
+            );
+        }
+    }
+
+    #[test]
     fn forge_loop_skill_references_codex_config_and_action_docs() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()

@@ -80,7 +80,11 @@
       "required": [
         "enabled",
         "compact_prompt",
-        "preserved_state"
+        "preserved_state",
+        "active_phase",
+        "source_coverage",
+        "validation_state",
+        "next_action"
       ],
       "additionalProperties": false,
       "properties": {
@@ -95,6 +99,24 @@
           "items": {
             "type": "string"
           }
+        },
+        "active_phase": {
+          "type": "string"
+        },
+        "source_coverage": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "validation_state": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "next_action": {
+          "type": "string"
         }
       }
     }
