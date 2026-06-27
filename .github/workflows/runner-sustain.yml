@@ -2,8 +2,17 @@ name: Runner Sustain
 
 on:
   workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: Minutes to keep each local runner slot doing useful audit work
+        required: false
+        default: '14'
+      tick_seconds:
+        description: Seconds between useful audit ticks
+        required: false
+        default: '60'
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/10 * * * *'
 
 permissions:
   contents: read
@@ -16,6 +25,7 @@ jobs:
   local-runner-sustain:
     name: Runner sustain slot ${{ matrix.slot }}
     runs-on: [self-hosted, linux, x64, local, flexnetos]
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -27,12 +37,34 @@ jobs:
         run: |
           set -euo pipefail
           echo "/home/drdave/Desktop/meta/.toolchains/cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
           echo "SCCACHE_WRAPPER=" >> "$GITHUB_ENV"
       - name: Useful forge-loop sustain checks
         shell: bash
+        env:
+          DURATION_MINUTES: ${{ inputs.duration_minutes || '14' }}
+          TICK_SECONDS: ${{ inputs.tick_seconds || '60' }}
+          SLOT: ${{ matrix.slot }}
         run: |
           set -euo pipefail
-          cargo run -q -p runner-cli -- forge-loop components-audit --strict
-          cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict
-          cargo run -q -p runner-cli -- forge-loop docs-drift --json
+          duration_minutes="${DURATION_MINUTES:-14}"
+          tick_seconds="${TICK_SECONDS:-60}"
+          case "$duration_minutes" in (*[!0-9]*|'') duration_minutes=14 ;; esac
+          case "$tick_seconds" in (*[!0-9]*|'') tick_seconds=60 ;; esac
+          if [ "$duration_minutes" -lt 1 ]; then duration_minutes=1; fi
+          if [ "$duration_minutes" -gt 18 ]; then duration_minutes=18; fi
+          if [ "$tick_seconds" -lt 15 ]; then tick_seconds=15; fi
+          if [ "$tick_seconds" -gt 300 ]; then tick_seconds=300; fi
+          end=$(( $(date +%s) + duration_minutes * 60 ))
+          tick=0
+          while [ "$(date +%s)" -lt "$end" ]; do
+            tick=$((tick + 1))
+            echo "runner-sustain slot=${SLOT} tick=${tick} duration_minutes=${duration_minutes} tick_seconds=${tick_seconds}"
+            cargo run -q -p runner-cli -- forge-loop components-audit --strict
+            cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict
+            cargo run -q -p runner-cli -- forge-loop docs-drift --json
+            remaining=$(( end - $(date +%s) ))
+            if [ "$remaining" -le 0 ]; then break; fi
+            if [ "$remaining" -lt "$tick_seconds" ]; then sleep "$remaining"; else sleep "$tick_seconds"; fi
+          done
