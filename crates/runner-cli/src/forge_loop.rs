@@ -274,6 +274,8 @@ pub struct RunnerBlackFactorAuditReport {
     pub successful_sustain_runs: usize,
     pub total_duration_proven_sustain_runs: usize,
     pub min_sustain_runs: usize,
+    pub remaining_sustain_runs: usize,
+    pub min_minutes_to_sustain_target: u64,
     pub min_sustain_duration_minutes: u64,
     pub short_or_unproven_sustain_runs: usize,
     pub clean_merged_prs: usize,
@@ -704,6 +706,11 @@ fn runner_black_factor_audit(args: RunnerBlackFactorAuditArgs) -> Result<()> {
             report.total_duration_proven_sustain_runs
         );
         println!("  required sustain     : {}", report.min_sustain_runs);
+        println!("  remaining sustain    : {}", report.remaining_sustain_runs);
+        println!(
+            "  min minutes to target: {}",
+            report.min_minutes_to_sustain_target
+        );
         println!(
             "  min sustain duration : {} minutes",
             report.min_sustain_duration_minutes
@@ -781,6 +788,12 @@ fn runner_black_factor_audit_report(
         })
         .count();
 
+    let remaining_sustain_runs = args
+        .min_sustain_runs
+        .saturating_sub(successful_sustain_runs);
+    let min_minutes_to_sustain_target =
+        (remaining_sustain_runs as u64).saturating_mul(args.min_sustain_duration_minutes);
+
     let clean_merged_prs = prs
         .iter()
         .filter(|pr| {
@@ -811,6 +824,8 @@ fn runner_black_factor_audit_report(
         successful_sustain_runs,
         total_duration_proven_sustain_runs,
         min_sustain_runs: args.min_sustain_runs,
+        remaining_sustain_runs,
+        min_minutes_to_sustain_target,
         min_sustain_duration_minutes: args.min_sustain_duration_minutes,
         short_or_unproven_sustain_runs,
         clean_merged_prs,
@@ -2602,6 +2617,8 @@ mod tests {
         assert!(!report.exceeded);
         assert!(report.missing_evidence.contains(&"observed_12h_window"));
         assert!(report.missing_evidence.contains(&"sustain_run_count"));
+        assert_eq!(report.remaining_sustain_runs, 72);
+        assert_eq!(report.min_minutes_to_sustain_target, 360);
         assert_eq!(report.short_or_unproven_sustain_runs, 1);
         assert!(report.missing_evidence.contains(&"clean_merged_pr_flow"));
         fs::remove_dir_all(temp).ok();
@@ -2654,6 +2671,8 @@ mod tests {
         assert!(report.observed_window_minutes >= 12 * 60);
         assert_eq!(report.successful_sustain_runs, 72);
         assert_eq!(report.total_duration_proven_sustain_runs, 72);
+        assert_eq!(report.remaining_sustain_runs, 0);
+        assert_eq!(report.min_minutes_to_sustain_target, 0);
         assert_eq!(report.short_or_unproven_sustain_runs, 0);
         assert_eq!(report.clean_merged_prs, 1);
         fs::remove_dir_all(temp).ok();
@@ -2706,6 +2725,8 @@ mod tests {
         assert!(report.observed_window_minutes >= 12 * 60);
         assert_eq!(report.total_duration_proven_sustain_runs, 72);
         assert_eq!(report.successful_sustain_runs, 0);
+        assert_eq!(report.remaining_sustain_runs, 72);
+        assert_eq!(report.min_minutes_to_sustain_target, 360);
         assert!(report.missing_evidence.contains(&"sustain_run_count"));
         fs::remove_dir_all(temp).ok();
     }
@@ -2755,6 +2776,8 @@ mod tests {
         assert!(!report.exceeded);
         assert_eq!(report.successful_sustain_runs, 0);
         assert_eq!(report.short_or_unproven_sustain_runs, 73);
+        assert_eq!(report.remaining_sustain_runs, 72);
+        assert_eq!(report.min_minutes_to_sustain_target, 360);
         assert!(report.missing_evidence.contains(&"sustain_run_count"));
         fs::remove_dir_all(temp).ok();
     }
