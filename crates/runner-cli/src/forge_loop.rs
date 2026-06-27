@@ -162,6 +162,7 @@ pub struct DocsDriftReport {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RunnerHealthReport {
+    pub required_local_checks: Vec<String>,
     pub pending_local_checks: Vec<String>,
     pub passed_local_checks: Vec<String>,
     pub failed_local_checks: Vec<String>,
@@ -335,7 +336,8 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
         "branch_prefix": "codex/forge-loop-self-upgrade",
         "merge_policy": "auto-merge green when repository settings allow; otherwise merge after green checks",
         "strict_upgrade_only": true,
-        "runner_health_input": "gh pr view <PR> --json statusCheckRollup"
+        "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
+        "required_local_checks": REQUIRED_LOCAL_CHECKS
     });
     println!("{}", serde_json::to_string_pretty(&plan)?);
     if args.dry_run || !allowed {
@@ -363,7 +365,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "phases": ["red", "implement", "gate", "evaluate", "research", "upgrade"],
         "auto_merge_green": true,
         "strict_upgrade_only": true,
-        "runner_health_input": "gh pr view <PR> --json statusCheckRollup"
+        "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
+        "required_local_checks": REQUIRED_LOCAL_CHECKS
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -375,6 +378,10 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         println!("  auto-merge policy  : green PRs when repository settings allow");
         println!("  strict upgrade     : enabled");
         println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
+        println!(
+            "  required checks    : {}",
+            REQUIRED_LOCAL_CHECKS.join(", ")
+        );
         println!("  research sources   :");
         for source in research_sources() {
             println!("    - {} ({})", source.id, source.url);
@@ -469,6 +476,10 @@ fn classify_runner_health(checks: &[CheckRollupEntry]) -> RunnerHealthReport {
         "local self-hosted required checks are not currently queued"
     };
     RunnerHealthReport {
+        required_local_checks: REQUIRED_LOCAL_CHECKS
+            .iter()
+            .map(|check| (*check).to_string())
+            .collect(),
         pending_local_checks,
         passed_local_checks,
         failed_local_checks,
@@ -1280,6 +1291,20 @@ mod tests {
             vec!["Semantic PR Title".to_string()]
         );
         assert!(report.recommendation.contains("required local checks"));
+    }
+
+    #[test]
+    fn runner_health_reports_required_local_check_contract() {
+        let report = classify_runner_health(&[]);
+
+        assert_eq!(
+            report.required_local_checks,
+            vec![
+                "Local Linux CI".to_string(),
+                "Semantic PR Title".to_string()
+            ]
+        );
+        assert_eq!(report.missing_local_checks, report.required_local_checks);
     }
 
     #[test]
