@@ -1064,6 +1064,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "The target exhaustion matrix maps each required source to extracted categories, applied surfaces, and regression guards.",
         },
         LoopComponent {
+            id: "worktree-isolation-contract",
+            surface: "worktrees",
+            path: ".codex/worktrees/forge-loop-isolation.toml",
+            rationale: "Forge-loop cycles need an explicit worktree isolation contract so concurrent mutating runs cannot trample one another.",
+        },
+        LoopComponent {
             id: "deep-research-exhaustion-report",
             surface: "docs",
             path: "docs/forge-loop/deep-research-exhaustion-2026-06-27.md",
@@ -2017,7 +2023,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 20);
+        assert_eq!(report.checked_components, 21);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -2121,6 +2127,32 @@ mod tests {
                 "compact prompt missing {required}"
             );
         }
+    }
+
+    #[test]
+    fn forge_loop_worktree_isolation_contract_is_present() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let contract = fs::read_to_string(root.join(".codex/worktrees/forge-loop-isolation.toml"))
+            .expect("read worktree contract");
+        let prompt = fs::read_to_string(root.join(".codex/prompts/forge-loop.md"))
+            .expect("read forge-loop prompt");
+
+        for required in [
+            "required = true",
+            "wait_for_merge_before_next_cycle = true",
+            "forbid_shared_mutating_checkout = true",
+            "components_audit = true",
+            "target_mining_audit = true",
+        ] {
+            assert!(
+                contract.contains(required),
+                "worktree contract missing {required}"
+            );
+        }
+        assert!(prompt.contains(".codex/worktrees/forge-loop-isolation.toml"));
     }
 
     #[test]

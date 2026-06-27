@@ -1,0 +1,17 @@
+# Forge-loop worktree isolation contract.
+# Each mutating cycle must run in exactly one named, disposable worktree and must
+# not start another mutating cycle from the same checkout while a PR is open.
+required = true
+naming_pattern = "forge-loop-cycle-{timestamp}-{ordinal}"
+base_branch = "main"
+wait_for_merge_before_next_cycle = true
+forbid_shared_mutating_checkout = true
+cleanup_after_merge = true
+
+[required_evidence]
+branch = true
+pr_url = true
+base_sha = true
+head_sha = true
+components_audit = true
+target_mining_audit = true
