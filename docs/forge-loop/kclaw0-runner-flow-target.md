@@ -21,9 +21,9 @@ The target is not considered complete if there are no active/queued runs and no 
 
 ## Bridge-duration sustain policy
 
-`runner-sustain.yml` is intentionally longer than a smoke check, but it must not consume the whole local runner pool while pull-request checks wait. Scheduled runs now fire every 5 minutes, keep one reserve-safe local runner lane performing useful forge-loop audits for a bounded default of 5 minutes, and cap the job at 10 minutes. The other local lane remains available for PR checks; the sustain job also exits early when open PRs have pending or failed local required checks.
+`runner-sustain.yml` is intentionally longer than a smoke check, but it must not consume the whole local runner pool while pull-request checks wait. Scheduled runs now fire every 5 minutes, keep one reserve-safe local runner lane performing useful forge-loop audits for a bounded default of 6 minutes, and cap the job at 10 minutes. The other local lane remains available for PR checks; the sustain job exits both before work starts and between audit ticks when open PRs have pending or failed local required checks.
 
-This still does not by itself prove the 12+ hour kclaw0 persistence target; that proof requires an observed window of repeated successful sustain runs and green PR flow over the full target interval. The 5-minute cadence creates more than the required 72 sustain opportunities over 12 hours while preserving seamless PR flow as the higher-priority invariant.
+This still does not by itself prove the 12+ hour kclaw0 persistence target; that proof requires an observed window of repeated successful sustain runs and green PR flow over the full target interval. The 5-minute cadence plus 6-minute default duration creates queued/active overlap with more than the required 72 sustain opportunities over 12 hours while preserving seamless PR flow as the higher-priority invariant.
 
 ## Observed-window black-factor audit
 
