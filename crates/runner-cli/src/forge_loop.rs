@@ -21,6 +21,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "cargo test -p runner-cli --all-features forge_loop::tests",
     "cargo run -q -p runner-cli -- forge-loop docs-drift --json",
     "cargo run -q -p runner-cli -- forge-loop target-mining-audit --json",
+    "cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
     "cargo test --workspace --all-features",
     "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "cargo audit --deny warnings",
@@ -40,6 +41,8 @@ pub enum ForgeLoopCommand {
     Doctor(DoctorArgs),
     /// Diagnose pending required checks that need local self-hosted runners.
     RunnerHealth(RunnerHealthArgs),
+    /// Audit runner utilization and PR-flow evidence against the kclaw0 dark-factory target.
+    RunnerFlowAudit(RunnerFlowAuditArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
     DocsDrift(DocsDriftArgs),
     /// Inventory Codex loop components and config surfaces for upgrade planning.
@@ -118,6 +121,25 @@ pub struct RunnerHealthArgs {
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RunnerFlowAuditArgs {
+    /// Workspace root to scan.
+    #[arg(long, default_value = ".")]
+    pub root: PathBuf,
+    /// JSON from `gh run list --json status,conclusion,name,headBranch,event,url`.
+    #[arg(long)]
+    pub runs_json: Option<PathBuf>,
+    /// JSON from `gh pr list --json statusCheckRollup,mergeStateStatus,url`.
+    #[arg(long)]
+    pub prs_json: Option<PathBuf>,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return a non-zero exit when runner flow does not satisfy the local sustain contract.
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -215,6 +237,32 @@ pub struct RunnerHealthReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerFlowAuditReport {
+    pub kclaw0_target: &'static str,
+    pub sustain_workflow_present: bool,
+    pub active_runs: usize,
+    pub queued_runs: usize,
+    pub open_prs: usize,
+    pub queued_required_checks: usize,
+    pub failed_required_checks: usize,
+    pub idle_without_work: bool,
+    pub pr_flow_seamless: bool,
+    pub missing_evidence: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct WorkflowRunEntry {
+    #[serde(default)]
+    status: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PrFlowEntry {
+    #[serde(default, rename = "statusCheckRollup")]
+    status_check_rollup: Vec<CheckRollupEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ComponentsAuditReport {
     pub checked_components: usize,
     pub present_components: Vec<String>,
@@ -309,6 +357,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::SelfUpgrade(args) => self_upgrade(args),
         ForgeLoopCommand::Doctor(args) => doctor(args),
         ForgeLoopCommand::RunnerHealth(args) => runner_health(args),
+        ForgeLoopCommand::RunnerFlowAudit(args) => runner_flow_audit(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
         ForgeLoopCommand::TargetMiningAudit(args) => target_mining_audit(args),
@@ -473,7 +522,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
         "required_local_checks": REQUIRED_LOCAL_CHECKS,
         "required_gate_commands": REQUIRED_GATE_COMMANDS,
-        "target_mining_audit": "fxrun forge-loop target-mining-audit --json"
+        "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
+        "runner_flow_audit": "fxrun forge-loop runner-flow-audit --json"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -489,6 +539,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
             println!("    - {command}");
         }
         println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
+        println!("  runner flow        : use `fxrun forge-loop runner-flow-audit --json`");
         println!("  component audit    : use `fxrun forge-loop components-audit --json`");
         println!("  target mining      : use `fxrun forge-loop target-mining-audit --json`");
         println!(
@@ -527,6 +578,124 @@ fn runner_health(args: RunnerHealthArgs) -> Result<()> {
         println!("  recommendation     : {}", report.recommendation);
     }
     Ok(())
+}
+
+fn runner_flow_audit(args: RunnerFlowAuditArgs) -> Result<()> {
+    let report = runner_flow_audit_report(&args)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop runner flow audit");
+        println!("  kclaw0 target       : {}", report.kclaw0_target);
+        println!(
+            "  sustain workflow    : {}",
+            report.sustain_workflow_present
+        );
+        println!("  active runs         : {}", report.active_runs);
+        println!("  queued runs         : {}", report.queued_runs);
+        println!("  open PRs            : {}", report.open_prs);
+        println!("  queued required     : {}", report.queued_required_checks);
+        println!("  failed required     : {}", report.failed_required_checks);
+        println!("  idle without work   : {}", report.idle_without_work);
+        println!("  PR flow seamless    : {}", report.pr_flow_seamless);
+        if !report.missing_evidence.is_empty() {
+            println!("  missing evidence    :");
+            for item in &report.missing_evidence {
+                println!("    - {item}");
+            }
+        }
+    }
+
+    if args.strict && !report.missing_evidence.is_empty() {
+        Err(anyhow!(
+            "runner flow audit missing evidence: {}",
+            report.missing_evidence.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn runner_flow_audit_report(args: &RunnerFlowAuditArgs) -> Result<RunnerFlowAuditReport> {
+    let sustain_workflow_present = args
+        .root
+        .join(".github/workflows/runner-sustain.yml")
+        .exists()
+        && fs::read_to_string(args.root.join(".github/workflows/runner-sustain.yml"))
+            .map(|text| {
+                text.contains("*/15 * * * *")
+                    && text.contains("self-hosted")
+                    && text.contains("components-audit --strict")
+                    && text.contains("target-mining-audit --strict")
+            })
+            .unwrap_or(false);
+
+    let runs = if let Some(path) = &args.runs_json {
+        parse_json_vec::<WorkflowRunEntry>(path)?
+    } else {
+        Vec::new()
+    };
+    let active_runs = runs
+        .iter()
+        .filter(|run| run.status.eq_ignore_ascii_case("in_progress"))
+        .count();
+    let queued_runs = runs
+        .iter()
+        .filter(|run| {
+            run.status.eq_ignore_ascii_case("queued") || run.status.eq_ignore_ascii_case("pending")
+        })
+        .count();
+
+    let prs = if let Some(path) = &args.prs_json {
+        parse_json_vec::<PrFlowEntry>(path)?
+    } else {
+        Vec::new()
+    };
+    let open_prs = prs.len();
+    let mut queued_required_checks = 0;
+    let mut failed_required_checks = 0;
+    for pr in &prs {
+        let runner_health = classify_runner_health(&pr.status_check_rollup);
+        queued_required_checks += runner_health.pending_local_checks.len();
+        failed_required_checks += runner_health.failed_local_checks.len();
+    }
+
+    let idle_without_work = active_runs == 0 && queued_runs == 0 && open_prs == 0;
+    let pr_flow_seamless =
+        open_prs == 0 || (queued_required_checks == 0 && failed_required_checks == 0);
+
+    let mut missing_evidence = Vec::new();
+    if !sustain_workflow_present {
+        missing_evidence.push("runner_sustain_workflow");
+    }
+    if idle_without_work {
+        missing_evidence.push("active_or_queued_runner_work");
+    }
+    if !pr_flow_seamless {
+        missing_evidence.push("seamless_pr_flow");
+    }
+
+    Ok(RunnerFlowAuditReport {
+        kclaw0_target:
+            "24/7 dark-factory operation with swarm-scale persistence and green-gated PR flow",
+        sustain_workflow_present,
+        active_runs,
+        queued_runs,
+        open_prs,
+        queued_required_checks,
+        failed_required_checks,
+        idle_without_work,
+        pr_flow_seamless,
+        missing_evidence,
+    })
+}
+
+fn parse_json_vec<T>(path: &Path) -> Result<Vec<T>>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))
 }
 
 fn runner_health_report(path: &Path) -> Result<RunnerHealthReport> {
@@ -1040,6 +1209,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "GitHub workflow configuration is the current CI/tool gate surface for required forge-loop checks.",
         },
         LoopComponent {
+            id: "runner-sustain-workflow",
+            surface: "tools",
+            path: ".github/workflows/runner-sustain.yml",
+            rationale: "Runner sustain automation keeps self-hosted runner slots doing useful forge-loop audits on a schedule and by manual dispatch.",
+        },
+        LoopComponent {
             id: "codex-github-action",
             surface: "tools",
             path: ".github/workflows/codex-forge-loop.yml",
@@ -1068,6 +1243,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "docs",
             path: "docs/forge-loop/codex-target-exhaustion-matrix.md",
             rationale: "The target exhaustion matrix maps each required source to extracted categories, applied surfaces, and regression guards.",
+        },
+        LoopComponent {
+            id: "kclaw0-runner-flow-target",
+            surface: "docs",
+            path: "docs/forge-loop/kclaw0-runner-flow-target.md",
+            rationale: "The kclaw0 runner-flow target records the dark-factory/swarm evidence requirements before the harness can claim runners exceeded the target.",
         },
         LoopComponent {
             id: "worktree-isolation-contract",
@@ -2035,7 +2216,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 23);
+        assert_eq!(report.checked_components, 25);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -2046,6 +2227,70 @@ mod tests {
         assert!(report.missing_components.contains(&"hooks".to_string()));
 
         fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn runner_flow_audit_reports_idle_and_sustain_evidence() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root")
+            .to_path_buf();
+        let report = runner_flow_audit_report(&RunnerFlowAuditArgs {
+            root,
+            runs_json: None,
+            prs_json: None,
+            json: true,
+            strict: false,
+        })
+        .expect("runner flow report");
+
+        assert!(report.sustain_workflow_present);
+        assert!(report.idle_without_work);
+        assert!(report
+            .missing_evidence
+            .contains(&"active_or_queued_runner_work"));
+        assert!(report.kclaw0_target.contains("24/7 dark-factory"));
+    }
+
+    #[test]
+    fn runner_flow_audit_accepts_active_work_and_clean_pr_flow() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root")
+            .to_path_buf();
+        let temp =
+            std::env::temp_dir().join(format!("fxrun-runner-flow-audit-{}", std::process::id()));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[{"name":"CI","status":"in_progress","conclusion":"","headBranch":"main","event":"push","url":"https://example.invalid"}]"#,
+        )
+        .expect("runs json");
+        fs::write(
+            &prs,
+            r#"[{"statusCheckRollup":[{"name":"Local Linux CI","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}]"#,
+        )
+        .expect("prs json");
+
+        let report = runner_flow_audit_report(&RunnerFlowAuditArgs {
+            root,
+            runs_json: Some(runs),
+            prs_json: Some(prs),
+            json: true,
+            strict: false,
+        })
+        .expect("runner flow report");
+
+        assert_eq!(report.active_runs, 1);
+        assert!(!report.idle_without_work);
+        assert!(report.pr_flow_seamless);
+        assert!(report.missing_evidence.is_empty());
+        fs::remove_dir_all(temp).ok();
     }
 
     #[test]
@@ -2064,6 +2309,8 @@ mod tests {
             "permissions",
             "skills",
             "tools",
+            "worktrees",
+            "checklists",
             "docs",
         ] {
             assert!(
@@ -2399,6 +2646,39 @@ mod tests {
             ci.contains("forge-loop target-mining-audit --strict"),
             "CI must enforce the forge-loop target mining contract"
         );
+    }
+
+    #[test]
+    fn runner_sustain_workflow_keeps_local_slots_useful() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/runner-sustain.yml"))
+            .expect("read runner sustain workflow");
+        let target = fs::read_to_string(root.join("docs/forge-loop/kclaw0-runner-flow-target.md"))
+            .expect("read kclaw0 runner target");
+
+        for required in [
+            "workflow_dispatch:",
+            "*/15 * * * *",
+            "runs-on: [self-hosted, linux, x64, local, flexnetos]",
+            "slot: [1, 2]",
+            "forge-loop components-audit --strict",
+            "forge-loop target-mining-audit --strict",
+            "forge-loop docs-drift --json",
+        ] {
+            assert!(
+                workflow.contains(required),
+                "sustain workflow missing {required}"
+            );
+        }
+        for required in ["300-agent", "4000-step", "12+ hour", "24/7 autonomous"] {
+            assert!(
+                target.contains(required),
+                "runner target missing {required}"
+            );
+        }
     }
 
     #[test]

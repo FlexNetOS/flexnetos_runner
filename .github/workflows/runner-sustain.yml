@@ -1,0 +1,38 @@
+name: Runner Sustain
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-sustain-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  local-runner-sustain:
+    name: Runner sustain slot ${{ matrix.slot }}
+    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1, 2]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prefer meta-owned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "/home/drdave/Desktop/meta/.toolchains/cargo/bin" >> "$GITHUB_PATH"
+          echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+          echo "SCCACHE_WRAPPER=" >> "$GITHUB_ENV"
+      - name: Useful forge-loop sustain checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -q -p runner-cli -- forge-loop components-audit --strict
+          cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict
+          cargo run -q -p runner-cli -- forge-loop docs-drift --json
