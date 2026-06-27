@@ -1,0 +1,51 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0007",
+  "title": "[architect] Close handoff/Beads/Grit/GitKB integration inspections",
+  "status": "backlog",
+  "priority": "P2",
+  "objective": "Decide: Complete the open follow-up inspections from the state decision: handoff CLI task/checkpoint/done and ledger export, Beads graph/UX ownership, Grit assignment/runtime ownership, and GitKB worker query commands; update the PR-repair state decision with final integration boundaries.",
+  "path_scope": [
+    ".handoff/.idea/pr-repair-state-decision.md",
+    ".handoff/pr-repair/**",
+    "external:handoff",
+    "external:beads_rust",
+    "external:beads_viewer",
+    "external:grit",
+    "external:GitKB"
+  ],
+  "acceptance_criteria": [
+    "Handoff CLI commands for task claim/checkpoint/done, sync/export/import, and ledger JSONL export are mapped with exact current commands.",
+    "Beads is classified as canonical state, graph/UX projection, or out-of-scope with evidence.",
+    "Grit is classified as assignment runtime, local claim-lock layer, or out-of-scope with evidence.",
+    "GitKB worker query commands are documented for repair prompts, including fallback when unavailable.",
+    "`.handoff/.idea/pr-repair-state-decision.md` or successor artifact records the final integration boundary decisions."
+  ],
+  "test_commands": [
+    "hf status --json",
+    "rtk meta project list --json",
+    "rtk meta git status"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-integration-inspections-20260627",
+  "role": "architect",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "source_files": [
+      ".handoff/.idea/pr-repair-v5-todo-completion-audit.md",
+      ".handoff/.idea/pr-repair-manual-supervisor-proof.md",
+      ".handoff/.idea/meta-pr-repair-command-sketch.md",
+      ".handoff/.idea/pr-repair-agent-surface-parity-plan.md",
+      ".handoff/.idea/pr-repair-state-decision.md",
+      ".handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:24c226e64450a9ceff79c1cde95385ff7fadf30000da12c57a7a63e7e1d24f4f",
+    "path_scope_hash": "blake3:5c170e634f9b5197f3f5ba800dc169054260485451f33fb4b721d5ba14d9e5ee",
+    "acceptance_hash": "blake3:25af9d8cd1cb2c7652feb640e13e0c6f02c8c109cfb477c7d891715d1a29f993"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0004",
+  "title": "[architect] Implement Codex/Claude agent-surface parity checks",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Build: Implement or prototype the missing Codex parity surface: `meta init codex`, `meta sync codex-skills --check/--write`, and `meta parity check agent-surfaces --json`, using canonical meta skill/prompt sources and preserving operator-local secrets/config.",
+  "path_scope": [
+    "external:meta_cli/**",
+    "external:claude-plugin/skills/**",
+    ".codex/**",
+    ".claude/**",
+    ".handoff/.idea/pr-repair-agent-surface-parity-plan.md"
+  ],
+  "acceptance_criteria": [
+    "`meta init codex` or a documented prototype creates the expected `.codex` prompts/rules/agents/hooks including a PR-repair front door.",
+    "`meta sync codex-skills --check` fails on drift and `--write` refreshes managed generated surfaces without overwriting local secrets.",
+    "`meta parity check agent-surfaces --json` reports canonical skills, Claude projection, Codex projection, plugin/MCP availability, and CLI fallback status.",
+    "Claude and Codex PR-repair front doors are generated or checked from the same semantic source; no independent prompt drift remains undocumented."
+  ],
+  "test_commands": [
+    "rtk meta init --help",
+    "rtk meta --help",
+    "cargo test",
+    "cargo clippy --all-targets -- -D warnings"
+  ],
+  "dependencies": [
+    "TASK-PRR-0002"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0002"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-agent-surface-parity-20260627",
+  "role": "architect",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "source_files": [
+      ".handoff/.idea/pr-repair-v5-todo-completion-audit.md",
+      ".handoff/.idea/pr-repair-manual-supervisor-proof.md",
+      ".handoff/.idea/meta-pr-repair-command-sketch.md",
+      ".handoff/.idea/pr-repair-agent-surface-parity-plan.md",
+      ".handoff/.idea/pr-repair-state-decision.md",
+      ".handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:10f52b09512ab5bdb1dfca16c01f7cd7c204e9a917a34d2b89b4efd1c72f3f1c",
+    "path_scope_hash": "blake3:fdaab31db691547bb397728eea095929fc523491d2ede55aa627df2a3464a827",
+    "acceptance_hash": "blake3:e748ae4e3045d7eafdb032c12848e28d8c3560614801ffd89a18258ad1b97e6f"
+  }
+}

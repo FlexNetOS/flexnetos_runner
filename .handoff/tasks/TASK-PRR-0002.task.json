@@ -1,0 +1,52 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0002",
+  "title": "[architect] Implement thin `meta pr-repair` prototype commands",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Build: Implement the first thin `meta pr-repair` prototype over existing `rtk meta git worktree`, GitHub, and queue primitives, covering scan, classify, lane create, assign, watch, and merge-green with JSON output and dry-run support for mutating operations.",
+  "path_scope": [
+    "external:meta_cli/**",
+    "external:meta_core/**",
+    "external:meta plugin surface",
+    ".handoff/.idea/meta-pr-repair-command-sketch.md"
+  ],
+  "acceptance_criteria": [
+    "`meta pr-repair scan --json` or the chosen thin-script equivalent emits open PR/check records with stable schema.",
+    "`classify OWNER/REPO#PR --json` emits the documented classification and evidence fields.",
+    "`lane create OWNER/REPO#PR --dry-run --json` renders the exact `rtk meta git worktree create` command without mutating state; non-dry-run creates a lane with metadata.",
+    "`watch --json` and `merge-green --dry-run --json` are implemented or explicitly stubbed with failing tests that document remaining work.",
+    "Prototype docs name the current command truth: `rtk meta git worktree`, not unavailable top-level aliases."
+  ],
+  "test_commands": [
+    "rtk meta --help",
+    "cargo test",
+    "cargo clippy --all-targets -- -D warnings"
+  ],
+  "dependencies": [
+    "TASK-PRR-0007"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0007"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-meta-pr-repair-prototype-20260627",
+  "role": "architect",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "source_files": [
+      ".handoff/.idea/pr-repair-v5-todo-completion-audit.md",
+      ".handoff/.idea/pr-repair-manual-supervisor-proof.md",
+      ".handoff/.idea/meta-pr-repair-command-sketch.md",
+      ".handoff/.idea/pr-repair-agent-surface-parity-plan.md",
+      ".handoff/.idea/pr-repair-state-decision.md",
+      ".handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:a3d7f3af5955b90b98d378ed18cc788cc9bf7b8b8e496ab551b98857e4692d55",
+    "path_scope_hash": "blake3:e0c8300981cd4ea3b32775646d8ee3da79521c380aef8f6d1e9ff2694cd53acd",
+    "acceptance_hash": "blake3:64823f0ff2e5cd490869246ea3ad6d44472d34efd036cf62e4ae65ae8b9e9eca"
+  }
+}

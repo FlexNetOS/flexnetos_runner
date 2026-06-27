@@ -1,0 +1,51 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0006",
+  "title": "[worker] Prove one end-to-end external PR repair",
+  "status": "backlog",
+  "priority": "P0",
+  "objective": "Prove: Select one external failing FlexNetOS PR with no existing owner lane, run the generated worker assignment for real, patch only the intended scope if a real fix is needed, commit, push, update the PR, watch CI, merge/automerge when green, and store the repeated/root-cause signature in ICM.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:chosen FlexNetOS PR lane"
+  ],
+  "acceptance_criteria": [
+    "Selected PR has current GitHub evidence, no owner-lane collision, and a recorded classification before editing.",
+    "A repair lane exists with metadata linking repo, PR, classification, owner, state, and TTL.",
+    "Worker performs narrow reproducer/log inspection before editing and records root cause.",
+    "Any code/config fix is committed and pushed immediately; PR body/comment is updated with root cause and validation.",
+    "Required CI is green and PR is merged/automerge armed, or a blocker is recorded with exact evidence.",
+    "ICM stores a useful error-resolved or context memory for the repair signature."
+  ],
+  "test_commands": [
+    "gh pr checks <PR> --repo <OWNER/REPO>",
+    "rtk meta git worktree status <lane>",
+    "rtk meta git status"
+  ],
+  "dependencies": [
+    "TASK-PRR-0001"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0001"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-external-proof-20260627",
+  "role": "worker",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "source_files": [
+      ".handoff/.idea/pr-repair-v5-todo-completion-audit.md",
+      ".handoff/.idea/pr-repair-manual-supervisor-proof.md",
+      ".handoff/.idea/meta-pr-repair-command-sketch.md",
+      ".handoff/.idea/pr-repair-agent-surface-parity-plan.md",
+      ".handoff/.idea/pr-repair-state-decision.md",
+      ".handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:0774efa80ad29480619e180aa0628f700a33c3bc264964d7e91dbbbdf8e1a0b5",
+    "path_scope_hash": "blake3:59d63115c041fca4a4070228d2ebabde1d5d913d10487c913428329c0a9a0995",
+    "acceptance_hash": "blake3:87fb54b9d695b9d536e7f4435980822d93a5f4e06b52c0c0263b3b057d1fdfc5"
+  }
+}
