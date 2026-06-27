@@ -24,7 +24,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: runner-sustain-${{ github.ref }}-${{ inputs.lane_slot || '1' }}
+  group: runner-sustain-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
