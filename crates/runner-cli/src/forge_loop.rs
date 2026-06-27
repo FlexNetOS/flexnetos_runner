@@ -57,6 +57,9 @@ pub struct EvalArgs {
     /// Optional metrics JSON file from a prior run.
     #[arg(long)]
     pub metrics: Option<PathBuf>,
+    /// Optional cycle manifest whose prompt/phase contract must match the run before scoring.
+    #[arg(long)]
+    pub manifest: Option<PathBuf>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -96,7 +99,7 @@ pub struct DocsDriftArgs {
     pub json: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 pub enum CyclePhase {
     Red,
     Implement,
@@ -143,7 +146,7 @@ pub struct DocsDriftReport {
     pub drift: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CycleManifest {
     pub goal: String,
     pub pr_title: String,
@@ -254,6 +257,9 @@ fn eval(args: EvalArgs) -> Result<()> {
     } else {
         return Err(anyhow!("provide --fixture or --metrics <path>"));
     };
+    if let Some(path) = args.manifest {
+        parse_cycle_manifest(&path)?;
+    }
     let report = evaluate(input);
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
@@ -582,6 +588,53 @@ fn parse_eval_metrics(path: &Path) -> Result<EvalInput> {
     Ok(input)
 }
 
+fn parse_cycle_manifest(path: &Path) -> Result<CycleManifest> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("read manifest {}", path.display()))?;
+    let manifest: CycleManifest = serde_json::from_str(&text)
+        .with_context(|| format!("parse manifest {}", path.display()))?;
+    validate_cycle_manifest(&manifest)
+        .with_context(|| format!("validate manifest {}", path.display()))?;
+    Ok(manifest)
+}
+
+fn validate_cycle_manifest(manifest: &CycleManifest) -> Result<()> {
+    let expected_pr_title = cycle_pr_title(&manifest.goal);
+    if manifest.pr_title != expected_pr_title {
+        return Err(anyhow!(
+            "pr_title {:?} does not match expected {:?}",
+            manifest.pr_title,
+            expected_pr_title
+        ));
+    }
+
+    let expected_prompt_hash = runner_core::constitution::hash(
+        cycle_prompt(&manifest.goal, manifest.auto_merge).as_bytes(),
+    );
+    if manifest.prompt_sha256 != expected_prompt_hash {
+        return Err(anyhow!(
+            "prompt_sha256 {:?} does not match expected {:?}",
+            manifest.prompt_sha256,
+            expected_prompt_hash
+        ));
+    }
+
+    if !manifest.once {
+        return Err(anyhow!("once must be true for isolated forge-loop cycles"));
+    }
+    if !manifest.strict_upgrade_only {
+        return Err(anyhow!(
+            "strict_upgrade_only must be true for forge-loop self-upgrades"
+        ));
+    }
+    if manifest.phases != required_phases() {
+        return Err(anyhow!(
+            "phases do not match the required forge-loop phase order"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_eval_input(input: &EvalInput) -> Result<()> {
     if input.retry_count > MAX_EVAL_RETRY_COUNT {
         return Err(anyhow!(
@@ -882,6 +935,38 @@ mod tests {
             manifest.prompt_sha256,
             runner_core::constitution::hash(prompt.as_bytes())
         );
+    }
+
+    #[test]
+    fn eval_manifest_rejects_prompt_hash_mismatch() {
+        let path = std::env::temp_dir().join(format!(
+            "fxrun-cycle-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::write(
+            &path,
+            r#"{
+                "goal": "Resume the interrupted 10-cycle objective: execute isolated cycle 10 of 10",
+                "pr_title": "chore: forge loop cycle 10",
+                "prompt_sha256": "sha256-not-the-real-prompt",
+                "once": true,
+                "auto_merge": true,
+                "strict_upgrade_only": true,
+                "phases": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]
+            }"#,
+        )
+        .expect("manifest");
+
+        let error = parse_cycle_manifest(&path).expect_err("forged prompt hash witness must fail");
+        assert!(
+            error.root_cause().to_string().contains("prompt_sha256"),
+            "error should name the invalid manifest witness: {error}"
+        );
+
+        fs::remove_file(path).ok();
     }
 
     #[test]
