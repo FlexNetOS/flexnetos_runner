@@ -17,6 +17,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "cargo fmt --all -- --check",
     "cargo test -p runner-cli --all-features forge_loop::tests",
     "cargo run -q -p runner-cli -- forge-loop docs-drift --json",
+    "cargo run -q -p runner-cli -- forge-loop target-mining-audit --json",
     "cargo test --workspace --all-features",
     "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "cargo audit --deny warnings",
@@ -40,6 +41,8 @@ pub enum ForgeLoopCommand {
     DocsDrift(DocsDriftArgs),
     /// Inventory Codex loop components and config surfaces for upgrade planning.
     ComponentsAudit(ComponentsAuditArgs),
+    /// Verify required Codex target mining sources were extracted, applied, and guarded.
+    TargetMiningAudit(TargetMiningAuditArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -137,6 +140,19 @@ pub struct ComponentsAuditArgs {
     pub strict: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct TargetMiningAuditArgs {
+    /// Workspace root to scan.
+    #[arg(long, default_value = ".")]
+    pub root: PathBuf,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return a non-zero exit when any target lacks source, application, or guard evidence.
+    #[arg(long)]
+    pub strict: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 pub enum CyclePhase {
     Red,
@@ -212,6 +228,33 @@ pub struct LoopComponentStatus {
     pub rationale: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TargetMiningAuditReport {
+    pub checked_targets: usize,
+    pub covered_targets: Vec<String>,
+    pub missing_targets: Vec<String>,
+    pub targets: Vec<TargetMiningStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TargetMiningStatus {
+    pub id: &'static str,
+    pub url: &'static str,
+    pub source_evidence: bool,
+    pub application_evidence: bool,
+    pub guard_evidence: bool,
+    pub missing: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TargetMiningTarget {
+    id: &'static str,
+    url: &'static str,
+    source_terms: &'static [&'static str],
+    application_terms: &'static [(&'static str, &'static str)],
+    guard_terms: &'static [(&'static str, &'static str)],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LoopComponent {
     id: &'static str,
@@ -265,6 +308,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::RunnerHealth(args) => runner_health(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
+        ForgeLoopCommand::TargetMiningAudit(args) => target_mining_audit(args),
     }
 }
 
@@ -425,7 +469,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "strict_upgrade_only": true,
         "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
         "required_local_checks": REQUIRED_LOCAL_CHECKS,
-        "required_gate_commands": REQUIRED_GATE_COMMANDS
+        "required_gate_commands": REQUIRED_GATE_COMMANDS,
+        "target_mining_audit": "fxrun forge-loop target-mining-audit --json"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -442,6 +487,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         }
         println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
         println!("  component audit    : use `fxrun forge-loop components-audit --json`");
+        println!("  target mining      : use `fxrun forge-loop target-mining-audit --json`");
         println!(
             "  required checks    : {}",
             REQUIRED_LOCAL_CHECKS.join(", ")
@@ -613,6 +659,248 @@ fn components_audit(args: ComponentsAuditArgs) -> Result<()> {
     }
 }
 
+fn target_mining_audit(args: TargetMiningAuditArgs) -> Result<()> {
+    let report = target_mining_audit_report(&args.root);
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop target mining audit");
+        println!("  checked targets : {}", report.checked_targets);
+        if report.missing_targets.is_empty() {
+            println!("  missing targets : none");
+        } else {
+            println!("  missing targets :");
+            for target in &report.missing_targets {
+                println!("    - {target}");
+            }
+        }
+    }
+
+    if args.strict && !report.missing_targets.is_empty() {
+        Err(anyhow!(
+            "forge-loop target mining incomplete: {}",
+            report.missing_targets.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn target_mining_audit_report(root: &Path) -> TargetMiningAuditReport {
+    let targets = expected_target_mining_targets()
+        .into_iter()
+        .map(|target| {
+            let source_evidence = all_terms_present(
+                root,
+                &[
+                    "docs/forge-loop/codex-target-mining.md",
+                    "docs/forge-loop/codex-target-exhaustion-matrix.md",
+                    ".agents/skills/forge-loop-research/SKILL.md",
+                ],
+                target.source_terms,
+            );
+            let application_evidence = all_file_terms_present(root, target.application_terms);
+            let guard_evidence = all_file_terms_present(root, target.guard_terms);
+            let mut missing = Vec::new();
+            if !source_evidence {
+                missing.push("source_evidence");
+            }
+            if !application_evidence {
+                missing.push("application_evidence");
+            }
+            if !guard_evidence {
+                missing.push("guard_evidence");
+            }
+            TargetMiningStatus {
+                id: target.id,
+                url: target.url,
+                source_evidence,
+                application_evidence,
+                guard_evidence,
+                missing,
+            }
+        })
+        .collect::<Vec<_>>();
+    let covered_targets = targets
+        .iter()
+        .filter(|target| target.missing.is_empty())
+        .map(|target| target.id.to_string())
+        .collect::<Vec<_>>();
+    let missing_targets = targets
+        .iter()
+        .filter(|target| !target.missing.is_empty())
+        .map(|target| target.id.to_string())
+        .collect::<Vec<_>>();
+
+    TargetMiningAuditReport {
+        checked_targets: targets.len(),
+        covered_targets,
+        missing_targets,
+        targets,
+    }
+}
+
+fn all_terms_present(root: &Path, files: &[&str], terms: &[&str]) -> bool {
+    let text = files
+        .iter()
+        .filter_map(|path| fs::read_to_string(root.join(path)).ok())
+        .collect::<Vec<_>>()
+        .join("\n");
+    terms.iter().all(|term| text.contains(term))
+}
+
+fn all_file_terms_present(root: &Path, terms: &[(&str, &str)]) -> bool {
+    terms.iter().all(|(path, term)| {
+        fs::read_to_string(root.join(path))
+            .map(|text| text.contains(term))
+            .unwrap_or(false)
+    })
+}
+
+fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
+    vec![
+        TargetMiningTarget {
+            id: "codex-github-action",
+            url: "https://developers.openai.com/codex/github-action",
+            source_terms: &[
+                "developers.openai.com/codex/github-action",
+                "final-message",
+                "--output-schema",
+            ],
+            application_terms: &[
+                (
+                    ".github/workflows/codex-forge-loop.yml",
+                    "openai/codex-action@v1",
+                ),
+                (".github/workflows/codex-forge-loop.yml", "codex-args:"),
+                (".github/workflows/codex-forge-loop.yml", "--output-schema"),
+                (
+                    ".github/codex/schemas/forge-loop-output.schema.json",
+                    "component_inventory",
+                ),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "codex_github_action_workflow_uses_documented_controls",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "target_mining_audit_report",
+                ),
+            ],
+        },
+        TargetMiningTarget {
+            id: "codex-permissions",
+            url: "https://developers.openai.com/codex/permissions",
+            source_terms: &[
+                "developers.openai.com/codex/permissions",
+                "default_permissions",
+                "sandbox_mode",
+            ],
+            application_terms: &[
+                (
+                    ".codex/permissions/forge-loop-workspace.toml",
+                    "default_permissions",
+                ),
+                (".codex/permissions/forge-loop-workspace.toml", "**/*.env"),
+                (
+                    ".codex/hooks/forge_loop_permission_request.py",
+                    "profile_is_blueprint_only",
+                ),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "codex_deep_target_mining_surfaces_are_guarded",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "do not mix active permission profiles with sandbox_mode",
+                ),
+            ],
+        },
+        TargetMiningTarget {
+            id: "codex-subagents",
+            url: "https://developers.openai.com/codex/subagents",
+            source_terms: &[
+                "developers.openai.com/codex/subagents",
+                "nickname_candidates",
+                "SubagentStart",
+            ],
+            application_terms: &[
+                (
+                    ".codex/agents/forge-loop-researcher.toml",
+                    "nickname_candidates",
+                ),
+                (
+                    ".codex/agents/forge-loop-ci-sentinel.toml",
+                    "nickname_candidates",
+                ),
+                (".codex/hooks.json", "SubagentStart"),
+                (".codex/hooks.json", "SubagentStop"),
+            ],
+            guard_terms: &[
+                ("crates/runner-cli/src/forge_loop.rs", "subagent-roster"),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "ci-sentinel-subagent",
+                ),
+            ],
+        },
+        TargetMiningTarget {
+            id: "awesome-codex-cli",
+            url: "https://github.com/RoggeOhta/awesome-codex-cli",
+            source_terms: &["RoggeOhta/awesome-codex-cli", "Monitoring", "MCP", "CI/CD"],
+            application_terms: &[
+                (
+                    ".agents/skills/forge-loop-research/SKILL.md",
+                    "RoggeOhta/awesome-codex-cli",
+                ),
+                (
+                    "docs/forge-loop/codex-target-exhaustion-matrix.md",
+                    "workflow/session managers",
+                ),
+            ],
+            guard_terms: &[
+                ("crates/runner-cli/src/forge_loop.rs", "target-mining-audit"),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "target-mining-ledger",
+                ),
+            ],
+        },
+        TargetMiningTarget {
+            id: "oh-my-codex",
+            url: "https://github.com/Yeachan-Heo/oh-my-codex",
+            source_terms: &[
+                "Yeachan-Heo/oh-my-codex",
+                "named worktree",
+                "doctor",
+                "native hook",
+            ],
+            application_terms: &[
+                (".codex/prompts/forge-loop.md", "isolated named worktrees"),
+                (
+                    ".codex/hooks/forge_loop_compact_summary.py",
+                    "covered_targets",
+                ),
+                (
+                    "docs/forge-loop/codex-target-exhaustion-matrix.md",
+                    "deep-interview",
+                ),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "target_mining_audit_report",
+                ),
+                ("crates/runner-cli/src/forge_loop.rs", "oh-my-codex"),
+            ],
+        },
+    ]
+}
+
 fn components_audit_report(root: &Path) -> ComponentsAuditReport {
     let components = expected_loop_components()
         .into_iter()
@@ -665,6 +953,24 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "hooks",
             path: ".codex/hooks.json",
             rationale: "Advanced Codex config supports repo-local hooks.json for lifecycle hooks next to an active project config layer.",
+        },
+        LoopComponent {
+            id: "permission-request-hook",
+            surface: "hooks",
+            path: ".codex/hooks/forge_loop_permission_request.py",
+            rationale: "Codex PermissionRequest hooks can witness approval posture and ensure the permission-profile blueprint stays separate from active sandbox settings.",
+        },
+        LoopComponent {
+            id: "post-tool-hook",
+            surface: "hooks",
+            path: ".codex/hooks/forge_loop_post_tool_use.py",
+            rationale: "Codex PostToolUse hooks let the harness re-check critical loop surfaces after mutating tool calls.",
+        },
+        LoopComponent {
+            id: "compact-summary-hook",
+            surface: "hooks",
+            path: ".codex/hooks/forge_loop_compact_summary.py",
+            rationale: "Codex PreCompact/PostCompact hooks preserve target-mining continuity across context compaction.",
         },
         LoopComponent {
             id: "rules",
@@ -725,6 +1031,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "docs",
             path: "docs/forge-loop/codex-target-mining.md",
             rationale: "Deep target mining needs a source-attributed extraction ledger so future loops can distinguish applied upgrades from unmined leads.",
+        },
+        LoopComponent {
+            id: "target-exhaustion-matrix",
+            surface: "docs",
+            path: "docs/forge-loop/codex-target-exhaustion-matrix.md",
+            rationale: "The target exhaustion matrix maps each required source to extracted categories, applied surfaces, and regression guards.",
         },
     ]
 }
@@ -1645,7 +1957,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 13);
+        assert_eq!(report.checked_components, 17);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -1764,9 +2076,16 @@ mod tests {
         );
         for required in [
             "PreToolUse",
+            "PermissionRequest",
+            "PostToolUse",
+            "PreCompact",
+            "PostCompact",
             "SubagentStart",
             "SubagentStop",
             "forge_loop_pre_tool_use.py",
+            "forge_loop_permission_request.py",
+            "forge_loop_post_tool_use.py",
+            "forge_loop_compact_summary.py",
             "forge_loop_subagent_summary.py",
         ] {
             assert!(hooks.contains(required), "hooks missing {required}");
@@ -1783,6 +2102,39 @@ mod tests {
     }
 
     #[test]
+    fn target_mining_audit_proves_sources_applications_and_guards() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let report = target_mining_audit_report(root);
+
+        assert_eq!(report.checked_targets, 5);
+        assert!(
+            report.missing_targets.is_empty(),
+            "target mining gaps: {:?}",
+            report.missing_targets
+        );
+        for target in report.targets {
+            assert!(
+                target.source_evidence,
+                "{} missing source evidence",
+                target.id
+            );
+            assert!(
+                target.application_evidence,
+                "{} missing application evidence",
+                target.id
+            );
+            assert!(
+                target.guard_evidence,
+                "{} missing guard evidence",
+                target.id
+            );
+        }
+    }
+
+    #[test]
     fn ci_runs_components_audit_guard() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -1793,6 +2145,10 @@ mod tests {
         assert!(
             ci.contains("forge-loop components-audit --strict"),
             "CI must enforce the forge-loop component contract"
+        );
+        assert!(
+            ci.contains("forge-loop target-mining-audit --strict"),
+            "CI must enforce the forge-loop target mining contract"
         );
     }
 
