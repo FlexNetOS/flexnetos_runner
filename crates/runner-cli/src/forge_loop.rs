@@ -531,7 +531,7 @@ pub fn evaluate(input: EvalInput) -> EvalReport {
         score += 10;
         reasons.push("runtime within speed budget");
     }
-    if input.diff_files <= 12 {
+    if (1..=12).contains(&input.diff_files) {
         score += 5;
         reasons.push("diff size is reviewable");
     }
@@ -549,7 +549,10 @@ pub fn evaluate(input: EvalInput) -> EvalReport {
     EvalReport {
         score,
         verdict,
-        upgrade_allowed: score >= 70 && input.gates_passed && input.red_test_first,
+        upgrade_allowed: score >= 70
+            && input.gates_passed
+            && input.red_test_first
+            && input.diff_files > 0,
         reasons,
     }
 }
@@ -650,6 +653,23 @@ mod tests {
         assert!(report.score >= 70);
         assert!(report.upgrade_allowed);
         assert!(matches!(report.verdict, "promote" | "upgrade-candidate"));
+    }
+
+    #[test]
+    fn evaluation_rejects_no_change_self_upgrades() {
+        let report = evaluate(EvalInput {
+            diff_files: 0,
+            ..EvalInput::fixture()
+        });
+
+        assert!(
+            !report.upgrade_allowed,
+            "strict-upgrade evaluation must not allow a zero-diff self-upgrade"
+        );
+        assert!(
+            !report.reasons.contains(&"diff size is reviewable"),
+            "a zero-diff run is not a reviewable upgrade diff"
+        );
     }
 
     #[test]
