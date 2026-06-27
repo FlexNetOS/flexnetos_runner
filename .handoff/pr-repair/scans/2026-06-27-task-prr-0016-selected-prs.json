@@ -1,0 +1,931 @@
+[
+  {
+    "schema": "flexnetos.pr_repair.manual_proof.v1",
+    "task": "TASK-PRR-0016",
+    "repo": "FlexNetOS/vox",
+    "project": "vox",
+    "pr": 3,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/vox/pull/3",
+    "head_ref": "task/d633ac-handoff-fleet-sync-vox",
+    "base_ref": "main",
+    "merge_state": "UNSTABLE",
+    "classification": "pr_test_regression",
+    "lane_decision": "route_existing_owner_lane",
+    "lane_path": "/tmp/handoff-fanout-d633ac-residual/vox",
+    "lane_status": "## task/d633ac-handoff-fleet-sync-vox...origin/task/d633ac-handoff-fleet-sync-vox",
+    "worktree_evidence": "worktree /home/drdave/Desktop/meta/vox\nHEAD eb4a26348884e8f11f62262c10ac09e89695294a\nbranch refs/heads/chore/rusty-idd-fleet-adapter\n\nworktree /tmp/handoff-fanout-d633ac-residual/vox\nHEAD a9dc3471280bf5ea428d5550616e4386fd614a1b\nbranch refs/heads/task/d633ac-handoff-fleet-sync-vox\n\n",
+    "failed_checks": [
+      {
+        "name": "Linux (CUDA)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099740"
+      },
+      {
+        "name": "Windows (CPU)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099725"
+      },
+      {
+        "name": "Windows (CUDA)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099730"
+      }
+    ],
+    "pending_checks": [],
+    "final_state": "blocked_with_evidence",
+    "blocker": "PR has failing required/CI checks and the PR head branch is already checked out in the existing residual fanout lane; duplicate meta lane creation was refused by git worktree branch ownership, so this proof routes the repair to that existing lane instead of creating a second owner.",
+    "next_action": "Run the assignment prompt .handoff/pr-repair/agents/vox-3-assignment.md in /tmp/handoff-fanout-d633ac-residual/vox, fix only FlexNetOS/vox#3, push, watch CI, and merge/automerge when green.",
+    "checks": [
+      {
+        "name": "macOS (Metal)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099746"
+      },
+      {
+        "name": "Analyze (rust)",
+        "workflowName": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289932578/job/83820099487"
+      },
+      {
+        "name": "Linux (CPU)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099744"
+      },
+      {
+        "name": "Linux (CUDA)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099740"
+      },
+      {
+        "name": "Windows (CPU)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099725"
+      },
+      {
+        "name": "Windows (CUDA)",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/actions/runs/28289933021/job/83820099730"
+      },
+      {
+        "name": "CodeQL",
+        "workflowName": "",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/vox/runs/83820476399"
+      }
+    ]
+  },
+  {
+    "schema": "flexnetos.pr_repair.manual_proof.v1",
+    "task": "TASK-PRR-0016",
+    "repo": "FlexNetOS/ruflo",
+    "project": "ruflo",
+    "pr": 3,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/ruflo/pull/3",
+    "head_ref": "task/d633ac-handoff-fleet-sync-ruflo",
+    "base_ref": "main",
+    "merge_state": "UNSTABLE",
+    "classification": "pr_test_regression",
+    "lane_decision": "route_existing_owner_lane",
+    "lane_path": "/tmp/handoff-fanout-d633ac-residual/ruflo",
+    "lane_status": "## task/d633ac-handoff-fleet-sync-ruflo...origin/task/d633ac-handoff-fleet-sync-ruflo",
+    "worktree_evidence": "worktree /home/drdave/Desktop/meta/ruflo\nHEAD dd60f6547237becf95bff8dd409acdbded24a0f4\nbranch refs/heads/chore/rusty-idd-fleet-adapter\n\nworktree /tmp/handoff-fanout-d633ac-residual/ruflo\nHEAD bdda451d7d45da050c8d20da00ebbf8e2bdb6439\nbranch refs/heads/task/d633ac-handoff-fleet-sync-ruflo\n\n",
+    "failed_checks": [
+      {
+        "name": "Static regression guards (#2267 YAML +",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096108"
+      }
+    ],
+    "pending_checks": [],
+    "final_state": "blocked_with_evidence",
+    "blocker": "PR has failing required/CI checks and the PR head branch is already checked out in the existing residual fanout lane; duplicate meta lane creation was refused by git worktree branch ownership, so this proof routes the repair to that existing lane instead of creating a second owner.",
+    "next_action": "Run the assignment prompt .handoff/pr-repair/agents/ruflo-3-assignment.md in /tmp/handoff-fanout-d633ac-residual/ruflo, fix only FlexNetOS/ruflo#3, push, watch CI, and merge/automerge when green.",
+    "checks": [
+      {
+        "name": "Static regression guards (#2267 YAML +",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096108"
+      },
+      {
+        "name": "Security & Code Quality",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820096148"
+      },
+      {
+        "name": "Analyze (javascript-typescript)",
+        "workflowName": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931201/job/83820095510"
+      },
+      {
+        "name": "\ud83d\ude80 Setup Verification",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820096102"
+      },
+      {
+        "name": "\ud83d\ude80 Integration Test Setup",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820096113"
+      },
+      {
+        "name": "Analyze (rust)",
+        "workflowName": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931201/job/83820095509"
+      },
+      {
+        "name": "Test Suite (ubuntu-latest)",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820096153"
+      },
+      {
+        "name": "Test V3 Packages",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096100"
+      },
+      {
+        "name": "\ud83d\udee1\ufe0f Security Verification",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820352105"
+      },
+      {
+        "name": "\ud83e\udd1d Agent Coordination Tests (coder, 4)",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258406"
+      },
+      {
+        "name": "\ud83e\udd1d Agent Coordination Tests (tester, 3)",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258417"
+      },
+      {
+        "name": "\ud83e\udd1d Agent Coordination Tests (reviewer, 2)",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258426"
+      },
+      {
+        "name": "\ud83e\udd1d Agent Coordination Tests (planner, 2)",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258425"
+      },
+      {
+        "name": "\ud83e\udd1d Agent Coordination Tests (researcher, 1)",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258394"
+      },
+      {
+        "name": "\ud83e\udd1d Agent Coordination Tests (backend-dev, 1)",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258433"
+      },
+      {
+        "name": "\ud83e\udd1d Agent Coordination Tests (performance-benchmarker, 1)",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258439"
+      },
+      {
+        "name": "Documentation & Examples",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820096146"
+      },
+      {
+        "name": "Type Check V3",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096098"
+      },
+      {
+        "name": "\ud83d\udcdd Code Quality",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820352110"
+      },
+      {
+        "name": "\ud83e\udde0 Memory Sharing Integration",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258363"
+      },
+      {
+        "name": "Build & Package (ubuntu-latest)",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820575941"
+      },
+      {
+        "name": "Smoke (no better-sqlite3) / ubuntu-latest / Node 22",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096155"
+      },
+      {
+        "name": "\ud83d\udcda Documentation Verification",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820352106"
+      },
+      {
+        "name": "\ud83d\udee1\ufe0f Fault Tolerance Tests",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258369"
+      },
+      {
+        "name": "Build & Package (macos-latest)",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820575940"
+      },
+      {
+        "name": "Smoke (no better-sqlite3) / ubuntu-latest / Node 24",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096103"
+      },
+      {
+        "name": "Build & Package (windows-latest)",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820575944"
+      },
+      {
+        "name": "Smoke (no better-sqlite3) / macos-latest / Node 22",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096119"
+      },
+      {
+        "name": "Deploy & Release",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820754153"
+      },
+      {
+        "name": "Plugin hooks smoke / ubuntu-latest / Node 22",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096101"
+      },
+      {
+        "name": "\ud83e\uddea Test Verification (ubuntu-latest, Node 18)",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820608855"
+      },
+      {
+        "name": "\u26a1 Performance Integration Tests",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820258358"
+      },
+      {
+        "name": "Plugin hooks smoke / macos-latest / Node 22",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096097"
+      },
+      {
+        "name": "\ud83e\uddea Test Verification (ubuntu-latest, Node 20)",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820608866"
+      },
+      {
+        "name": "\ud83e\uddea Test Verification (macos-latest, Node 20)",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820608867"
+      },
+      {
+        "name": "\ud83e\uddea Test Verification (windows-latest, Node 20)",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820608858"
+      },
+      {
+        "name": "CI Status",
+        "workflowName": "CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931754/job/83820753773"
+      },
+      {
+        "name": "browser rvf create flag smoke (#2015)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096112"
+      },
+      {
+        "name": "\ud83c\udfd7\ufe0f Build Verification",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820697207"
+      },
+      {
+        "name": "\ud83d\udcca Integration Test Report",
+        "workflowName": "\ud83d\udd17 Cross-Agent Integration Tests",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931732/job/83820739828"
+      },
+      {
+        "name": "\u26a1 Performance Verification",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820877957"
+      },
+      {
+        "name": "ruflo-graph-intelligence build + test smoke (#2044, ADR-123)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096099"
+      },
+      {
+        "name": "Supply-chain audit (#2046)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096094"
+      },
+      {
+        "name": "\ud83d\udcca Verification Report",
+        "workflowName": "\ud83d\udd0d Verification Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931740/job/83820877632"
+      },
+      {
+        "name": "Dependency review (#2046)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096209"
+      },
+      {
+        "name": "witness marker drift smoke (#2021)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096116"
+      },
+      {
+        "name": "witness verify precondition smoke (#1880)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096201"
+      },
+      {
+        "name": "kg-extract type-import classification smoke (#2049)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096163"
+      },
+      {
+        "name": "neural-trader portfolio CG smoke (#2068, ADR-126 Phase 3)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096164"
+      },
+      {
+        "name": "neural-trader backtest signing smoke (#2068, ADR-126 Phase 4)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096200"
+      },
+      {
+        "name": "neural-trader pipeline risk-gate smoke (#2068, ADR-126 Phase 5)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096184"
+      },
+      {
+        "name": "neural-trader feature attribution smoke (#2068, ADR-126 Phase 6)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096186"
+      },
+      {
+        "name": "plugin-registry signature verification smoke (#1922, CWE-347)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096235"
+      },
+      {
+        "name": "ruvllm WASM auto-init smoke (#2086)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096203"
+      },
+      {
+        "name": "agent_execute provider routing smoke (#2042)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096169"
+      },
+      {
+        "name": "memory stats legacy-DB smoke (#2120)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096205"
+      },
+      {
+        "name": "memory no-stray-db smoke (ADR-125 P7)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096227"
+      },
+      {
+        "name": "github-safe injection smoke (#2089, ADR-127 Phase 1)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096196"
+      },
+      {
+        "name": "github actions pin smoke (#2089, ADR-127 Phase 1)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096159"
+      },
+      {
+        "name": "github deprecated actions smoke (#2089, ADR-127 Phase 3)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096188"
+      },
+      {
+        "name": "github attribution opt-in smoke (#2089, ADR-127 Phase 4)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096168"
+      },
+      {
+        "name": "pre-bash hook safety smoke (#2017)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096183"
+      },
+      {
+        "name": "MCP protocol smoke / ubuntu-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096230"
+      },
+      {
+        "name": "MCP protocol smoke / macos-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096240"
+      },
+      {
+        "name": "Memory import smoke / ubuntu-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096212"
+      },
+      {
+        "name": "Memory import smoke / macos-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096197"
+      },
+      {
+        "name": "MCP paired-tool round-trip smoke (#1889)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096254"
+      },
+      {
+        "name": "Tool description discoverability (ADR-112)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096219"
+      },
+      {
+        "name": "Plugin package install-safety (#1902/#1903/#1904)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096185"
+      },
+      {
+        "name": "CLI npx-install smoke (#1147 / (22)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096223"
+      },
+      {
+        "name": "CLI npx-install smoke (#1147 / (24)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096225"
+      },
+      {
+        "name": "Windows hook shim smoke (#2132) / ubuntu-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096180"
+      },
+      {
+        "name": "Windows hook shim smoke (#2132) / macos-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096204"
+      },
+      {
+        "name": "Windows hook shim smoke (#2132) / windows-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096215"
+      },
+      {
+        "name": "Windows init hooks smoke (#2132) / ubuntu-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096182"
+      },
+      {
+        "name": "Windows init hooks smoke (#2132) / macos-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096179"
+      },
+      {
+        "name": "Windows init hooks smoke (#2132) / windows-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096167"
+      },
+      {
+        "name": "Windows hook execution smoke (#2132) / ubuntu-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096166"
+      },
+      {
+        "name": "Windows hook execution smoke (#2132) / macos-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096165"
+      },
+      {
+        "name": "Windows hook execution smoke (#2132) / windows-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096189"
+      },
+      {
+        "name": "Hook-command install safety (#1921)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096207"
+      },
+      {
+        "name": "Vector-index dimension audit (#1947)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096208"
+      },
+      {
+        "name": "ToolOutputGuardrail smoke (ADR-131,",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096210"
+      },
+      {
+        "name": "init-bundle invariants smoke (#2095, ADR-128 Phase 5)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096181"
+      },
+      {
+        "name": "wasm provider bridge smoke (ADR-129 P1)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096214"
+      },
+      {
+        "name": "wasm compose smoke (ADR-129 P2)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096211"
+      },
+      {
+        "name": "wasm gallery CRUD smoke (ADR-129 P3)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096206"
+      },
+      {
+        "name": "wasm plugin bridge smoke (ADR-129 P4)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096178"
+      },
+      {
+        "name": "graph schema smoke (ADR-130 P1)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096232"
+      },
+      {
+        "name": "statusline generator delegation smoke (#2195)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096222"
+      },
+      {
+        "name": "wizard init regression guard (#2206",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820096237"
+      },
+      {
+        "name": "Build V3 (ubuntu-latest)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820483509"
+      },
+      {
+        "name": "Build V3 (macos-latest)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820483505"
+      },
+      {
+        "name": "Build V3 (windows-latest)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820483506"
+      },
+      {
+        "name": "Witness verify (signed manifest) / ubuntu-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83821019322"
+      },
+      {
+        "name": "Witness verify (signed manifest) / macos-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83821019324"
+      },
+      {
+        "name": "Witness verify (signed manifest) / windows-latest",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83821019307"
+      },
+      {
+        "name": "graph query + pathfinder smoke (ADR-130 P2+P5)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820893941"
+      },
+      {
+        "name": "graph trajectory hooks smoke (ADR-130 P3)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820893935"
+      },
+      {
+        "name": "graph plugin adapter smoke (ADR-130 P4)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83820893947"
+      },
+      {
+        "name": "Publish to npm (alpha)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83821222913"
+      },
+      {
+        "name": "graph benchmark (ADR-130 P6)",
+        "workflowName": "V3 CI/CD Pipeline",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/actions/runs/28289931735/job/83821048807"
+      },
+      {
+        "name": "CodeQL",
+        "workflowName": "",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/ruflo/runs/83820274242"
+      }
+    ]
+  },
+  {
+    "schema": "flexnetos.pr_repair.manual_proof.v1",
+    "task": "TASK-PRR-0016",
+    "repo": "FlexNetOS/kasetto",
+    "project": "kasetto",
+    "pr": 2,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/kasetto/pull/2",
+    "head_ref": "task/d633ac-handoff-fleet-sync-kasetto",
+    "base_ref": "main",
+    "merge_state": "UNSTABLE",
+    "classification": "pr_test_regression",
+    "lane_decision": "route_existing_owner_lane",
+    "lane_path": "/tmp/handoff-fanout-d633ac-residual/kasetto",
+    "lane_status": "## task/d633ac-handoff-fleet-sync-kasetto...origin/task/d633ac-handoff-fleet-sync-kasetto",
+    "worktree_evidence": "worktree /home/drdave/Desktop/meta/kasetto\nHEAD ec01ccaffad67e5fc57987f441a610682bac6290\nbranch refs/heads/main\n\nworktree /tmp/handoff-fanout-d633ac-residual/kasetto\nHEAD 4001b62224f5539d319a880537dad5b7c0a11f9f\nbranch refs/heads/task/d633ac-handoff-fleet-sync-kasetto\n\n",
+    "failed_checks": [
+      {
+        "name": "Rust \u00b7 CI",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/actions/runs/28289929932/job/83820091811"
+      },
+      {
+        "name": "Next \u00b7 CI",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/actions/runs/28289929932/job/83820091809"
+      }
+    ],
+    "pending_checks": [],
+    "final_state": "blocked_with_evidence",
+    "blocker": "PR has failing required/CI checks and the PR head branch is already checked out in the existing residual fanout lane; duplicate meta lane creation was refused by git worktree branch ownership, so this proof routes the repair to that existing lane instead of creating a second owner.",
+    "next_action": "Run the assignment prompt .handoff/pr-repair/agents/kasetto-2-assignment.md in /tmp/handoff-fanout-d633ac-residual/kasetto, fix only FlexNetOS/kasetto#2, push, watch CI, and merge/automerge when green.",
+    "checks": [
+      {
+        "name": "Rust \u00b7 CI",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/actions/runs/28289929932/job/83820091811"
+      },
+      {
+        "name": "Analyze (javascript-typescript)",
+        "workflowName": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/actions/runs/28289929615/job/83820091676"
+      },
+      {
+        "name": "Analyze (ruby)",
+        "workflowName": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/actions/runs/28289929615/job/83820091671"
+      },
+      {
+        "name": "Analyze (rust)",
+        "workflowName": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/actions/runs/28289929615/job/83820091675"
+      },
+      {
+        "name": "Next \u00b7 CI",
+        "workflowName": "CI",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/actions/runs/28289929932/job/83820091809"
+      },
+      {
+        "name": "CodeQL",
+        "workflowName": "",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/FlexNetOS/kasetto/runs/83820175414"
+      }
+    ]
+  }
+]
