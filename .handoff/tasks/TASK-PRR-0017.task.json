@@ -1,0 +1,45 @@
+{
+  "acceptance_criteria": [
+    "A committed report records whether loop_lib provides a state machine, retry policy, durable state, event log, parallel lanes, step budgets, watchdogs, and failure classification.",
+    "The report compares loop_lib semantics with handoff task/ledger semantics and names the best fit for PR repair supervisor execution.",
+    "If loop_lib is not selected, the rejection includes code/command evidence and the chosen replacement path.",
+    "The decision is cross-linked from `.handoff/pr-repair` and can be used by `TASK-PRR-0005` supervisor-loop implementation."
+  ],
+  "allows_dependency_addition": false,
+  "allows_network": false,
+  "blocked_by": [],
+  "correlation_id": "wf-pr-repair-loop-lib-fit-20260627",
+  "dependencies": [],
+  "id": "TASK-PRR-0017",
+  "intent_lock": {
+    "acceptance_hash": "blake3:19d0330bd5fb6353c3b28bd0d6e0b368d386d81f31f83aa702150c07273edcf2",
+    "objective_hash": "blake3:a649aa7b2a39689ded3e0fb561622e3d7338d39e626f1ad2d7773c9f56803de9",
+    "path_scope_hash": "blake3:f6d9f3e99db664ff7d71925563ab3a3df3df7ad663e2a679d85d765ecbf59cae"
+  },
+  "objective": "Decide: Complete `.idea` Research Track D by inspecting `loop_lib`, `loop_cli`, `envctl`, and `handoff` to determine whether `loop_lib` should provide the execution engine for the PR-repair supervisor loop and bounded repair workflows.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+    "external:loop_lib",
+    "external:loop_cli",
+    "external:envctl",
+    "external:handoff"
+  ],
+  "priority": "P1",
+  "role": "architect",
+  "schema": "handoff.task.v1",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Deep .idea revisit found Research Track D had no executable task.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/pr-repair/reports/2026-06-27-idea-deep-doc-gap-audit.md"
+    ]
+  },
+  "status": "backlog",
+  "test_commands": [
+    "rtk rg -n \"struct|enum|retry|budget|watchdog|event|parallel|state\" /home/drdave/Desktop/meta/loop_lib /home/drdave/Desktop/meta/loop_cli || true",
+    "rtk meta git status"
+  ],
+  "title": "[architect] Close loop_lib repair-runner model inspection"
+}

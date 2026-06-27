@@ -1,0 +1,49 @@
+{
+  "acceptance_criteria": [
+    "A decision artifact states whether GitHub issues, PR comments, local handoff tasks/ledger rows, or a combination own repair-ticket visibility for v1.",
+    "If GitHub comments/issues are used, the schema, permissions, idempotency key, update policy, and close/supersede behavior are defined.",
+    "If GitHub comments/issues are rejected for v1, the decision explains why and identifies any future trigger for adoption.",
+    "The decision preserves one canonical state owner and prevents agents from maintaining divergent queue state in local files and GitHub."
+  ],
+  "allows_dependency_addition": false,
+  "allows_network": true,
+  "blocked_by": [
+    "TASK-PRR-0003"
+  ],
+  "correlation_id": "wf-pr-repair-github-ticket-projection-20260627",
+  "dependencies": [
+    "TASK-PRR-0003"
+  ],
+  "id": "TASK-PRR-0018",
+  "intent_lock": {
+    "acceptance_hash": "blake3:b2c88d28f61dbce70c058352b43bd00826b91837092396c06062e57e1a9c658e",
+    "objective_hash": "blake3:7d7cd320d554c2a2a7fa01580ae4194132d74d3afa064a6019dd8c83327ea21d",
+    "path_scope_hash": "blake3:07a4ee0a41317fea40faf1d5333435118fb27b781a8e8b7503b373ea3fba64b9"
+  },
+  "objective": "Decide: Resolve the `.idea` open question of whether PR repair tickets should be projected to GitHub issues/comments, local ledger rows, or both, without creating competing sources of truth.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+    "external:GitHub issues",
+    "external:GitHub PR comments",
+    "external:handoff ledger"
+  ],
+  "priority": "P1",
+  "role": "architect",
+  "schema": "handoff.task.v1",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Deep .idea revisit found v3 open ticket-placement question had no dedicated task.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v3-meta-control-plane.md",
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/pr-repair/reports/2026-06-27-idea-deep-doc-gap-audit.md"
+    ]
+  },
+  "status": "backlog",
+  "test_commands": [
+    "gh pr view <PR> --json comments,reviews,statusCheckRollup || true",
+    "hf status --json || true"
+  ],
+  "title": "[architect] Decide GitHub issue/comment ticket projection boundaries"
+}
