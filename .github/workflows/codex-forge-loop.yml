@@ -26,7 +26,6 @@ jobs:
   codex-forge-loop:
     name: Codex forge-loop action
     runs-on: ubuntu-latest
-    if: ${{ secrets.OPENAI_API_KEY != '' }}
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
     steps:
