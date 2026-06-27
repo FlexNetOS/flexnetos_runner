@@ -17,3 +17,10 @@ For `flexnetos_runner`, the strict local translation is:
 4. Claims of exceeding the target require machine evidence from `fxrun forge-loop runner-flow-audit --strict`, not screenshots or intent.
 
 The target is not considered complete if there are no active/queued runs and no sustained workflow proving useful runner occupancy.
+
+
+## Bridge-duration sustain policy
+
+`runner-sustain.yml` is intentionally longer than a smoke check. Scheduled runs fire every 10 minutes and each local runner slot performs useful forge-loop audits for a bounded default of 14 minutes. This creates queued or active useful work across schedule boundaries, while a 20-minute job timeout prevents unbounded occupation.
+
+This still does not by itself prove the 12+ hour kclaw0 persistence target; that proof requires an observed window of repeated successful sustain runs and green PR flow over the full target interval.

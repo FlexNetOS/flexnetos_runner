@@ -623,7 +623,7 @@ fn runner_flow_audit_report(args: &RunnerFlowAuditArgs) -> Result<RunnerFlowAudi
         .exists()
         && fs::read_to_string(args.root.join(".github/workflows/runner-sustain.yml"))
             .map(|text| {
-                text.contains("*/15 * * * *")
+                text.contains("*/10 * * * *")
                     && text.contains("self-hosted")
                     && text.contains("components-audit --strict")
                     && text.contains("target-mining-audit --strict")
@@ -2649,6 +2649,35 @@ mod tests {
     }
 
     #[test]
+    fn runner_sustain_workflow_bridges_schedule_interval() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/runner-sustain.yml"))
+            .expect("read runner sustain workflow");
+        let target = fs::read_to_string(root.join("docs/forge-loop/kclaw0-runner-flow-target.md"))
+            .expect("read kclaw0 runner target");
+
+        for required in [
+            "duration_minutes",
+            "default: '14'",
+            "*/10 * * * *",
+            "timeout-minutes: 20",
+            "while [",
+            "runner-sustain slot=",
+            "tick_seconds",
+        ] {
+            assert!(
+                workflow.contains(required),
+                "runner sustain bridge missing {required}"
+            );
+        }
+        assert!(target.contains("Bridge-duration sustain policy"));
+        assert!(target.contains("12+ hour kclaw0 persistence target"));
+    }
+
+    #[test]
     fn runner_sustain_workflow_keeps_local_slots_useful() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -2661,7 +2690,7 @@ mod tests {
 
         for required in [
             "workflow_dispatch:",
-            "*/15 * * * *",
+            "*/10 * * * *",
             "runs-on: [self-hosted, linux, x64, local, flexnetos]",
             "slot: [1, 2]",
             "forge-loop components-audit --strict",
