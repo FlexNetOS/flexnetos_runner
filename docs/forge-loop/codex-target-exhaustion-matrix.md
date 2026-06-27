@@ -15,3 +15,7 @@ This matrix is the current "mined to the bone" checklist for the explicit target
 ## Remaining policy
 
 A future loop may add more surfaces, but it must not claim a target has been mined unless the extraction category, local application, and regression guard are all updated together. If official Codex docs change, update this matrix and `fxrun forge-loop target-mining-audit --strict` in the same PR.
+
+## 2026-06-27 auto-compaction continuity extraction
+
+All five target families now feed the `.codex` continuity contract: local config enables `auto_compaction`, `model_auto_compact_token_limit`, scoped tool-output limits, and `experimental_compact_prompt_file`; `codex exec` invocations and the GitHub Action pass the same settings explicitly; `PreCompact`/`PostCompact` hooks emit target coverage; and the structured output schema requires `auto_compact_continuity` evidence. This applies the OpenAI context-window/compaction guidance and the OMX durable-state pattern without adopting an external runtime.

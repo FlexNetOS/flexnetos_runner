@@ -40,7 +40,7 @@ jobs:
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt-file: ${{ inputs.prompt_file }}
-          codex-args: '["--ephemeral","--output-schema",".github/codex/schemas/forge-loop-output.schema.json"]'
+          codex-args: '["--ephemeral","--config","features.auto_compaction=true","--config","model_auto_compact_token_limit=3000000","--config","model_auto_compact_token_limit_scope=\"total\"","--config","tool_output_token_limit=12000","--output-schema",".github/codex/schemas/forge-loop-output.schema.json"]'
           model: ${{ inputs.model }}
           effort: ${{ inputs.effort }}
           sandbox: workspace-write

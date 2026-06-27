@@ -13,6 +13,9 @@ const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
 const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
+const AUTO_COMPACT_TOKEN_LIMIT: u32 = 3_000_000;
+const TOOL_OUTPUT_TOKEN_LIMIT: u32 = 12_000;
+const COMPACT_PROMPT_PATH: &str = ".codex/prompts/compact-forge-loop.md";
 const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "cargo fmt --all -- --check",
     "cargo test -p runner-cli --all-features forge_loop::tests",
@@ -778,6 +781,14 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     ".github/codex/schemas/forge-loop-output.schema.json",
                     "component_inventory",
                 ),
+                (
+                    ".github/codex/schemas/forge-loop-output.schema.json",
+                    "auto_compact_continuity",
+                ),
+                (
+                    ".github/workflows/codex-forge-loop.yml",
+                    "features.auto_compaction=true",
+                ),
             ],
             guard_terms: &[
                 (
@@ -885,6 +896,8 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     ".codex/hooks/forge_loop_compact_summary.py",
                     "covered_targets",
                 ),
+                (".codex/config.toml", "auto_compaction = true"),
+                (".codex/prompts/compact-forge-loop.md", "next action"),
                 (
                     "docs/forge-loop/codex-target-exhaustion-matrix.md",
                     "deep-interview",
@@ -941,6 +954,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "prompt",
             path: ".codex/prompts/forge-loop.md",
             rationale: "Codex GitHub Action docs recommend prompt-file inputs stored under .github/codex/prompts; this repo also keeps the local forge-loop prompt as a Codex prompt artifact.",
+        },
+        LoopComponent {
+            id: "compact-prompt",
+            surface: "prompt",
+            path: ".codex/prompts/compact-forge-loop.md",
+            rationale: "Long-running forge-loop sessions need an explicit compact prompt so auto-compaction preserves phase, source coverage, validation state, and next action instead of context rot.",
         },
         LoopComponent {
             id: "project-config",
@@ -1027,6 +1046,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "Codex GitHub Action docs allow --output-schema through codex-args so forge-loop automation can require structured evidence.",
         },
         LoopComponent {
+            id: "codex-continuity-schema",
+            surface: "tools",
+            path: ".github/codex/schemas/forge-loop-output.schema.json",
+            rationale: "The structured output schema must require auto-compaction continuity evidence for every action-driven loop run.",
+        },
+        LoopComponent {
             id: "target-mining-ledger",
             surface: "docs",
             path: "docs/forge-loop/codex-target-mining.md",
@@ -1037,6 +1062,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "docs",
             path: "docs/forge-loop/codex-target-exhaustion-matrix.md",
             rationale: "The target exhaustion matrix maps each required source to extracted categories, applied surfaces, and regression guards.",
+        },
+        LoopComponent {
+            id: "deep-research-exhaustion-report",
+            surface: "docs",
+            path: "docs/forge-loop/deep-research-exhaustion-2026-06-27.md",
+            rationale: "The deep-research exhaustion report records the mined target categories and the applied auto-compaction continuity contract.",
         },
     ]
 }
@@ -1126,6 +1157,16 @@ pub fn codex_invocation(prompt: String) -> CodexInvocation {
             "--ignore-user-config".into(),
             "--config".into(),
             "approval_policy=\"never\"".into(),
+            "--config".into(),
+            "features.auto_compaction=true".into(),
+            "--config".into(),
+            format!("model_auto_compact_token_limit={AUTO_COMPACT_TOKEN_LIMIT}"),
+            "--config".into(),
+            "model_auto_compact_token_limit_scope=\"total\"".into(),
+            "--config".into(),
+            format!("tool_output_token_limit={TOOL_OUTPUT_TOKEN_LIMIT}"),
+            "--config".into(),
+            format!("experimental_compact_prompt_file=\"{COMPACT_PROMPT_PATH}\""),
             prompt,
         ],
     }
@@ -1134,6 +1175,9 @@ pub fn codex_invocation(prompt: String) -> CodexInvocation {
 pub fn research_sources() -> Vec<ResearchSource> {
     vec![
         ResearchSource { id: "openai-codex", url: "https://github.com/openai/codex", purpose: "Codex Rust CLI behavior, noninteractive execution, JSONL, and upstream issues" },
+        ResearchSource { id: "codex-github-action-docs", url: "https://developers.openai.com/codex/github-action", purpose: "Codex Action prompt-file, codex-args, sandbox, safety-strategy, output, and structured schema controls" },
+        ResearchSource { id: "codex-permissions-docs", url: "https://developers.openai.com/codex/permissions", purpose: "Permission-profile migration, filesystem/network least privilege, and sandbox/profile non-composition rules" },
+        ResearchSource { id: "codex-subagents-docs", url: "https://developers.openai.com/codex/subagents", purpose: "Project custom agents, explicit fan-out, inherited sandbox behavior, and max thread/depth controls" },
         ResearchSource { id: "awesome-codex-cli", url: "https://github.com/RoggeOhta/awesome-codex-cli", purpose: "Codex ecosystem tools, skills, plugins, MCP servers, and orchestration patterns" },
         ResearchSource { id: "oh-my-codex", url: "https://github.com/Yeachan-Heo/oh-my-codex", purpose: "multi-agent teams, hooks, HUDs, and Codex orchestration UX" },
         ResearchSource { id: "crates-io", url: "https://crates.io", purpose: "Rust crates that improve loop reliability, accuracy, speed, tracing, and scheduling" },
@@ -1375,7 +1419,7 @@ impl EvalInput {
 fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
     let pr_title = cycle_pr_title(goal);
     format!(
-        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, research one reliability/accuracy/speed improvement, and if a self-upgrade is warranted commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof.",
+        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, research one reliability/accuracy/speed improvement, and if a self-upgrade is warranted commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof.",
         if auto_merge { "auto-merge once green when repository settings allow" } else { "leave the PR ready for review" }
     )
 }
@@ -1470,6 +1514,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn codex_invocation_forces_auto_compaction_continuity() {
+        let inv = codex_invocation("do work".into());
+        let joined = inv.args.join("\n");
+
+        assert!(joined.contains("features.auto_compaction=true"));
+        assert!(joined.contains("model_auto_compact_token_limit=3000000"));
+        assert!(joined.contains("model_auto_compact_token_limit_scope=\"total\""));
+        assert!(joined.contains("tool_output_token_limit=12000"));
+        assert!(joined
+            .contains("experimental_compact_prompt_file=\".codex/prompts/compact-forge-loop.md\""));
+    }
+
+    #[test]
     fn codex_invocation_uses_noninteractive_json_workspace_write() {
         let inv = codex_invocation("do work".into());
         assert!(inv.program.ends_with("codex") || inv.program == DEFAULT_CODEX);
@@ -1494,6 +1551,9 @@ mod tests {
             .map(|s| s.id)
             .collect::<Vec<_>>();
         assert!(ids.contains(&"openai-codex"));
+        assert!(ids.contains(&"codex-github-action-docs"));
+        assert!(ids.contains(&"codex-permissions-docs"));
+        assert!(ids.contains(&"codex-subagents-docs"));
         assert!(ids.contains(&"awesome-codex-cli"));
         assert!(ids.contains(&"oh-my-codex"));
         assert!(ids.contains(&"crates-io"));
@@ -1957,7 +2017,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 17);
+        assert_eq!(report.checked_components, 20);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -1991,6 +2051,74 @@ mod tests {
             assert!(
                 surfaces.contains(&required),
                 "missing component surface {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn forge_loop_config_enables_auto_compaction() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let config = fs::read_to_string(root.join(".codex/config.toml")).expect("read config");
+        let compact_prompt =
+            fs::read_to_string(root.join(COMPACT_PROMPT_PATH)).expect("read compact prompt");
+        let workflow = fs::read_to_string(root.join(".github/workflows/codex-forge-loop.yml"))
+            .expect("read Codex workflow");
+
+        for required in [
+            "auto_compaction = true",
+            "model_auto_compact_token_limit = 3000000",
+            "model_auto_compact_token_limit_scope = \"total\"",
+            "tool_output_token_limit = 12000",
+            "experimental_compact_prompt_file = \"prompts/compact-forge-loop.md\"",
+        ] {
+            assert!(config.contains(required), "config missing {required}");
+        }
+        assert!(compact_prompt.contains("active phase"));
+        assert!(compact_prompt.contains("next action"));
+        assert!(workflow.contains("features.auto_compaction=true"));
+        assert!(workflow.contains("model_auto_compact_token_limit=3000000"));
+    }
+
+    #[test]
+    fn stop_and_compact_hooks_preserve_phase_source_validation_next_action() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let stop_hook = fs::read_to_string(root.join(".codex/hooks/forge_loop_stop_summary.py"))
+            .expect("read stop hook");
+        let compact_hook =
+            fs::read_to_string(root.join(".codex/hooks/forge_loop_compact_summary.py"))
+                .expect("read compact hook");
+        let compact_prompt =
+            fs::read_to_string(root.join(COMPACT_PROMPT_PATH)).expect("read compact prompt");
+        let output_schema =
+            fs::read_to_string(root.join(".github/codex/schemas/forge-loop-output.schema.json"))
+                .expect("read output schema");
+
+        for required in [
+            "active_phase",
+            "source_coverage",
+            "validation_state",
+            "next_action",
+        ] {
+            assert!(stop_hook.contains(required), "stop hook missing {required}");
+            assert!(
+                compact_hook.contains(required),
+                "compact hook missing {required}"
+            );
+            assert!(
+                output_schema.contains(required),
+                "output schema missing {required}"
+            );
+        }
+        for required in ["active phase", "source", "validation", "next action"] {
+            assert!(
+                compact_prompt.contains(required),
+                "compact prompt missing {required}"
             );
         }
     }
@@ -2040,6 +2168,8 @@ mod tests {
             "safety-strategy: drop-sudo",
             "allow-bots:",
             "output-file:",
+            "features.auto_compaction=true",
+            "model_auto_compact_token_limit=3000000",
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
         }

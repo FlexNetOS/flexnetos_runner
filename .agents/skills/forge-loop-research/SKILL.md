@@ -21,7 +21,7 @@ Required sources:
 Output format:
 - one-line summary
 - source-attributed findings
-- loop component/config inventory (`config`, hooks, rules, skills, custom agents/subagents, permission profiles, model flags, GitHub Action/tool surfaces, structured output schemas)
+- loop component/config inventory (`config`, hooks, rules, skills, custom agents/subagents, permission profiles, model flags, GitHub Action/tool surfaces, structured output schemas, auto-compaction/continuity settings)
 - one recommended smallest safe self-upgrade
 - tests required before merge
 
@@ -30,3 +30,4 @@ Constraints:
 - Do not recommend downgrades or removals without parity proof.
 - Prefer improvements that can be evaluated automatically on every loop run.
 - When changing Codex loop components or configs, update `fxrun forge-loop components-audit`, `fxrun forge-loop target-mining-audit`, and CI so the new surface is machine-checkable.
+- Do not claim long-running readiness unless `auto_compaction`, `model_auto_compact_token_limit`, compact hooks, and the compact prompt are present for local and GitHub Action sessions.
