@@ -605,10 +605,35 @@ impl EvalInput {
 }
 
 fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
+    let pr_title = cycle_pr_title(goal);
     format!(
-        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, research one reliability/accuracy/speed improvement, and if a self-upgrade is warranted commit, push, open a PR, and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof.",
+        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, research one reliability/accuracy/speed improvement, and if a self-upgrade is warranted commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof.",
         if auto_merge { "auto-merge once green when repository settings allow" } else { "leave the PR ready for review" }
     )
+}
+
+fn cycle_pr_title(goal: &str) -> String {
+    if let Some(cycle) = cycle_number_from_goal(goal) {
+        format!("chore: forge loop cycle {cycle:02}")
+    } else {
+        "chore: forge loop self-upgrade".into()
+    }
+}
+
+fn cycle_number_from_goal(goal: &str) -> Option<u8> {
+    let lower = goal.to_ascii_lowercase();
+    for (cycle_at, _) in lower.match_indices("cycle") {
+        let after_cycle = &goal[cycle_at + "cycle".len()..];
+        let digits = after_cycle
+            .trim_start_matches(|c: char| c.is_ascii_whitespace() || c == '-' || c == '#')
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>();
+        if let Ok(cycle) = digits.parse() {
+            return Some(cycle);
+        }
+    }
+    None
 }
 
 fn cycle_manifest(args: &RunArgs) -> CycleManifest {
@@ -817,6 +842,17 @@ mod tests {
                 CyclePhase::Upgrade,
             ]
         );
+    }
+
+    #[test]
+    fn cycle_prompt_binds_nested_codex_to_single_cycle_and_pr_title() {
+        let prompt = cycle_prompt(
+            "Resume the interrupted 10-cycle objective: execute isolated cycle 07 of 10",
+            true,
+        );
+
+        assert!(prompt.contains("Do not start another cycle."));
+        assert!(prompt.contains("PR title 'chore: forge loop cycle 07'"));
     }
 
     #[test]
