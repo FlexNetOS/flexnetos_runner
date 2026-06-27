@@ -320,8 +320,9 @@ pub fn codex_invocation(prompt: String) -> CodexInvocation {
             "--json".into(),
             "--sandbox".into(),
             "workspace-write".into(),
-            "--ask-for-approval".into(),
-            "never".into(),
+            "--ignore-user-config".into(),
+            "--config".into(),
+            "approval_policy=\"never\"".into(),
             prompt,
         ],
     }
@@ -455,10 +456,11 @@ mod tests {
             .args
             .windows(2)
             .any(|w| w == ["--sandbox", "workspace-write"]));
+        assert!(inv.args.contains(&"--ignore-user-config".into()));
         assert!(inv
             .args
             .windows(2)
-            .any(|w| w == ["--ask-for-approval", "never"]));
+            .any(|w| w == ["--config", "approval_policy=\"never\""]));
         assert_eq!(inv.args.last().unwrap(), "do work");
     }
 
