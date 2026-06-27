@@ -1,0 +1,44 @@
+{
+  "acceptance_criteria": [
+    "A committed note identifies ICM runtime data location, DB engine/schema if inspectable, and how topics/keys/links/importance are represented.",
+    "The note proves recall and recall-context can retrieve a representative PR-repair failure signature with stable keywords.",
+    "The selected topics for PR repair signatures are documented, including when to use errors-resolved, decisions-pr-repair, context-<repo>, or failure-signatures.",
+    "Noise controls distinguish reusable root-cause signatures from transient CI logs, and `TASK-PRR-0012` can consume the result."
+  ],
+  "allows_dependency_addition": false,
+  "allows_network": false,
+  "blocked_by": [],
+  "correlation_id": "wf-pr-repair-icm-storage-query-20260627",
+  "dependencies": [],
+  "id": "TASK-PRR-0019",
+  "intent_lock": {
+    "acceptance_hash": "blake3:040f49b1edec857fc1169ef2eb90a368394550d9fbaadf1e6a3fda13d68c6f3e",
+    "objective_hash": "blake3:d76dff68f564322415281ce1bcbf7e7dc2c738540c6d645466bb9f63c681a31d",
+    "path_scope_hash": "blake3:fadf846be4239868ee9af339ea94859998fc2445f3177b205161043262e62dc8"
+  },
+  "objective": "Decide/prove: Complete `.idea` Research Track G by inspecting ICM storage, schema, topics, keys, links, importance levels, recall, and recall-context behavior enough to make PR-repair failure signatures reliably reusable and de-duplicating.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+    "external:ICM"
+  ],
+  "priority": "P1",
+  "role": "architect",
+  "schema": "handoff.task.v1",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "reason": "Deep .idea revisit found ICM actual storage/query model was only partially represented by durable-learning task.",
+    "source_files": [
+      ".handoff/.idea/agentic-pr-failure-repair-queue.v4-research-plan.md",
+      ".handoff/tasks/TASK-PRR-0012.task.json",
+      ".handoff/pr-repair/reports/2026-06-27-idea-deep-doc-gap-audit.md"
+    ]
+  },
+  "status": "backlog",
+  "test_commands": [
+    "icm health || true",
+    "icm topics || true",
+    "icm recall-context \"pr-repair failure signature\" --limit 5 || true"
+  ],
+  "title": "[architect] Validate ICM storage/query model for PR-repair signatures"
+}
