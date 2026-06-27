@@ -227,6 +227,10 @@ fn run(args: RunArgs) -> Result<()> {
         cycle_dir.join("cycle-manifest.json"),
         serde_json::to_string_pretty(&cycle_manifest(&args))?,
     )?;
+    fs::write(
+        cycle_dir.join("research-sources.json"),
+        serde_json::to_string_pretty(&research_sources())?,
+    )?;
     let log = cycle_dir.join("events.jsonl");
     append_event(
         &log,
@@ -1364,6 +1368,46 @@ mod tests {
             ]
         );
         assert_eq!(report.missing_local_checks, report.required_local_checks);
+    }
+
+    #[test]
+    fn dry_run_writes_research_sources_artifact() {
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-research-artifact-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&out).ok();
+
+        run(RunArgs {
+            goal: "cycle 15 research artifact witness".into(),
+            out: out.clone(),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        })
+        .expect("dry run");
+
+        let cycle_dir = fs::read_dir(&out)
+            .expect("artifact root")
+            .next()
+            .expect("one cycle artifact")
+            .expect("cycle dir")
+            .path();
+        let sources = fs::read_to_string(cycle_dir.join("research-sources.json"))
+            .expect("research sources artifact");
+        let parsed: serde_json::Value = serde_json::from_str(&sources).expect("research sources");
+        let ids = parsed
+            .as_array()
+            .expect("research source array")
+            .iter()
+            .filter_map(|source| source.get("id"))
+            .filter_map(|id| id.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(ids.contains(&"openai-codex"));
+        assert!(ids.contains(&"kclaw0"));
+
+        fs::remove_dir_all(out).ok();
     }
 
     #[test]
