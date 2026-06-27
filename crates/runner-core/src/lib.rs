@@ -88,7 +88,7 @@ pub use constitution::{Constitution, ConstitutionStatus};
 pub use cost::JobCost;
 pub use deadline::DeadlinePolicy;
 pub use error::{CoreError, Result};
-pub use events::{DispatchEvent, EventCategory, EventSink, NullSink, Outcome};
+pub use events::{DeniedBy, DispatchEvent, EventCategory, EventSink, NullSink, Outcome};
 pub use governor::{Admission, Budget, Governor, Spend, SurvivalTier};
 pub use lint::{is_structurally_valid, structural_errors, LintError};
 pub use loopguard::{fingerprint, LoopGuard, Verdict};

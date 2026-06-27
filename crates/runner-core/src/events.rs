@@ -102,6 +102,33 @@ impl Outcome {
             | Outcome::BudgetDenied => EventCategory::Policy,
         }
     }
+
+    /// Structured policy-rule citation for audit queries. Execution outcomes return `None`.
+    pub fn denied_by(&self) -> Option<DeniedBy> {
+        let (gate, rule_id) = match self {
+            Outcome::ConstitutionViolated => ("constitution", "constitution-violated"),
+            Outcome::Unparseable => ("wire", "unparseable-frame"),
+            Outcome::VerifyFailed => ("wire", "signature-verify-failed"),
+            Outcome::Malformed => ("lint", "malformed-job-spec"),
+            Outcome::ContentRejected => ("scan", "content-rejected"),
+            Outcome::ForkRejected => ("safety", "fork-pr-isolation"),
+            Outcome::ApprovalRequired => ("approval", "approval-required"),
+            Outcome::AuthorityDenied => ("authority", "authority-denied"),
+            Outcome::TargetDenied => ("targets", "target-denied"),
+            Outcome::Quarantined => ("quarantine", "fingerprint-quarantined"),
+            Outcome::StateDeferred => ("stategate", "route-state-deferred"),
+            Outcome::SingleFlightDenied => ("singleflight", "target-in-flight"),
+            Outcome::RateLimited => ("ratelimit", "rate-limited"),
+            Outcome::LoopTripped => ("loopguard", "loop-tripped"),
+            Outcome::BudgetDenied => ("governor", "budget-denied"),
+            Outcome::Delegated
+            | Outcome::KernelFailed
+            | Outcome::KernelFatal
+            | Outcome::DeadlineExceeded
+            | Outcome::IdleTimeout => return None,
+        };
+        Some(DeniedBy { gate, rule_id })
+    }
 }
 
 /// Which audit stream an event belongs to — separates **admission/guardrail decisions** from the
@@ -116,12 +143,22 @@ pub enum EventCategory {
     Execution,
 }
 
+/// Policy gate and stable rule identifier that denied a dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct DeniedBy {
+    pub gate: &'static str,
+    pub rule_id: &'static str,
+}
+
 /// One audit record. Serializes to a single JSON object (one NDJSON line). Job-identifying fields
 /// are absent when the frame never parsed far enough to know them. (No `Eq`: the optional
 /// [`RiskScore`] carries an `f64` probability, which is `PartialEq` but not `Eq`.)
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DispatchEvent {
     pub outcome: Outcome,
+    /// Structured rule citation for policy denials. Execution outcomes omit it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub denied_by: Option<DeniedBy>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -152,6 +189,7 @@ impl DispatchEvent {
     /// An event for a decision made *before* the job parsed (no job fields).
     pub fn untied(outcome: Outcome, detail: impl Into<String>) -> Self {
         Self {
+            denied_by: outcome.denied_by(),
             outcome,
             job_id: None,
             correlation_id: None,
@@ -167,6 +205,7 @@ impl DispatchEvent {
     /// An event tied to a verified job (fills id / correlation id / fingerprint).
     pub fn for_job(outcome: Outcome, job: &JobSpec) -> Self {
         Self {
+            denied_by: outcome.denied_by(),
             outcome,
             job_id: Some(job.id.clone()),
             correlation_id: Some(job.correlation_id.clone()),
@@ -335,6 +374,15 @@ mod tests {
             DispatchEvent::untied(Outcome::VerifyFailed, "x").category(),
             EventCategory::Policy
         );
+    }
+
+    #[test]
+    fn policy_rejections_carry_denied_by_metadata() {
+        let line = DispatchEvent::for_job(Outcome::LoopTripped, &job()).to_ndjson();
+        assert!(line.contains(r#""denied_by":{"gate":"loopguard","rule_id":"loop-tripped"}"#));
+
+        let delegated = DispatchEvent::for_job(Outcome::Delegated, &job()).to_ndjson();
+        assert!(!delegated.contains("denied_by"));
     }
 
     #[test]
