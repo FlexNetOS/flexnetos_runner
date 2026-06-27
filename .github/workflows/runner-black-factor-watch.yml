@@ -46,8 +46,9 @@ jobs:
           active_sustain="$(jq '[.[] | select(.name == "Runner Sustain" and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))] | length' runs-live.json)"
           case "$active_sustain" in (*[!0-9]*|'') active_sustain=0 ;; esac
           while [ "$active_sustain" -lt "$target_sustain_backlog" ]; do
-            echo "::notice::dispatching Runner Sustain backlog top-up ${active_sustain}/${target_sustain_backlog}"
-            gh workflow run runner-sustain.yml --ref main -f duration_minutes=6 -f tick_seconds=30
+            lane_slot=$((active_sustain % 2 + 1))
+            echo "::notice::dispatching Runner Sustain lane ${lane_slot} backlog top-up ${active_sustain}/${target_sustain_backlog}"
+            gh workflow run runner-sustain.yml --ref main -f duration_minutes=6 -f tick_seconds=30 -f lane_slot="${lane_slot}"
             active_sustain=$((active_sustain + 1))
           done
           if [ "$active_sustain" -gt 0 ]; then

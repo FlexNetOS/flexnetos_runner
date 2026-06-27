@@ -11,6 +11,10 @@ on:
         description: Seconds between useful audit ticks
         required: false
         default: '30'
+      lane_slot:
+        description: Logical local runner lane label for proof logs
+        required: false
+        default: '1'
   schedule:
     - cron: '*/5 * * * *'
 
@@ -25,13 +29,9 @@ concurrency:
 
 jobs:
   local-runner-sustain:
-    name: Runner sustain slot ${{ matrix.slot }}
+    name: Runner sustain slot ${{ inputs.lane_slot || '1' }}
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        slot: [1, 2]
     steps:
       - uses: actions/checkout@v6
       - name: Prefer meta-owned Rust toolchain
@@ -67,7 +67,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DURATION_MINUTES: ${{ inputs.duration_minutes || '6' }}
           TICK_SECONDS: ${{ inputs.tick_seconds || '30' }}
-          SLOT: ${{ matrix.slot }}
+          SLOT: ${{ inputs.lane_slot || '1' }}
         run: |
           set -euo pipefail
           duration_minutes="${DURATION_MINUTES:-6}"
