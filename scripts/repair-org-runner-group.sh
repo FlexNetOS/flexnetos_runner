@@ -6,7 +6,8 @@ set -euo pipefail
 ORG="${FXRUN_ORG:-FlexNetOS}"
 GROUP_ID="${FXRUN_RUNNER_GROUP_ID:-}"
 OUT_ROOT="${FXRUN_ORG_RUNNER_OUT:-_work/org-runner-repair}"
-SECRETCTL="${FXRUN_SECRETCTL:-/home/drdave/Desktop/meta/envctl/target/debug/secretctl}"
+META_ROOT="${META_ROOT:-}"
+SECRETCTL="${FXRUN_SECRETCTL:-}"
 INSTALLATION_ID="${FXRUN_GH_INSTALLATION_ID:-140063898}"
 APPLY=0
 INCLUDE_ARCHIVED=0
@@ -37,10 +38,51 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "missing required command: $1
 need gh
 need jq
 need date
-if [[ ! -x "$SECRETCTL" ]]; then
-  echo "missing executable secretctl: $SECRETCTL" >&2
-  exit 127
-fi
+
+resolve_meta_root() {
+  if [[ -n "$META_ROOT" ]]; then
+    printf '%s\n' "$META_ROOT"
+    return 0
+  fi
+  local dir="$PWD"
+  while [[ "$dir" != "/" ]]; do
+    if [[ -d "$dir/envctl" && -d "$dir/flexnetos_runner" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+resolve_secretctl() {
+  if [[ -n "$SECRETCTL" ]]; then
+    [[ -x "$SECRETCTL" ]] && { printf '%s\n' "$SECRETCTL"; return 0; }
+    echo "FXRUN_SECRETCTL is set but not executable: $SECRETCTL" >&2
+    return 127
+  fi
+  if command -v secretctl >/dev/null 2>&1; then
+    command -v secretctl
+    return 0
+  fi
+  local root=""
+  root="$(resolve_meta_root || true)"
+  if [[ -n "$root" ]]; then
+    local candidates=(
+      "$root/envctl/target/release/secretctl"
+      "$root/envctl/target/debug/secretctl"
+      "$root/usr/bin/secretctl"
+      "$root/.local/bin/secretctl"
+    )
+    for candidate in "${candidates[@]}"; do
+      [[ -x "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+    done
+  fi
+  echo "missing executable secretctl; set FXRUN_SECRETCTL or META_ROOT" >&2
+  return 127
+}
+
+SECRETCTL="$(resolve_secretctl)"
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$OUT_ROOT/$stamp"
@@ -117,10 +159,12 @@ fi
 while IFS=$'\t' read -r repo_id full_name; do
   [[ -z "${repo_id:-}" ]] && continue
   echo "adding $full_name ($repo_id) to runner group $GROUP_ID"
-  if api -X PUT "/orgs/$ORG/actions/runner-groups/$GROUP_ID/repositories/$repo_id" >/tmp/fxrun-add-repo.json 2>/tmp/fxrun-add-repo.err; then
+  add_stdout="$OUT/add-$repo_id.json"
+  add_stderr="$OUT/add-$repo_id.err"
+  if api -X PUT "/orgs/$ORG/actions/runner-groups/$GROUP_ID/repositories/$repo_id" >"$add_stdout" 2>"$add_stderr"; then
     jq -cn --arg id "$repo_id" --arg full_name "$full_name" '{repo_id:$id,full_name:$full_name,ok:true}' >> "$OUT/add-results.jsonl"
   else
-    err="$(cat /tmp/fxrun-add-repo.err)"
+    err="$(cat "$add_stderr")"
     jq -cn --arg id "$repo_id" --arg full_name "$full_name" --arg error "$err" '{repo_id:$id,full_name:$full_name,ok:false,error:$error}' >> "$OUT/add-results.jsonl"
   fi
 done < "$OUT/missing-repositories.tsv"
