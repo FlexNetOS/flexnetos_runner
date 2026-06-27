@@ -38,6 +38,8 @@ pub enum ForgeLoopCommand {
     RunnerHealth(RunnerHealthArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
     DocsDrift(DocsDriftArgs),
+    /// Inventory Codex loop components and config surfaces for upgrade planning.
+    ComponentsAudit(ComponentsAuditArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -122,6 +124,19 @@ pub struct DocsDriftArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct ComponentsAuditArgs {
+    /// Workspace root to scan.
+    #[arg(long, default_value = ".")]
+    pub root: PathBuf,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return a non-zero exit when any expected component is missing.
+    #[arg(long)]
+    pub strict: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 pub enum CyclePhase {
     Red,
@@ -180,6 +195,31 @@ pub struct RunnerHealthReport {
     pub recommendation: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ComponentsAuditReport {
+    pub checked_components: usize,
+    pub present_components: Vec<String>,
+    pub missing_components: Vec<String>,
+    pub components: Vec<LoopComponentStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LoopComponentStatus {
+    pub id: &'static str,
+    pub surface: &'static str,
+    pub path: &'static str,
+    pub present: bool,
+    pub rationale: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LoopComponent {
+    id: &'static str,
+    surface: &'static str,
+    path: &'static str,
+    rationale: &'static str,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct CheckRollupPayload {
     #[serde(default, rename = "statusCheckRollup")]
@@ -224,6 +264,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::Doctor(args) => doctor(args),
         ForgeLoopCommand::RunnerHealth(args) => runner_health(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
+        ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
     }
 }
 
@@ -353,7 +394,8 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
         "strict_upgrade_only": true,
         "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
         "required_local_checks": REQUIRED_LOCAL_CHECKS,
-        "required_gate_commands": REQUIRED_GATE_COMMANDS
+        "required_gate_commands": REQUIRED_GATE_COMMANDS,
+        "components_audit": "fxrun forge-loop components-audit --json"
     });
     println!("{}", serde_json::to_string_pretty(&plan)?);
     if args.dry_run || !allowed {
@@ -399,6 +441,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
             println!("    - {command}");
         }
         println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
+        println!("  component audit    : use `fxrun forge-loop components-audit --json`");
         println!(
             "  required checks    : {}",
             REQUIRED_LOCAL_CHECKS.join(", ")
@@ -541,6 +584,113 @@ fn check_state(check: &CheckRollupEntry) -> CheckState {
 
 fn is_local_runner_check(name: &str) -> bool {
     REQUIRED_LOCAL_CHECKS.contains(&name)
+}
+
+fn components_audit(args: ComponentsAuditArgs) -> Result<()> {
+    let report = components_audit_report(&args.root);
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop components audit");
+        println!("  checked components : {}", report.checked_components);
+        if report.missing_components.is_empty() {
+            println!("  missing components : none");
+        } else {
+            println!("  missing components :");
+            for component in &report.missing_components {
+                println!("    - {component}");
+            }
+        }
+    }
+
+    if args.strict && !report.missing_components.is_empty() {
+        Err(anyhow!(
+            "forge-loop components missing: {}",
+            report.missing_components.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn components_audit_report(root: &Path) -> ComponentsAuditReport {
+    let components = expected_loop_components()
+        .into_iter()
+        .map(|component| {
+            let present = root.join(component.path).exists();
+            LoopComponentStatus {
+                id: component.id,
+                surface: component.surface,
+                path: component.path,
+                present,
+                rationale: component.rationale,
+            }
+        })
+        .collect::<Vec<_>>();
+    let present_components = components
+        .iter()
+        .filter(|component| component.present)
+        .map(|component| component.id.to_string())
+        .collect::<Vec<_>>();
+    let missing_components = components
+        .iter()
+        .filter(|component| !component.present)
+        .map(|component| component.id.to_string())
+        .collect::<Vec<_>>();
+
+    ComponentsAuditReport {
+        checked_components: components.len(),
+        present_components,
+        missing_components,
+        components,
+    }
+}
+
+fn expected_loop_components() -> Vec<LoopComponent> {
+    vec![
+        LoopComponent {
+            id: "codex-prompt",
+            surface: "prompt",
+            path: ".codex/prompts/forge-loop.md",
+            rationale: "Codex GitHub Action docs recommend prompt-file inputs stored under .github/codex/prompts; this repo also keeps the local forge-loop prompt as a Codex prompt artifact.",
+        },
+        LoopComponent {
+            id: "project-config",
+            surface: "config",
+            path: ".codex/config.toml",
+            rationale: "Advanced Codex config supports trusted project-scoped .codex/config.toml layers for repo-local model, sandbox, agent, MCP, and skill defaults.",
+        },
+        LoopComponent {
+            id: "hooks",
+            surface: "hooks",
+            path: ".codex/hooks.json",
+            rationale: "Advanced Codex config supports repo-local hooks.json for lifecycle hooks next to an active project config layer.",
+        },
+        LoopComponent {
+            id: "rules",
+            surface: "rules",
+            path: ".codex/rules/forge-loop.rules",
+            rationale: "Codex rules provide executable command-policy guardrails with inline match/not_match examples.",
+        },
+        LoopComponent {
+            id: "subagent",
+            surface: "agents",
+            path: ".codex/agents/forge-loop-auditor.toml",
+            rationale: "Codex custom agents live under .codex/agents and can encode narrow reviewer or auditor roles with model and sandbox defaults.",
+        },
+        LoopComponent {
+            id: "skill",
+            surface: "skills",
+            path: ".agents/skills/forge-loop-research/SKILL.md",
+            rationale: "The forge-loop research skill is the existing reusable workflow for strict-upgrade self-improvement research.",
+        },
+        LoopComponent {
+            id: "github-action",
+            surface: "tools",
+            path: ".github/workflows/ci.yml",
+            rationale: "GitHub workflow configuration is the current CI/tool gate surface for required forge-loop checks.",
+        },
+    ]
 }
 
 fn docs_drift(args: DocsDriftArgs) -> Result<()> {
@@ -1439,6 +1589,54 @@ mod tests {
         assert!(gates
             .iter()
             .any(|gate| gate == "cargo run -q -p runner-cli -- forge-loop docs-drift --json"));
+    }
+
+    #[test]
+    fn components_audit_reports_present_and_missing_loop_surfaces() {
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-components-audit-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&out).ok();
+        fs::create_dir_all(out.join(".codex/prompts")).expect("prompt dir");
+        fs::create_dir_all(out.join(".agents/skills/forge-loop-research")).expect("skill dir");
+        fs::write(out.join(".codex/prompts/forge-loop.md"), "prompt").expect("prompt");
+        fs::write(
+            out.join(".agents/skills/forge-loop-research/SKILL.md"),
+            "skill",
+        )
+        .expect("skill");
+
+        let report = components_audit_report(&out);
+
+        assert_eq!(report.checked_components, 7);
+        assert!(report
+            .present_components
+            .contains(&"codex-prompt".to_string()));
+        assert!(report.present_components.contains(&"skill".to_string()));
+        assert!(report
+            .missing_components
+            .contains(&"project-config".to_string()));
+        assert!(report.missing_components.contains(&"hooks".to_string()));
+
+        fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn expected_loop_components_cover_requested_upgrade_surfaces() {
+        let surfaces = expected_loop_components()
+            .into_iter()
+            .map(|component| component.surface)
+            .collect::<Vec<_>>();
+
+        for required in [
+            "prompt", "config", "hooks", "rules", "agents", "skills", "tools",
+        ] {
+            assert!(
+                surfaces.contains(&required),
+                "missing component surface {required}"
+            );
+        }
     }
 
     #[test]
