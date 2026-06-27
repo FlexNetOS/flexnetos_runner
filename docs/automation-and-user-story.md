@@ -233,8 +233,8 @@ verify, PR, and update this document + `docs/kclaw0-upgrade-ledger.md`.
       per route/class.
     - User involvement: operator sets caps; exceeded jobs get recovery/escalation.
 
-11. **Rule-citation audit schema**
-    - Upgrade: every policy rejection carries `denied_by={gate, rule_id, configured_value}`.
+11. **Rule-citation audit schema** — APPLIED (cycle 25)
+    - Every policy rejection carries `denied_by={gate, rule_id}`.
     - User involvement: desktop/CLI can filter “why was this blocked?” without log archaeology.
 
 12. **Freshness and required-check input seams**

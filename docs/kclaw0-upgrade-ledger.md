@@ -348,8 +348,8 @@ failing tests first, implement, run local gates, open/merge a PR, then update th
    `FXRUN_MAX_IN_FLIGHT` alongside per-target single-flight.
 10. **Intra-job fan-out / amplification cap** — when kernels can emit child dispatches, bind children
     to a parent job id and cap per-job/per-route amplification.
-11. **Rule-citation audit schema** — every policy refusal carries `denied_by={gate, rule_id,
-    configured_value}` for queryable desktop/CLI explanations.
+11. **Rule-citation audit schema** — APPLIED (cycle 25)
+    - Every policy refusal carries `denied_by={gate, rule_id}` for queryable desktop/CLI explanations.
 12. **Freshness and required-check input seams** — accept App-signed `head_sha_is_tip` and
     `required_checks_green` facts, then gate stale/unverified work before delegation.
 
