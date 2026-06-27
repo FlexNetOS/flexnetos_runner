@@ -3169,6 +3169,8 @@ mod tests {
             "runner-sustain-${{ github.ref }}-${{ inputs.lane_slot || '1' }}",
             "SLOT: ${{ inputs.lane_slot || '1' }}",
             "Yield to pull-request local checks",
+            "yielding because PR pressure query failed",
+            r#"case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1"#,
             "yielding mid-run",
             "gh pr list --state open",
         ] {
