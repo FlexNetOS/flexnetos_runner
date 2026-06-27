@@ -136,6 +136,22 @@ root, `_work/`. The default `fxrun-actions` paths target slot `actions-runner-01
 parallel slot uses the same layout with suffix `-02`. Do not place active runner state back under
 `/home/drdave/_work`.
 
+### Org runner-group dispatch repair
+
+Runner dispatch depends on GitHub's org runner-group repository access, not only local runner
+registration. The normal user `gh` token may lack `admin:org`, so org-runner inspection/repair uses
+envctl's GitHub App token minted by `secretctl` instead of asking operators to re-authenticate `gh`.
+
+```bash
+scripts/repair-org-runner-group.sh          # dry-run + evidence under _work/org-runner-repair/
+scripts/repair-org-runner-group.sh --apply  # add missing active FlexNetOS repos to the group
+```
+
+The script is strict-upgrade only: it repairs selected runner-group repository membership and does
+not remove runners, downgrade runner binaries, or mutate healthy runner services. If dispatch still
+fails after membership is correct, re-register into a clean replacement runner home and prove parity
+before retiring existing service state.
+
 ## Build
 
 ```bash
