@@ -47,7 +47,7 @@ jobs:
           case "$active_sustain" in (*[!0-9]*|'') active_sustain=0 ;; esac
           while [ "$active_sustain" -lt "$target_sustain_backlog" ]; do
             echo "::notice::dispatching Runner Sustain backlog top-up ${active_sustain}/${target_sustain_backlog}"
-            gh workflow run runner-sustain.yml --ref main -f duration_minutes=6 -f tick_seconds=45
+            gh workflow run runner-sustain.yml --ref main -f duration_minutes=6 -f tick_seconds=30
             active_sustain=$((active_sustain + 1))
           done
           if [ "$active_sustain" -gt 0 ]; then
