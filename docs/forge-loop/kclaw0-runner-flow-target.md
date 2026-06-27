@@ -30,7 +30,7 @@ This still does not by itself prove the 12+ hour kclaw0 persistence target; that
 `fxrun forge-loop runner-black-factor-audit --strict` is the proof gate for any claim that this repo exceeded the kclaw0 target. It requires:
 
 - an observed run-history window of at least 12 hours,
-- at least 72 successful `Runner Sustain` workflow runs in that window (10-minute cadence over 12 hours), and
+- at least 72 duration-proven successful `Runner Sustain` workflow runs in that window, where each counted run has both `createdAt` and `updatedAt` GitHub timestamps and ran for at least 5 minutes, and
 - at least one merged PR with clean required local checks.
 
-Until those conditions pass from GitHub run/PR history, the goal remains in-progress even if instantaneous `runner-flow-audit --strict` passes.
+The run-history input must come from `gh run list --json name,status,conclusion,createdAt,updatedAt,event,url`; a yielded or too-short Runner Sustain run is not counted as useful black-factor work. Until those conditions pass from GitHub run/PR history, the goal remains in-progress even if instantaneous `runner-flow-audit --strict` passes.
