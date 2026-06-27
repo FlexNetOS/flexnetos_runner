@@ -690,6 +690,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             path: ".github/workflows/ci.yml",
             rationale: "GitHub workflow configuration is the current CI/tool gate surface for required forge-loop checks.",
         },
+        LoopComponent {
+            id: "codex-github-action",
+            surface: "tools",
+            path: ".github/workflows/codex-forge-loop.yml",
+            rationale: "Codex GitHub Action docs describe openai/codex-action with prompt-file, codex-args, model, effort, sandbox, output-file, and safety controls for programmatic loop runs.",
+        },
     ]
 }
 
@@ -1609,7 +1615,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 7);
+        assert_eq!(report.checked_components, 8);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -1636,6 +1642,29 @@ mod tests {
                 surfaces.contains(&required),
                 "missing component surface {required}"
             );
+        }
+    }
+
+    #[test]
+    fn codex_github_action_workflow_uses_documented_controls() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/codex-forge-loop.yml"))
+            .expect("read Codex workflow");
+
+        for required in [
+            "openai/codex-action@v1",
+            "prompt-file:",
+            "codex-args:",
+            "model:",
+            "effort:",
+            "sandbox: workspace-write",
+            "safety-strategy: drop-sudo",
+            "output-file:",
+        ] {
+            assert!(workflow.contains(required), "workflow missing {required}");
         }
     }
 

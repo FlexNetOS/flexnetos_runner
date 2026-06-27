@@ -1,0 +1,50 @@
+name: Codex Forge Loop
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt_file:
+        description: Prompt file to run with Codex
+        required: false
+        default: .github/codex/prompts/forge-loop.md
+      model:
+        description: Codex model
+        required: false
+        default: gpt-5.5
+      effort:
+        description: Codex reasoning effort
+        required: false
+        default: high
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  codex-forge-loop:
+    name: Codex forge-loop action
+    runs-on: ubuntu-latest
+    if: ${{ secrets.OPENAI_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run Codex forge-loop prompt
+        id: run_codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: ${{ inputs.prompt_file }}
+          codex-args: '["--ephemeral"]'
+          model: ${{ inputs.model }}
+          effort: ${{ inputs.effort }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          output-file: codex-forge-loop-output.md
+      - name: Upload Codex output
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-forge-loop-output
+          path: codex-forge-loop-output.md
