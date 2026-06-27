@@ -1,0 +1,35 @@
+# Permission-profile blueprint for future Codex clients using default_permissions.
+# This file is intentionally not loaded as .codex/config.toml because Codex docs say
+# permission profiles do not compose with the older sandbox_mode setting currently used
+# by the project config. Keep it as a reviewed migration target and machine-audited
+# least-privilege contract for the forge-loop harness.
+default_permissions = "forge-loop-workspace"
+
+[permissions.forge-loop-workspace.filesystem]
+glob_scan_max_depth = 3
+":minimal" = "read"
+":tmpdir" = "write"
+":slash_tmp" = "write"
+
+[permissions.forge-loop-workspace.filesystem.":workspace_roots"]
+"." = "write"
+".git" = "read"
+".codex" = "write"
+".github" = "write"
+".handoff" = "write"
+"docs" = "write"
+"target" = "write"
+"**/*.env" = "deny"
+"**/*secret*" = "deny"
+"**/*token*" = "deny"
+
+[permissions.forge-loop-workspace.network]
+enabled = true
+
+[permissions.forge-loop-workspace.network.domains]
+"developers.openai.com" = "allow"
+"github.com" = "allow"
+"api.github.com" = "allow"
+"crates.io" = "allow"
+"index.crates.io" = "allow"
+"static.crates.io" = "allow"
