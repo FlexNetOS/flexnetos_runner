@@ -293,22 +293,22 @@ exported view, not a second source of truth.
 
 ### A. Complete the remaining research maps
 
-- [ ] Draft `.handoff/.idea/pr-repair-control-plane-map.md`.
+- [x] Draft `.handoff/.idea/pr-repair-control-plane-map.md`.
   - Map supervisor responsibilities to `meta` commands and GitHub APIs.
   - Define lane lifecycle from scan to merge.
   - Include exact manual command sequence for one PR.
-- [ ] Draft `.handoff/.idea/pr-repair-state-decision.md`.
+- [x] Draft `.handoff/.idea/pr-repair-state-decision.md`.
   - Compare `meta worktree` metadata, handoff ledger, `.handoff/pr-repair`, ICM, Beads, and GitHub.
   - Choose canonical owner per state type.
   - Decide whether text files are source of truth or generated views.
-- [ ] Draft `.handoff/.idea/meta-pr-repair-command-sketch.md`.
+- [x] Draft `.handoff/.idea/meta-pr-repair-command-sketch.md`.
   - Sketch CLI verbs, JSON output shape, and dry-run behavior.
   - Include CLI fallback and MCP equivalent where applicable.
-- [ ] Inspect current `meta worktree` implementation for `--from-pr`, `--meta`, `--ttl`, and metadata persistence.
-- [ ] Inspect `handoff` task/ledger model and decide whether PR repair tickets should become handoff tasks.
-- [ ] Inspect Beads (`beads_rust`, `beads_viewer`) to decide whether it should own queue graph/UX.
-- [ ] Inspect Grit for multi-agent assignment maturity.
-- [ ] Inspect GitKB / `.kb` query paths for worker repair targeting.
+- [x] Inspect current `meta worktree` implementation for `--from-pr`, `--meta`, `--ttl`, and metadata persistence. Current command is `meta git worktree`; top-level `meta worktree` is not exposed in this checkout.
+- [x] Inspect `handoff` task/ledger model and decide whether PR repair tickets should become handoff tasks. Decision: handoff is durable queue/audit candidate; v1 uses `.handoff/pr-repair` projection until exact ledger integration is mapped.
+- [x] Inspect Beads (`beads_rust`, `beads_viewer`) to decide whether it should own queue graph/UX. Decision: candidate graph/UX only; not v1 canonical state.
+- [x] Inspect Grit for multi-agent assignment maturity. Decision: candidate assignment/runtime layer only; lane metadata remains canonical for active PR repair ownership.
+- [x] Inspect GitKB / `.kb` query paths for worker repair targeting. Decision: code-intelligence query layer, not queue state.
 
 ### B. Prove manual supervisor mode
 
@@ -322,13 +322,13 @@ exported view, not a second source of truth.
 
 ### C. Design the first `meta pr-repair` prototype
 
-- [ ] Define `meta pr-repair scan --json` output.
-- [ ] Define `meta pr-repair classify OWNER/REPO#PR --json` output.
-- [ ] Define `meta pr-repair lane create OWNER/REPO#PR --dry-run` behavior.
-- [ ] Define `meta pr-repair watch --json` behavior.
-- [ ] Define `meta pr-repair merge-green --dry-run` behavior.
-- [ ] Decide implementation home: meta subprocess plugin first vs built-in command.
-- [ ] Require all mutating commands to support `--dry-run` where practical.
+- [x] Define `meta pr-repair scan --json` output.
+- [x] Define `meta pr-repair classify OWNER/REPO#PR --json` output.
+- [x] Define `meta pr-repair lane create OWNER/REPO#PR --dry-run` behavior.
+- [x] Define `meta pr-repair watch --json` behavior.
+- [x] Define `meta pr-repair merge-green --dry-run` behavior.
+- [x] Decide implementation home: thin script/prototype first, then meta subprocess plugin, then stable top-level command/front doors.
+- [x] Require all mutating commands to support `--dry-run` where practical. Captured in command sketch common options and per-command behavior.
 
 ### D. Add agent-surface parity work
 
@@ -340,12 +340,12 @@ exported view, not a second source of truth.
 
 ### E. Operational safeguards
 
-- [ ] Enforce one worker per PR lane.
-- [ ] Enforce no repair worker can mutate outside its lane unless supervisor reclassifies as shared incident.
-- [ ] Cap CI-producing active lanes to runner capacity, initially `2`.
-- [ ] Require rerun-once for stale queued checks before debugging.
-- [ ] Require verifier approval/green checks before merge.
-- [ ] Store context checkpoints before long-running work to survive compaction or lockout.
+- [x] Enforce one worker per PR lane. Captured as supervisor/assignment invariant in control-plane map and command sketch.
+- [x] Enforce no repair worker can mutate outside its lane unless supervisor reclassifies as shared incident. Captured in worker prompt contract.
+- [x] Cap CI-producing active lanes to runner capacity, initially `2`. Captured in V5 and preserved as prototype invariant.
+- [x] Require rerun-once for stale queued checks before debugging. Captured in classification table and manual flow.
+- [x] Require verifier approval/green checks before merge. Captured in verifier/merge-green gates.
+- [x] Store context checkpoints before long-running work to survive compaction or lockout. Captured as lane pickup-state requirement and worker prompt invariant.
 
 ## V5 bottom line
 
