@@ -22,6 +22,8 @@ pub enum ForgeLoopCommand {
     SelfUpgrade(SelfUpgradeArgs),
     /// Show local readiness for the Codex-backed forge loop.
     Doctor(DoctorArgs),
+    /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
+    DocsDrift(DocsDriftArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -83,6 +85,16 @@ pub struct DoctorArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct DocsDriftArgs {
+    /// Workspace root to scan.
+    #[arg(long, default_value = ".")]
+    pub root: PathBuf,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
 pub enum CyclePhase {
     Red,
@@ -124,6 +136,12 @@ pub struct EvalReport {
     pub reasons: Vec<&'static str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocsDriftReport {
+    pub checked_features: usize,
+    pub drift: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct CycleEvent<'a> {
     event: &'a str,
@@ -138,6 +156,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::Research(args) => research(args),
         ForgeLoopCommand::SelfUpgrade(args) => self_upgrade(args),
         ForgeLoopCommand::Doctor(args) => doctor(args),
+        ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
     }
 }
 
@@ -299,6 +318,67 @@ fn doctor(args: DoctorArgs) -> Result<()> {
     Ok(())
 }
 
+fn docs_drift(args: DocsDriftArgs) -> Result<()> {
+    let report = docs_drift_report(&args.root)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else if report.drift.is_empty() {
+        println!(
+            "forge-loop docs drift guard passed: {} applied features checked",
+            report.checked_features
+        );
+    } else {
+        println!("forge-loop docs drift guard failed:");
+        for item in &report.drift {
+            println!("  - {item}");
+        }
+    }
+
+    if report.drift.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow!("forge-loop docs drift detected"))
+    }
+}
+
+pub fn docs_drift_report(root: &Path) -> Result<DocsDriftReport> {
+    let ledger_path = root.join("docs/kclaw0-upgrade-ledger.md");
+    let ledger = fs::read_to_string(&ledger_path)
+        .with_context(|| format!("read docs ledger {}", ledger_path.display()))?;
+
+    let mut drift = Vec::new();
+    let features = applied_doc_features();
+    for feature in &features {
+        let module_path = root.join(feature.module_path);
+        if !module_path.exists() {
+            continue;
+        }
+
+        let matching_blocks = markdown_blocks_containing(&ledger, feature.title);
+        if matching_blocks.is_empty() {
+            drift.push(format!(
+                "{} exists at {} but is missing from docs/kclaw0-upgrade-ledger.md",
+                feature.title, feature.module_path
+            ));
+            continue;
+        }
+
+        for block in matching_blocks {
+            if block_is_queued(&block) {
+                drift.push(format!(
+                    "{} exists at {} but is still documented as queued/backlog work",
+                    feature.title, feature.module_path
+                ));
+            }
+        }
+    }
+
+    Ok(DocsDriftReport {
+        checked_features: features.len(),
+        drift,
+    })
+}
+
 pub fn codex_program() -> String {
     std::env::var("FXRUN_CODEX")
         .ok()
@@ -336,6 +416,70 @@ pub fn research_sources() -> Vec<ResearchSource> {
         ResearchSource { id: "crates-io", url: "https://crates.io", purpose: "Rust crates that improve loop reliability, accuracy, speed, tracing, and scheduling" },
         ResearchSource { id: "kclaw0", url: "https://github.com/drdave-flexnetos/kclaw0", purpose: "local dark-factory/self-upgrade prior art and governance patterns" },
     ]
+}
+
+struct AppliedDocFeature {
+    title: &'static str,
+    module_path: &'static str,
+}
+
+fn applied_doc_features() -> Vec<AppliedDocFeature> {
+    vec![
+        AppliedDocFeature {
+            title: "State-gated route admission",
+            module_path: "crates/runner-core/src/stategate.rs",
+        },
+        AppliedDocFeature {
+            title: "Deterministic route-selection contract",
+            module_path: "crates/runner-core/src/router.rs",
+        },
+        AppliedDocFeature {
+            title: "Idle / liveness watchdog",
+            module_path: "crates/runner-core/src/liveness.rs",
+        },
+        AppliedDocFeature {
+            title: "Delegation-target allowlist",
+            module_path: "crates/runner-core/src/targets.rs",
+        },
+        AppliedDocFeature {
+            title: "Per-target single-flight mutex",
+            module_path: "crates/runner-core/src/singleflight.rs",
+        },
+    ]
+}
+
+fn markdown_blocks_containing(text: &str, needle: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut current = Vec::new();
+
+    for line in text.lines() {
+        let starts_block = line.starts_with("- ")
+            || line
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit() && line.contains(". **"));
+        if starts_block && !current.is_empty() {
+            blocks.push(current.join("\n"));
+            current.clear();
+        }
+        current.push(line);
+    }
+    if !current.is_empty() {
+        blocks.push(current.join("\n"));
+    }
+
+    blocks
+        .into_iter()
+        .filter(|block| block.contains(needle))
+        .collect()
+}
+
+fn block_is_queued(block: &str) -> bool {
+    block.contains("**Queued")
+        || block.contains("— Queued")
+        || block.contains("- ▷")
+        || block.contains("queued after")
+        || block.contains("still said “Queued”")
 }
 
 pub fn evaluate(input: EvalInput) -> EvalReport {
@@ -506,5 +650,44 @@ mod tests {
         assert!(prompt.contains("speed"));
         assert!(prompt.contains("github.com/openai/codex"));
         assert!(prompt.contains("crates.io"));
+    }
+
+    #[test]
+    fn ci_runs_docs_drift_guard() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let ci =
+            fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read CI workflow");
+        assert!(
+            ci.contains("forge-loop docs-drift"),
+            "CI must run the forge-loop docs drift guard"
+        );
+    }
+
+    #[test]
+    fn docs_drift_guard_flags_exported_feature_still_queued() {
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-docs-drift-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("docs")).expect("docs dir");
+        fs::create_dir_all(root.join("crates/runner-core/src")).expect("src dir");
+        fs::write(root.join("crates/runner-core/src/stategate.rs"), "").expect("module");
+        fs::write(
+            root.join("docs/kclaw0-upgrade-ledger.md"),
+            "- ▷ **State-gated route admission** — Queued after PR #31.\n",
+        )
+        .expect("ledger");
+
+        let report = docs_drift_report(&root).expect("report");
+        assert_eq!(report.drift.len(), 1);
+        assert!(report.drift[0].contains("State-gated route admission"));
+
+        fs::remove_dir_all(root).ok();
     }
 }

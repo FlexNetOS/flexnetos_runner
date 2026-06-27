@@ -32,6 +32,9 @@ jobs:
       - name: Test
         shell: bash
         run: cargo test --workspace --all-features
+      - name: Forge-loop docs drift guard
+        shell: bash
+        run: cargo run -p runner-cli -- forge-loop docs-drift
       - name: Cargo audit
         shell: bash
         run: |

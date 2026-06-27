@@ -12,7 +12,7 @@ items that close the gaps found in the 2026-06-23 deep code audit.
 | `fxrun-dispatch` | Execution-plane dispatcher | Local machine | UDS server, HMAC verification, admission gates, kernel routing, subprocess bounds, audit/recovery. | Socket hardening, full-envelope signing, concurrent serve/global cap, structured result status. |
 | `runner-core` | Pure policy core | Library | JobSpec, wire frames, routing, gates, events, recovery, cost, risk, workspace contracts. | Some new pure policies from backlog: envelope auth, rule citations, lifecycle FSM, result contracts. |
 | `runner-actions` / `fxrun-actions` | Actions runner supervisor | Local machine | Installs/registers/runs GitHub self-hosted runner, enforces minimum version. | Runner tarball verification; avoid token-in-argv exposure. |
-| `fxrun` | Operator CLI | Local shell / desktop terminal | `route`, `agents`, `doctor` surfaces routing and seams. | More user-facing health/approval/event inspection commands. |
+| `fxrun` | Operator CLI | Local shell / desktop terminal | `route`, `agents`, `doctor`, and `forge-loop docs-drift` surface routing, seams, and docs consistency. | More user-facing health/approval/event inspection commands. |
 | `envctl` / secrets | Secret plane | Local machine | Transitional env injection via `FXRUN_DISPATCH_KEY`, `FXRUN_INJECT_SECRETS`. | Vault-native key retrieval remains the target; no raw env as final resting place. |
 | `loop` / `atc` / `hf` / `weave` | Existing kernels | Child processes | Runner delegates and bounds execution; kernels own work semantics. | Structured result/status contract, fan-out accounting, output coverage, rollback/checkpoint signals. |
 | Audit logs | Observability plane | Local files | NDJSON all-events + policy-only streams, redaction, recovery directives, risk/cost annotations. | Rule citation schema and queryable lifecycle story. |
@@ -134,7 +134,7 @@ AUTOMATED NOW
   - Deadline and idle-timeout enforcement.
   - Cost relay, risk scoring, retry/quarantine/budget/rate ledgers.
   - Redacted audit and policy logs.
-  - CLI diagnostics via fxrun doctor/route/agents.
+  - CLI diagnostics via fxrun doctor/route/agents and forge-loop docs-drift.
 
 USER / OPERATOR INVOLVEMENT TODAY
   - Configure env/secrets/socket/log paths and kernel command overrides.
@@ -214,9 +214,11 @@ verify, PR, and update this document + `docs/kclaw0-upgrade-ledger.md`.
    - Applied: CI now includes a `Cargo audit` job (`cargo audit --deny warnings`).
    - Acceptance: PR checks fail on known vulnerable advisories or denied duplicate/banned crates.
 
-8. **Ledger/docs drift guard**
+8. **Ledger/docs drift guard** — APPLIED (current branch)
    - Gap: the ledger still marked state-gated route admission queued after PR #31.
    - Upgrade: add a docs consistency task/checklist requiring Applied/Backlog updates with every cycle.
+   - Applied: `fxrun forge-loop docs-drift` fails when an exported applied feature is still listed as
+     queued/backlog work in the upgrade ledger, and CI runs it after the workspace tests.
    - Acceptance: PR template/check or test catches stale queued items for modules already exported.
 
 ### Tier 1 — automation expansion
