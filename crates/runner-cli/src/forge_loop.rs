@@ -272,6 +272,7 @@ pub struct RunnerBlackFactorAuditReport {
     pub observed_window_minutes: u64,
     pub min_window_minutes: u64,
     pub successful_sustain_runs: usize,
+    pub total_duration_proven_sustain_runs: usize,
     pub min_sustain_runs: usize,
     pub min_sustain_duration_minutes: u64,
     pub short_or_unproven_sustain_runs: usize,
@@ -695,8 +696,12 @@ fn runner_black_factor_audit(args: RunnerBlackFactorAuditArgs) -> Result<()> {
         );
         println!("  required window min  : {}", report.min_window_minutes);
         println!(
-            "  sustain runs         : {}",
+            "  sustain runs in win  : {}",
             report.successful_sustain_runs
+        );
+        println!(
+            "  total proven sustain : {}",
+            report.total_duration_proven_sustain_runs
         );
         println!("  required sustain     : {}", report.min_sustain_runs);
         println!(
@@ -734,20 +739,6 @@ fn runner_black_factor_audit_report(
     let runs = parse_json_vec::<WorkflowRunEntry>(&args.runs_json)?;
     let prs = parse_json_vec::<PrHistoryEntry>(&args.prs_json)?;
 
-    let successful_sustain_runs = runs
-        .iter()
-        .filter(|run| {
-            runner_sustain_duration_minutes(run, args.min_sustain_duration_minutes).is_some()
-        })
-        .count();
-    let short_or_unproven_sustain_runs = runs
-        .iter()
-        .filter(|run| is_successful_runner_sustain(run))
-        .filter(|run| {
-            runner_sustain_duration_minutes(run, args.min_sustain_duration_minutes).is_none()
-        })
-        .count();
-
     let timestamps = runs
         .iter()
         .filter_map(|run| run.created_at.as_deref())
@@ -758,6 +749,37 @@ fn runner_black_factor_audit_report(
         _ => 0,
     };
     let min_window_minutes = args.min_window_hours.saturating_mul(60);
+    let proof_window_start = timestamps
+        .iter()
+        .max()
+        .map(|last| last.saturating_sub((min_window_minutes as i64) * 60));
+
+    let total_duration_proven_sustain_runs = runs
+        .iter()
+        .filter(|run| {
+            runner_sustain_duration_minutes(run, args.min_sustain_duration_minutes).is_some()
+        })
+        .count();
+    let successful_sustain_runs = runs
+        .iter()
+        .filter(|run| {
+            runner_sustain_duration_minutes(run, args.min_sustain_duration_minutes).is_some()
+                && proof_window_start
+                    .zip(
+                        run.created_at
+                            .as_deref()
+                            .and_then(parse_rfc3339_utc_seconds),
+                    )
+                    .is_some_and(|(window_start, created)| created >= window_start)
+        })
+        .count();
+    let short_or_unproven_sustain_runs = runs
+        .iter()
+        .filter(|run| is_successful_runner_sustain(run))
+        .filter(|run| {
+            runner_sustain_duration_minutes(run, args.min_sustain_duration_minutes).is_none()
+        })
+        .count();
 
     let clean_merged_prs = prs
         .iter()
@@ -787,6 +809,7 @@ fn runner_black_factor_audit_report(
         observed_window_minutes,
         min_window_minutes,
         successful_sustain_runs,
+        total_duration_proven_sustain_runs,
         min_sustain_runs: args.min_sustain_runs,
         min_sustain_duration_minutes: args.min_sustain_duration_minutes,
         short_or_unproven_sustain_runs,
@@ -2594,11 +2617,9 @@ mod tests {
         fs::create_dir_all(&temp).expect("tempdir");
         let runs = temp.join("runs.json");
         let prs = temp.join("prs.json");
-        let mut run_items = vec![
-            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"}"#.to_string(),
-            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T13:00:00Z","updatedAt":"2026-06-27T13:06:00Z"}"#.to_string(),
-        ];
-        for minute in 1..=71 {
+        let mut run_items = Vec::new();
+        for step in 0..72 {
+            let minute = step * 10;
             run_items.push(format!(
                 r#"{{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T{:02}:{:02}:00Z","updatedAt":"2026-06-27T{:02}:{:02}:00Z"}}"#,
                 minute / 60,
@@ -2607,6 +2628,9 @@ mod tests {
                 (minute + 6) % 60
             ));
         }
+        run_items.push(
+            r#"{"name":"CI","status":"completed","conclusion":"success","createdAt":"2026-06-27T12:00:00Z","updatedAt":"2026-06-27T12:01:00Z"}"#.to_string(),
+        );
         fs::write(&runs, format!("[{}]", run_items.join(","))).expect("runs json");
         fs::write(
             &prs,
@@ -2628,9 +2652,61 @@ mod tests {
 
         assert!(report.exceeded, "{:?}", report.missing_evidence);
         assert!(report.observed_window_minutes >= 12 * 60);
-        assert!(report.successful_sustain_runs >= 72);
+        assert_eq!(report.successful_sustain_runs, 72);
+        assert_eq!(report.total_duration_proven_sustain_runs, 72);
         assert_eq!(report.short_or_unproven_sustain_runs, 0);
         assert_eq!(report.clean_merged_prs, 1);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_black_factor_audit_counts_only_latest_proof_window() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-black-factor-rolling-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        let mut run_items = Vec::new();
+        for step in 0..72 {
+            let minute = step * 10;
+            run_items.push(format!(
+                r#"{{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-26T{:02}:{:02}:00Z","updatedAt":"2026-06-26T{:02}:{:02}:00Z"}}"#,
+                minute / 60,
+                minute % 60,
+                (minute + 6) / 60,
+                (minute + 6) % 60
+            ));
+        }
+        run_items.push(
+            r#"{"name":"CI","status":"completed","conclusion":"success","createdAt":"2026-06-27T12:00:00Z","updatedAt":"2026-06-27T12:01:00Z"}"#.to_string(),
+        );
+        fs::write(&runs, format!("[{}]", run_items.join(","))).expect("runs json");
+        fs::write(
+            &prs,
+            r#"[{"state":"MERGED","mergedAt":"2026-06-27T12:05:00Z","statusCheckRollup":[{"name":"Local Linux CI","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}]"#,
+        )
+        .expect("prs json");
+
+        let report = runner_black_factor_audit_report(&RunnerBlackFactorAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 12,
+            min_sustain_runs: 72,
+            min_sustain_duration_minutes: 5,
+            min_clean_merged_prs: 1,
+            json: true,
+            strict: false,
+        })
+        .expect("black factor report");
+
+        assert!(!report.exceeded);
+        assert!(report.observed_window_minutes >= 12 * 60);
+        assert_eq!(report.total_duration_proven_sustain_runs, 72);
+        assert_eq!(report.successful_sustain_runs, 0);
+        assert!(report.missing_evidence.contains(&"sustain_run_count"));
         fs::remove_dir_all(temp).ok();
     }
 
@@ -3101,6 +3177,7 @@ mod tests {
             "--strict",
             "runner-black-factor-audit",
             "createdAt,updatedAt",
+            "--limit 1000",
             "actions/upload-artifact@v4",
         ] {
             assert!(
@@ -3110,6 +3187,7 @@ mod tests {
         }
         assert!(target.contains("Runner Black Factor Watch"));
         assert!(target.contains("refills `Runner Sustain`"));
+        assert!(target.contains("latest 12-hour proof window"));
     }
 
     #[test]
