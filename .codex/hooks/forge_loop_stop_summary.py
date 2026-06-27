@@ -8,6 +8,7 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 components = {
     "project_config": ".codex/config.toml",
+    "compact_prompt": ".codex/prompts/compact-forge-loop.md",
     "hooks": ".codex/hooks.json",
     "rules": ".codex/rules/forge-loop.rules",
     "subagent": ".codex/agents/forge-loop-auditor.toml",

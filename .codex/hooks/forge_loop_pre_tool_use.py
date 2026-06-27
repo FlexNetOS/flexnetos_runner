@@ -19,6 +19,7 @@ ROOT = repo_root()
 REQUIRED = [
     ".codex/config.toml",
     ".codex/hooks.json",
+    ".codex/prompts/compact-forge-loop.md",
     ".codex/rules/forge-loop.rules",
     ".codex/agents/forge-loop-auditor.toml",
     ".codex/agents/forge-loop-researcher.toml",

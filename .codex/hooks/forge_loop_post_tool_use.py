@@ -18,6 +18,7 @@ def repo_root() -> pathlib.Path:
 ROOT = repo_root()
 REQUIRED = [
     ".codex/hooks.json",
+    ".codex/prompts/compact-forge-loop.md",
     ".codex/hooks/forge_loop_pre_tool_use.py",
     ".codex/hooks/forge_loop_post_tool_use.py",
     ".codex/hooks/forge_loop_permission_request.py",

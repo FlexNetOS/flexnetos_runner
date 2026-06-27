@@ -4,10 +4,16 @@ model = "gpt-5.5"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 approval_policy = "never"
+model_context_window = 4000000
+model_auto_compact_token_limit = 3000000
+model_auto_compact_token_limit_scope = "total"
+tool_output_token_limit = 12000
+experimental_compact_prompt_file = "prompts/compact-forge-loop.md"
 model_instructions_file = "prompts/forge-loop.md"
 
 [features]
 hooks = true
+auto_compaction = true
 
 [agents]
 max_threads = 6

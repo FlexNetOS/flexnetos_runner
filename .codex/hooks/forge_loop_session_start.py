@@ -9,6 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 required = [
     ".codex/config.toml",
     ".codex/hooks.json",
+    ".codex/prompts/compact-forge-loop.md",
     ".codex/rules/forge-loop.rules",
     ".codex/agents/forge-loop-auditor.toml",
     ".agents/skills/forge-loop-research/SKILL.md",

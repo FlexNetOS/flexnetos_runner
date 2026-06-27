@@ -2,39 +2,101 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Codex Forge Loop Run Output",
   "type": "object",
-  "required": ["summary", "sources_mined", "component_inventory", "verification"],
+  "required": [
+    "summary",
+    "sources_mined",
+    "component_inventory",
+    "verification",
+    "auto_compact_continuity"
+  ],
   "additionalProperties": false,
   "properties": {
-    "summary": {"type": "string"},
+    "summary": {
+      "type": "string"
+    },
     "sources_mined": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["url", "finding"],
+        "required": [
+          "url",
+          "finding"
+        ],
         "additionalProperties": false,
         "properties": {
-          "url": {"type": "string"},
-          "finding": {"type": "string"}
+          "url": {
+            "type": "string"
+          },
+          "finding": {
+            "type": "string"
+          }
         }
       }
     },
     "component_inventory": {
       "type": "object",
-      "required": ["config", "hooks", "rules", "skills", "agents", "permissions", "github_action"],
+      "required": [
+        "config",
+        "hooks",
+        "rules",
+        "skills",
+        "agents",
+        "permissions",
+        "github_action"
+      ],
       "additionalProperties": false,
       "properties": {
-        "config": {"type": "string"},
-        "hooks": {"type": "string"},
-        "rules": {"type": "string"},
-        "skills": {"type": "string"},
-        "agents": {"type": "string"},
-        "permissions": {"type": "string"},
-        "github_action": {"type": "string"}
+        "config": {
+          "type": "string"
+        },
+        "hooks": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "string"
+        },
+        "skills": {
+          "type": "string"
+        },
+        "agents": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "string"
+        },
+        "github_action": {
+          "type": "string"
+        }
       }
     },
     "verification": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
+    },
+    "auto_compact_continuity": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "compact_prompt",
+        "preserved_state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "compact_prompt": {
+          "type": "string"
+        },
+        "preserved_state": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }
