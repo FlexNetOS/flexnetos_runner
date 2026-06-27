@@ -13,7 +13,7 @@ validated by CI/CodeQL, and merged.
 This audit distinguishes two things:
 
 1. **V5 TODO completion** — complete. The artifacts, scans, command sketches, parity plan,
-   operational safeguards, manual lane proof, and repeated-signature memory exist.
+   operational safeguards, manual lane proof artifacts, stale-lane cleanup evidence, and repeated-signature memory exist.
 2. **Future external PR repair automation** — not claimed as implemented. The next stage is to run a
    worker on a selected external failing PR or build the first thin `meta pr-repair` prototype.
 
@@ -43,6 +43,7 @@ Completed across PR #45 and PR #47:
 - A real lane was created with `rtk meta git worktree`:
   - `repair-envctl-pr-267`
   - metadata captured at `.handoff/pr-repair/scans/2026-06-27-repair-envctl-pr-267-lane.json`
+  - later live audit found the ephemeral lane filesystem was gone and cleaned the stale git worktree reference; the proof artifact remains the durable evidence, not a currently active lane.
 - Worker assignment prompt created at `.handoff/pr-repair/agents/envctl-267-assignment.md`.
 - Repeated envctl gates failure signature recorded in ICM and in
   `.handoff/pr-repair/lessons/envctl-gates-failure-2026-06-27.md`.
