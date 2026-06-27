@@ -14,22 +14,30 @@ concurrency:
 jobs:
   validate:
     name: Semantic PR Title
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    env:
+      PR_TITLE: ${{ github.event.pull_request.title }}
     steps:
-      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          types: |
-            build
-            chore
-            ci
-            deps
-            docs
-            feat
-            fix
-            perf
-            refactor
-            revert
-            style
-            test
+      - name: Validate PR title locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="$PR_TITLE"
+          conventional='^(build|chore|ci|deps|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9._/-]+\))?!?: .+'
+          codex='^\[codex\] .+'
+          if [[ "$title" =~ $conventional || "$title" =~ $codex ]]; then
+            echo "accepted PR title: $title"
+            exit 0
+          fi
+
+          cat >&2 <<MSG
+          Invalid PR title: $title
+
+          Use Conventional Commits style, for example:
+            feat: add local runner CI
+            fix(dispatch): repair runner labels
+
+          Codex agent chunks may also use:
+            [codex] short description
+          MSG
+          exit 1
