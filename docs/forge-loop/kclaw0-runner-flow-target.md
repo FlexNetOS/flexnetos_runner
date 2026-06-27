@@ -21,6 +21,16 @@ The target is not considered complete if there are no active/queued runs and no 
 
 ## Bridge-duration sustain policy
 
-`runner-sustain.yml` is intentionally longer than a smoke check. Scheduled runs fire every 10 minutes and each local runner slot performs useful forge-loop audits for a bounded default of 14 minutes. This creates queued or active useful work across schedule boundaries, while a 20-minute job timeout prevents unbounded occupation.
+`runner-sustain.yml` is intentionally longer than a smoke check, but it must not consume the whole local runner pool while pull-request checks wait. Scheduled runs now fire every 5 minutes, keep one reserve-safe local runner lane performing useful forge-loop audits for a bounded default of 5 minutes, and cap the job at 10 minutes. The other local lane remains available for PR checks; the sustain job also exits early when open PRs have pending or failed local required checks.
 
-This still does not by itself prove the 12+ hour kclaw0 persistence target; that proof requires an observed window of repeated successful sustain runs and green PR flow over the full target interval.
+This still does not by itself prove the 12+ hour kclaw0 persistence target; that proof requires an observed window of repeated successful sustain runs and green PR flow over the full target interval. The 5-minute cadence creates more than the required 72 sustain opportunities over 12 hours while preserving seamless PR flow as the higher-priority invariant.
+
+## Observed-window black-factor audit
+
+`fxrun forge-loop runner-black-factor-audit --strict` is the proof gate for any claim that this repo exceeded the kclaw0 target. It requires:
+
+- an observed run-history window of at least 12 hours,
+- at least 72 successful `Runner Sustain` workflow runs in that window (10-minute cadence over 12 hours), and
+- at least one merged PR with clean required local checks.
+
+Until those conditions pass from GitHub run/PR history, the goal remains in-progress even if instantaneous `runner-flow-audit --strict` passes.
