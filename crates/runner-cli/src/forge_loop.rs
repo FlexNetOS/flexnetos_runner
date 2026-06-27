@@ -43,6 +43,8 @@ pub enum ForgeLoopCommand {
     RunnerHealth(RunnerHealthArgs),
     /// Audit runner utilization and PR-flow evidence against the kclaw0 dark-factory target.
     RunnerFlowAudit(RunnerFlowAuditArgs),
+    /// Audit observed runner history against the kclaw0 black-factor/dark-factory window target.
+    RunnerBlackFactorAudit(RunnerBlackFactorAuditArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
     DocsDrift(DocsDriftArgs),
     /// Inventory Codex loop components and config surfaces for upgrade planning.
@@ -121,6 +123,31 @@ pub struct RunnerHealthArgs {
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RunnerBlackFactorAuditArgs {
+    /// JSON from `gh run list --json name,status,conclusion,createdAt,event,url`.
+    #[arg(long)]
+    pub runs_json: PathBuf,
+    /// JSON from `gh pr list --state all --json state,mergedAt,statusCheckRollup,url`.
+    #[arg(long)]
+    pub prs_json: PathBuf,
+    /// Minimum observed wall-clock window in hours.
+    #[arg(long, default_value_t = 12)]
+    pub min_window_hours: u64,
+    /// Minimum successful Runner Sustain workflow runs in the window.
+    #[arg(long, default_value_t = 72)]
+    pub min_sustain_runs: usize,
+    /// Minimum merged PRs with clean required checks in the window.
+    #[arg(long, default_value_t = 1)]
+    pub min_clean_merged_prs: usize,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return non-zero when the observed window does not exceed the target.
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -237,6 +264,29 @@ pub struct RunnerHealthReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerBlackFactorAuditReport {
+    pub kclaw0_target: &'static str,
+    pub observed_window_minutes: u64,
+    pub min_window_minutes: u64,
+    pub successful_sustain_runs: usize,
+    pub min_sustain_runs: usize,
+    pub clean_merged_prs: usize,
+    pub min_clean_merged_prs: usize,
+    pub exceeded: bool,
+    pub missing_evidence: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PrHistoryEntry {
+    #[serde(default)]
+    state: String,
+    #[serde(default, rename = "mergedAt")]
+    merged_at: Option<String>,
+    #[serde(default, rename = "statusCheckRollup")]
+    status_check_rollup: Vec<CheckRollupEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RunnerFlowAuditReport {
     pub kclaw0_target: &'static str,
     pub sustain_workflow_present: bool,
@@ -254,6 +304,12 @@ pub struct RunnerFlowAuditReport {
 struct WorkflowRunEntry {
     #[serde(default)]
     status: String,
+    #[serde(default)]
+    conclusion: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default, rename = "createdAt")]
+    created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -358,6 +414,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::Doctor(args) => doctor(args),
         ForgeLoopCommand::RunnerHealth(args) => runner_health(args),
         ForgeLoopCommand::RunnerFlowAudit(args) => runner_flow_audit(args),
+        ForgeLoopCommand::RunnerBlackFactorAudit(args) => runner_black_factor_audit(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
         ForgeLoopCommand::TargetMiningAudit(args) => target_mining_audit(args),
@@ -523,7 +580,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "required_local_checks": REQUIRED_LOCAL_CHECKS,
         "required_gate_commands": REQUIRED_GATE_COMMANDS,
         "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
-        "runner_flow_audit": "fxrun forge-loop runner-flow-audit --json"
+        "runner_flow_audit": "fxrun forge-loop runner-flow-audit --json",
+        "runner_black_factor_audit": "fxrun forge-loop runner-black-factor-audit --json"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -540,6 +598,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         }
         println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
         println!("  runner flow        : use `fxrun forge-loop runner-flow-audit --json`");
+        println!("  black-factor proof : use `fxrun forge-loop runner-black-factor-audit --json`");
         println!("  component audit    : use `fxrun forge-loop components-audit --json`");
         println!("  target mining      : use `fxrun forge-loop target-mining-audit --json`");
         println!(
@@ -616,6 +675,145 @@ fn runner_flow_audit(args: RunnerFlowAuditArgs) -> Result<()> {
     }
 }
 
+fn runner_black_factor_audit(args: RunnerBlackFactorAuditArgs) -> Result<()> {
+    let report = runner_black_factor_audit_report(&args)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop runner black-factor audit");
+        println!("  kclaw0 target        : {}", report.kclaw0_target);
+        println!(
+            "  observed window min  : {}",
+            report.observed_window_minutes
+        );
+        println!("  required window min  : {}", report.min_window_minutes);
+        println!(
+            "  sustain runs         : {}",
+            report.successful_sustain_runs
+        );
+        println!("  required sustain     : {}", report.min_sustain_runs);
+        println!("  clean merged PRs     : {}", report.clean_merged_prs);
+        println!("  required clean PRs   : {}", report.min_clean_merged_prs);
+        println!("  exceeded             : {}", report.exceeded);
+        if !report.missing_evidence.is_empty() {
+            println!("  missing evidence     :");
+            for item in &report.missing_evidence {
+                println!("    - {item}");
+            }
+        }
+    }
+
+    if args.strict && !report.exceeded {
+        Err(anyhow!(
+            "runner black-factor target not exceeded: {}",
+            report.missing_evidence.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn runner_black_factor_audit_report(
+    args: &RunnerBlackFactorAuditArgs,
+) -> Result<RunnerBlackFactorAuditReport> {
+    let runs = parse_json_vec::<WorkflowRunEntry>(&args.runs_json)?;
+    let prs = parse_json_vec::<PrHistoryEntry>(&args.prs_json)?;
+
+    let successful_sustain_runs = runs
+        .iter()
+        .filter(|run| {
+            run.name == "Runner Sustain"
+                && run.status.eq_ignore_ascii_case("completed")
+                && run.conclusion.eq_ignore_ascii_case("success")
+        })
+        .count();
+
+    let timestamps = runs
+        .iter()
+        .filter_map(|run| run.created_at.as_deref())
+        .filter_map(parse_rfc3339_utc_seconds)
+        .collect::<Vec<_>>();
+    let observed_window_minutes = match (timestamps.iter().min(), timestamps.iter().max()) {
+        (Some(first), Some(last)) if last >= first => ((*last - *first) / 60) as u64,
+        _ => 0,
+    };
+    let min_window_minutes = args.min_window_hours.saturating_mul(60);
+
+    let clean_merged_prs = prs
+        .iter()
+        .filter(|pr| {
+            pr.state.eq_ignore_ascii_case("MERGED")
+                && pr.merged_at.is_some()
+                && classify_runner_health(&pr.status_check_rollup)
+                    .failed_local_checks
+                    .is_empty()
+        })
+        .count();
+
+    let mut missing_evidence = Vec::new();
+    if observed_window_minutes < min_window_minutes {
+        missing_evidence.push("observed_12h_window");
+    }
+    if successful_sustain_runs < args.min_sustain_runs {
+        missing_evidence.push("sustain_run_count");
+    }
+    if clean_merged_prs < args.min_clean_merged_prs {
+        missing_evidence.push("clean_merged_pr_flow");
+    }
+    let exceeded = missing_evidence.is_empty();
+
+    Ok(RunnerBlackFactorAuditReport {
+        kclaw0_target: "12+ hour dark-factory persistence with repeated useful runner sustain runs and green-gated PR flow",
+        observed_window_minutes,
+        min_window_minutes,
+        successful_sustain_runs,
+        min_sustain_runs: args.min_sustain_runs,
+        clean_merged_prs,
+        min_clean_merged_prs: args.min_clean_merged_prs,
+        exceeded,
+        missing_evidence,
+    })
+}
+
+fn parse_rfc3339_utc_seconds(value: &str) -> Option<i64> {
+    // Supports the GitHub API shape used by `gh run list`: YYYY-MM-DDTHH:MM:SSZ.
+    if value.len() < 20 || !value.ends_with('Z') {
+        return None;
+    }
+    let year = value.get(0..4)?.parse::<i32>().ok()?;
+    let month = value.get(5..7)?.parse::<u32>().ok()?;
+    let day = value.get(8..10)?.parse::<u32>().ok()?;
+    let hour = value.get(11..13)?.parse::<u32>().ok()?;
+    let minute = value.get(14..16)?.parse::<u32>().ok()?;
+    let second = value.get(17..19)?.parse::<u32>().ok()?;
+    if value.as_bytes().get(4) != Some(&b'-')
+        || value.as_bytes().get(7) != Some(&b'-')
+        || value.as_bytes().get(10) != Some(&b'T')
+        || value.as_bytes().get(13) != Some(&b':')
+        || value.as_bytes().get(16) != Some(&b':')
+        || !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    Some(days * 86_400 + i64::from(hour) * 3600 + i64::from(minute) * 60 + i64::from(second))
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    // Howard Hinnant's days-from-civil algorithm, returning days since Unix epoch.
+    let y = year - i32::from(month <= 2);
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = month as i32 + if month > 2 { -3 } else { 9 };
+    let doy = (153 * mp + 2) / 5 + day as i32 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    i64::from(era * 146_097 + doe - 719_468)
+}
+
 fn runner_flow_audit_report(args: &RunnerFlowAuditArgs) -> Result<RunnerFlowAuditReport> {
     let sustain_workflow_present = args
         .root
@@ -623,7 +821,7 @@ fn runner_flow_audit_report(args: &RunnerFlowAuditArgs) -> Result<RunnerFlowAudi
         .exists()
         && fs::read_to_string(args.root.join(".github/workflows/runner-sustain.yml"))
             .map(|text| {
-                text.contains("*/10 * * * *")
+                (text.contains("*/10 * * * *") || text.contains("*/5 * * * *"))
                     && text.contains("self-hosted")
                     && text.contains("components-audit --strict")
                     && text.contains("target-mining-audit --strict")
@@ -2294,6 +2492,95 @@ mod tests {
     }
 
     #[test]
+    fn runner_black_factor_audit_requires_observed_window_sustain_and_pr_flow() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-black-factor-fail-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T00:00:00Z"}]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_black_factor_audit_report(&RunnerBlackFactorAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 12,
+            min_sustain_runs: 72,
+            min_clean_merged_prs: 1,
+            json: true,
+            strict: false,
+        })
+        .expect("black factor report");
+
+        assert!(!report.exceeded);
+        assert!(report.missing_evidence.contains(&"observed_12h_window"));
+        assert!(report.missing_evidence.contains(&"sustain_run_count"));
+        assert!(report.missing_evidence.contains(&"clean_merged_pr_flow"));
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_black_factor_audit_accepts_kclaw0_window_fixture() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-black-factor-pass-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        let mut run_items = vec![
+            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T00:00:00Z"}"#.to_string(),
+            r#"{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T13:00:00Z"}"#.to_string(),
+        ];
+        for minute in 1..=71 {
+            run_items.push(format!(
+                r#"{{"name":"Runner Sustain","status":"completed","conclusion":"success","createdAt":"2026-06-27T{:02}:{:02}:00Z"}}"#,
+                minute / 60,
+                minute % 60
+            ));
+        }
+        fs::write(&runs, format!("[{}]", run_items.join(","))).expect("runs json");
+        fs::write(
+            &prs,
+            r#"[{"state":"MERGED","mergedAt":"2026-06-27T13:05:00Z","statusCheckRollup":[{"name":"Local Linux CI","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}]"#,
+        )
+        .expect("prs json");
+
+        let report = runner_black_factor_audit_report(&RunnerBlackFactorAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 12,
+            min_sustain_runs: 72,
+            min_clean_merged_prs: 1,
+            json: true,
+            strict: false,
+        })
+        .expect("black factor report");
+
+        assert!(report.exceeded, "{:?}", report.missing_evidence);
+        assert!(report.observed_window_minutes >= 12 * 60);
+        assert!(report.successful_sustain_runs >= 72);
+        assert_eq!(report.clean_merged_prs, 1);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn rfc3339_parser_counts_minutes_between_github_timestamps() {
+        let start = parse_rfc3339_utc_seconds("2026-06-27T00:00:00Z").expect("start");
+        let end = parse_rfc3339_utc_seconds("2026-06-27T12:30:00Z").expect("end");
+        assert_eq!((end - start) / 60, 750);
+        assert!(parse_rfc3339_utc_seconds("not-a-date").is_none());
+    }
+
+    #[test]
     fn expected_loop_components_cover_requested_upgrade_surfaces() {
         let surfaces = expected_loop_components()
             .into_iter()
@@ -2661,12 +2948,14 @@ mod tests {
 
         for required in [
             "duration_minutes",
-            "default: '14'",
-            "*/10 * * * *",
-            "timeout-minutes: 20",
+            "default: '5'",
+            "*/5 * * * *",
+            "timeout-minutes: 10",
             "while [",
             "runner-sustain slot=",
             "tick_seconds",
+            "Yield to pull-request local checks",
+            "gh pr list --state open",
         ] {
             assert!(
                 workflow.contains(required),
@@ -2690,9 +2979,11 @@ mod tests {
 
         for required in [
             "workflow_dispatch:",
-            "*/10 * * * *",
+            "*/5 * * * *",
             "runs-on: [self-hosted, linux, x64, local, flexnetos]",
-            "slot: [1, 2]",
+            "slot: [1]",
+            "pull-requests: read",
+            "actions: read",
             "forge-loop components-audit --strict",
             "forge-loop target-mining-audit --strict",
             "forge-loop docs-drift --json",
@@ -2702,7 +2993,14 @@ mod tests {
                 "sustain workflow missing {required}"
             );
         }
-        for required in ["300-agent", "4000-step", "12+ hour", "24/7 autonomous"] {
+        for required in [
+            "300-agent",
+            "4000-step",
+            "12+ hour",
+            "24/7 autonomous",
+            "reserve-safe local runner lane",
+            "preserving seamless PR flow",
+        ] {
             assert!(
                 target.contains(required),
                 "runner target missing {required}"
