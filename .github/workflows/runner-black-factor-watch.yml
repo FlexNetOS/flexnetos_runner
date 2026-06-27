@@ -32,17 +32,25 @@ jobs:
           gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,url > runs-live.json
           gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > prs-open.json
           gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
-      - name: Refill Runner Sustain if no sustain work is active
+      - name: Top up Runner Sustain backlog
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          MIN_SUSTAIN_BACKLOG: '2'
         run: |
           set -euo pipefail
+          target_sustain_backlog="${MIN_SUSTAIN_BACKLOG:-2}"
+          case "$target_sustain_backlog" in (*[!0-9]*|'') target_sustain_backlog=2 ;; esac
+          if [ "$target_sustain_backlog" -lt 1 ]; then target_sustain_backlog=1; fi
+          if [ "$target_sustain_backlog" -gt 4 ]; then target_sustain_backlog=4; fi
           active_sustain="$(jq '[.[] | select(.name == "Runner Sustain" and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))] | length' runs-live.json)"
           case "$active_sustain" in (*[!0-9]*|'') active_sustain=0 ;; esac
-          if [ "$active_sustain" -eq 0 ]; then
-            echo "::notice::dispatching Runner Sustain because no active/queued sustain work exists"
+          while [ "$active_sustain" -lt "$target_sustain_backlog" ]; do
+            echo "::notice::dispatching Runner Sustain backlog top-up ${active_sustain}/${target_sustain_backlog}"
             gh workflow run runner-sustain.yml --ref main -f duration_minutes=6 -f tick_seconds=45
+            active_sustain=$((active_sustain + 1))
+          done
+          if [ "$active_sustain" -gt 0 ]; then
             sleep 20
             gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,url > runs-live.json
           fi
