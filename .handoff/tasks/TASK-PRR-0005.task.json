@@ -1,0 +1,53 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0005",
+  "title": "[supervisor] Build PR-repair supervisor loop with runner-capacity gates",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Build: Implement the supervisor loop that scans FlexNetOS PRs, classifies failures, reruns stale checks once, creates or updates repair lanes, assigns one worker per lane, watches CI, enforces runner-capacity limits, and merges/automerge green PRs.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:meta pr-repair prototype",
+    "external:GitHub Actions runner APIs"
+  ],
+  "acceptance_criteria": [
+    "Supervisor start preflight runs `rtk meta project list --json`, `rtk meta git status`, and `rtk meta git worktree list --json`.",
+    "Classification distinguishes stale_queued, runner_infra, merge_conflict, pr_test_regression, platform_specific, cross_pr_shared_failure, policy_or_metadata_failure, superseded, and flaky with evidence.",
+    "Active CI-producing repair lanes are capped to current runner capacity, initially 2, unless live runner evidence supports a different cap.",
+    "The loop never mutates outside an assigned lane unless a supervisor reclassifies work as a shared incident.",
+    "Green PR merge/automerge requires required checks green, clean scope, no blocking review, and no supersession evidence."
+  ],
+  "test_commands": [
+    "rtk meta project list --json",
+    "rtk meta git status",
+    "gh pr list --repo FlexNetOS/flexnetos_runner --state open --json number,title,statusCheckRollup"
+  ],
+  "dependencies": [
+    "TASK-PRR-0002",
+    "TASK-PRR-0003"
+  ],
+  "blocked_by": [
+    "TASK-PRR-0002",
+    "TASK-PRR-0003"
+  ],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-supervisor-loop-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "source_files": [
+      ".handoff/.idea/pr-repair-v5-todo-completion-audit.md",
+      ".handoff/.idea/pr-repair-manual-supervisor-proof.md",
+      ".handoff/.idea/meta-pr-repair-command-sketch.md",
+      ".handoff/.idea/pr-repair-agent-surface-parity-plan.md",
+      ".handoff/.idea/pr-repair-state-decision.md",
+      ".handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:9d52fa4fd020606bb3f334ae08e2b50015fe48bb5bf38157991196442fa22c42",
+    "path_scope_hash": "blake3:d24b96302f8c90cfbc76f759b93cc9cd3725ead4cd168800dc1f358660c37200",
+    "acceptance_hash": "blake3:330b675f92b043d816c5b44d33d66ee9f3dfe2e7dcf43ecac14c48c377109240"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0001",
+  "title": "[supervisor] Execute shared envctl loop-state gates repair lane",
+  "status": "backlog",
+  "priority": "P0",
+  "objective": "Fix: Create and run the shared `repair-envctl-loop-state-gates` lane for FlexNetOS/envctl#284 and #281, inspect both gates logs, repair the common `.handoff/loop/plan/loop_state.md` cycle_budget failure or prove the PRs must split, then push, watch CI, and merge/automerge or record an evidenced blocker.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    "external:FlexNetOS/envctl#284",
+    "external:FlexNetOS/envctl#281"
+  ],
+  "acceptance_criteria": [
+    "A `rtk meta git worktree create repair-envctl-loop-state-gates --repo envctl --from-pr FlexNetOS/envctl#284 --ttl 24h --meta incident=envctl-loop-state-gates-2026-06-27 --json` lane is created or an equivalent current lane is proven.",
+    "Both envctl#284 and envctl#281 gates logs are inspected and the shared vs split decision is recorded in `.handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md` or a successor artifact.",
+    "If a fix is made, the envctl branch(es) are committed, pushed, PR-updated, and required CI gates are green or auto-merge is armed.",
+    "If blocked, the blocker includes exact command/log evidence and the next action; no blind retry loop remains."
+  ],
+  "test_commands": [
+    "rtk meta git status",
+    "gh pr view 284 --repo FlexNetOS/envctl --json statusCheckRollup,mergeStateStatus",
+    "gh pr view 281 --repo FlexNetOS/envctl --json statusCheckRollup,mergeStateStatus"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-envctl-loop-state-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "source_files": [
+      ".handoff/.idea/pr-repair-v5-todo-completion-audit.md",
+      ".handoff/.idea/pr-repair-manual-supervisor-proof.md",
+      ".handoff/.idea/meta-pr-repair-command-sketch.md",
+      ".handoff/.idea/pr-repair-agent-surface-parity-plan.md",
+      ".handoff/.idea/pr-repair-state-decision.md",
+      ".handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:a301f3061a197b894addcd79c7d1eff6a55262ff7dd7e320ba758b5fe869a1d5",
+    "path_scope_hash": "blake3:e0eed64af42c3294c931a1a43fed17109c7edff898d5600d219fe22fe25821c9",
+    "acceptance_hash": "blake3:f85b3c04a13696be313fc9bd7f1018922bd6c144721c556f101330fe37a8f3f7"
+  }
+}

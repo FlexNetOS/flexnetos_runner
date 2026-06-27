@@ -1,0 +1,46 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-PRR-0003",
+  "title": "[supervisor] Implement PR-repair queue projection and state transitions",
+  "status": "backlog",
+  "priority": "P1",
+  "objective": "Build: Replace the one-off dated queue row with a v1 `.handoff/pr-repair/queue.jsonl` projection/tooling that records discovered, classified, lane_created, assigned, repairing, awaiting_ci, green, merged, blocked, and superseded transitions without duplicating canonical live state.",
+  "path_scope": [
+    ".handoff/pr-repair/**",
+    ".handoff/tasks/**",
+    "external:handoff ledger integration"
+  ],
+  "acceptance_criteria": [
+    "A committed `.handoff/pr-repair/queue.jsonl` or documented generated projection exists with the v1 fields from `.handoff/.idea/pr-repair-state-decision.md`.",
+    "Queue updates are append-only or replace-by-key through a tool/script; casual hand-editing is not the required workflow.",
+    "State transitions identify their canonical writer: supervisor, worker, verifier, or GitHub evidence.",
+    "Existing dated queue artifact is either migrated, indexed, or explicitly retained as historical input.",
+    "Binary ledger caches remain gitignored; any ledger/events export is text and policy-compliant."
+  ],
+  "test_commands": [
+    "jq -e . .handoff/pr-repair/queue.jsonl || test -f .handoff/pr-repair/queue/2026-06-27-envctl-loop-state-gates.jsonl",
+    "hf status --json"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "allows_network": true,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-queue-state-20260627",
+  "role": "supervisor",
+  "source_gap_audit": {
+    "created": "2026-06-27",
+    "source_files": [
+      ".handoff/.idea/pr-repair-v5-todo-completion-audit.md",
+      ".handoff/.idea/pr-repair-manual-supervisor-proof.md",
+      ".handoff/.idea/meta-pr-repair-command-sketch.md",
+      ".handoff/.idea/pr-repair-agent-surface-parity-plan.md",
+      ".handoff/.idea/pr-repair-state-decision.md",
+      ".handoff/pr-repair/incidents/envctl-loop-state-gates-2026-06-27.md"
+    ]
+  },
+  "intent_lock": {
+    "objective_hash": "blake3:d9c17b02b829eabb6450f5898eb43719a0ad241448eb5ad220d2b2ae7628a194",
+    "path_scope_hash": "blake3:fee6f6842a033a5327ba2e8cdae3270c15567a800ccc4401572876e9df8e8b0c",
+    "acceptance_hash": "blake3:23cc6082c0f3f681d8b91c9752e3f463815fb4e6b8d91dada54944ede3a09227"
+  }
+}
