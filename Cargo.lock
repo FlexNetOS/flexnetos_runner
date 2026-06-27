@@ -247,6 +247,8 @@ dependencies = [
  "anyhow",
  "clap",
  "runner-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

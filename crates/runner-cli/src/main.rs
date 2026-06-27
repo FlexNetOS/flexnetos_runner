@@ -1,6 +1,8 @@
 //! `fxrun` — operator CLI for `flexnetos_runner` (ADR-0008 §2). Shows how a job kind
 //! routes (kernel + placement) and reports runner seam wiring.
 
+mod forge_loop;
+
 use clap::{Parser, Subcommand};
 use runner_core::{
     agent::{Agent, AgentSelection},
@@ -32,6 +34,11 @@ enum Cmd {
     },
     /// List the supported agent backends and the current default, with the headless invocation.
     Agents,
+    /// Run the Codex-backed TDD forge-loop seed.
+    ForgeLoop {
+        #[command(subcommand)]
+        cmd: forge_loop::ForgeLoopCommand,
+    },
     /// Report rails + seam wiring status.
     Doctor,
 }
@@ -95,6 +102,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Cmd::ForgeLoop { cmd } => forge_loop::execute(cmd)?,
         Cmd::Doctor => {
             let rails = safety::Rails::default();
             println!("fxrun");
