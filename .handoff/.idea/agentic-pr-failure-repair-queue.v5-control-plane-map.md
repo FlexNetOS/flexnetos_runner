@@ -318,7 +318,7 @@ exported view, not a second source of truth.
 - [x] Create one repair lane manually with existing `meta worktree` commands. Current command surface is `rtk meta git worktree`; created `repair-envctl-pr-267`.
 - [x] Generate one worker prompt from the v3/v5 template. See `.handoff/pr-repair/agents/envctl-267-assignment.md`.
 - [ ] Verify one repair cycle through commit, push, PR update, CI watch, and merge/automerge.
-- [ ] Record any repeated signature in ICM.
+- [x] Record any repeated signature in ICM. Stored the repeated envctl `gates` failure signature from PRs #284/#281 and added `.handoff/pr-repair/lessons/envctl-gates-failure-2026-06-27.md`.
 
 ### C. Design the first `meta pr-repair` prototype
 
