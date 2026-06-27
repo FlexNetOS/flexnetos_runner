@@ -1,0 +1,27 @@
+{
+  "name": "repair-envctl-pr-267",
+  "root": "/home/drdave/Desktop/meta/.worktrees/repair-envctl-pr-267",
+  "has_meta_root": true,
+  "repos": [
+    {
+      "alias": ".",
+      "branch": "repair-envctl-pr-267",
+      "dirty": false
+    },
+    {
+      "alias": "envctl",
+      "branch": "meta-local-health-continue",
+      "dirty": false
+    }
+  ],
+  "ephemeral": true,
+  "ttl_remaining_seconds": 21600,
+  "custom": {
+    "kind": "pr-repair",
+    "repo": "FlexNetOS/envctl",
+    "classification": "unknown_or_incomplete_checks",
+    "source": "manual-supervisor-proof",
+    "state": "classified",
+    "pr": "267"
+  }
+}

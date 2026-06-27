@@ -1,0 +1,670 @@
+[
+  {
+    "repo": "FlexNetOS/weave",
+    "number": 159,
+    "title": "docs(cli): document forge loop",
+    "url": "https://github.com/FlexNetOS/weave/pull/159",
+    "head": "docs/weave-forge-loop-readme",
+    "base": "develop",
+    "merge": "BLOCKED",
+    "review": "",
+    "summary": {
+      "COMPLETED/SUCCESS": 13,
+      "IN_PROGRESS/": 1
+    },
+    "classification": "awaiting_ci",
+    "checks": [
+      {
+        "name": "rustfmt",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (python)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (rust)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "clippy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "test",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "target artifact smoke",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "build (libsql backend)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "sign",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "libsql + sign",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "surfaces",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "libsql + surfaces",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 285,
+    "title": "fix(manifest): repair odysseus broken-merge + harden podman component",
+    "url": "https://github.com/FlexNetOS/envctl/pull/285",
+    "head": "odysseus-podman-hardening",
+    "base": "master",
+    "merge": "BEHIND",
+    "review": "",
+    "summary": {
+      "COMPLETED/SUCCESS": 9
+    },
+    "classification": "green_candidate",
+    "checks": [
+      {
+        "name": "rustfmt",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (rust)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "clippy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "MSRV (Rust 1.88)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "cargo audit",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "test",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "gates",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/meta",
+    "number": 69,
+    "title": "chore(fleet): remove 4 empty repos (flexnetos_wiki/brain, my-wiki, assets)",
+    "url": "https://github.com/FlexNetOS/meta/pull/69",
+    "head": "chore/remove-empty-repos",
+    "base": "main",
+    "merge": "BLOCKED",
+    "review": "",
+    "summary": {
+      "COMPLETED/SUCCESS": 10,
+      "COMPLETED/FAILURE": 4,
+      "IN_PROGRESS/": 1
+    },
+    "classification": "awaiting_ci",
+    "checks": [
+      {
+        "name": "Agent Wiring",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "No ad-hoc handoff markdown (ADR-0004 \u00a71)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "validate",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (python)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Test (ubuntu-latest)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Capsule schema (handoff.context_capsule.v1)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Test (macos-latest)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "Test (windows-latest)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "Clippy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Integration Tests (ubuntu-latest)",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Integration Tests (macos-latest)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/prompt_hub",
+    "number": 184,
+    "title": "test(prompt-hub): additive RED suite \u2014 ADR-0007 goal-artifact emission contract",
+    "url": "https://github.com/FlexNetOS/prompt_hub/pull/184",
+    "head": "plan/prompt-hub-red-tests",
+    "base": "main",
+    "merge": "UNKNOWN",
+    "review": "",
+    "summary": {
+      "COMPLETED/SKIPPED": 15,
+      "COMPLETED/SUCCESS": 18,
+      "COMPLETED/CANCELLED": 5,
+      "COMPLETED/FAILURE": 2,
+      "IN_PROGRESS/": 1
+    },
+    "classification": "awaiting_ci",
+    "checks": [
+      {
+        "name": "Generate Unit Tests (GitHub Models)",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED"
+      },
+      {
+        "name": "AI Code Review (GitHub Models)",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED"
+      },
+      {
+        "name": "Code Review (Claude - Anthropic API)",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED"
+      },
+      {
+        "name": "setup",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED"
+      },
+      {
+        "name": "Check",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Cargo Mutants",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "qodana",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Drift Guard",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Cargo Audit",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (python)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (rust)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 284,
+    "title": "plan(loop-prompt-hub): cycle 6 \u2014 prompt_hub (Front-Door intent STORE)",
+    "url": "https://github.com/FlexNetOS/envctl/pull/284",
+    "head": "plan/loop-prompt-hub",
+    "base": "master",
+    "merge": "UNKNOWN",
+    "review": "",
+    "summary": {
+      "COMPLETED/SUCCESS": 8,
+      "COMPLETED/FAILURE": 1
+    },
+    "classification": "pr_test_regression",
+    "checks": [
+      {
+        "name": "rustfmt",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (rust)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "clippy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "MSRV (Rust 1.88)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "cargo audit",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "test",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "gates",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/grit",
+    "number": 5,
+    "title": "test(grit): additive RED suite \u2014 union-step-2 symbol-merge contract",
+    "url": "https://github.com/FlexNetOS/grit/pull/5",
+    "head": "plan/grit-red-tests",
+    "base": "develop",
+    "merge": "UNSTABLE",
+    "review": "",
+    "summary": {
+      "COMPLETED/FAILURE": 2,
+      "COMPLETED/SKIPPED": 1
+    },
+    "classification": "pr_test_regression",
+    "checks": [
+      {
+        "name": "macOS",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "check-target",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED"
+      },
+      {
+        "name": "Linux",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 281,
+    "title": "plan(loop-grit): cycle 5 \u2014 grit (merge/lock substrate for the union)",
+    "url": "https://github.com/FlexNetOS/envctl/pull/281",
+    "head": "plan/loop-grit",
+    "base": "master",
+    "merge": "UNKNOWN",
+    "review": "",
+    "summary": {
+      "COMPLETED/SUCCESS": 8,
+      "COMPLETED/FAILURE": 1
+    },
+    "classification": "pr_test_regression",
+    "checks": [
+      {
+        "name": "rustfmt",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (rust)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "clippy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "MSRV (Rust 1.88)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "cargo audit",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "test",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "gates",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/meta",
+    "number": 68,
+    "title": "meta-plugin: route meta MCP through meta root",
+    "url": "https://github.com/FlexNetOS/meta/pull/68",
+    "head": "fix-codex-mcp-meta-plugin-routing",
+    "base": "main",
+    "merge": "DIRTY",
+    "review": "",
+    "summary": {
+      "COMPLETED/FAILURE": 6,
+      "COMPLETED/SUCCESS": 8
+    },
+    "classification": "merge_conflict",
+    "checks": [
+      {
+        "name": "validate",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "Test (ubuntu-latest)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "No ad-hoc handoff markdown (ADR-0004 \u00a71)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Test (macos-latest)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "Analyze (python)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Test (windows-latest)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "Clippy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Capsule schema (handoff.context_capsule.v1)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Integration Tests (ubuntu-latest)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "Integration Tests (macos-latest)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "envctl (meta-tree build)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 280,
+    "title": "ai-clis: route Codex MCP through meta",
+    "url": "https://github.com/FlexNetOS/envctl/pull/280",
+    "head": "fix-codex-mcp-meta-routing",
+    "base": "master",
+    "merge": "UNKNOWN",
+    "review": "",
+    "summary": {
+      "COMPLETED/SUCCESS": 8,
+      "COMPLETED/FAILURE": 1
+    },
+    "classification": "pr_test_regression",
+    "checks": [
+      {
+        "name": "rustfmt",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (rust)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "clippy",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "MSRV (Rust 1.88)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "cargo audit",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "test",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "gates",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "CodeQL",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ]
+  },
+  {
+    "repo": "FlexNetOS/weave",
+    "number": 157,
+    "title": "test(weave-core): additive RED suite \u2014 A2A v1.0 interop adapter (planning P8 contract)",
+    "url": "https://github.com/FlexNetOS/weave/pull/157",
+    "head": "plan/weave-red-tests",
+    "base": "develop",
+    "merge": "UNKNOWN",
+    "review": "",
+    "summary": {
+      "COMPLETED/FAILURE": 7,
+      "COMPLETED/SUCCESS": 7
+    },
+    "classification": "pr_test_regression",
+    "checks": [
+      {
+        "name": "rustfmt",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "Analyze (actions)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (python)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "Analyze (rust)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "clippy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "test",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "target artifact smoke",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "name": "build (libsql backend)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "sign",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "libsql + sign",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "surfaces",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      },
+      {
+        "name": "libsql + surfaces",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      }
+    ]
+  }
+]
