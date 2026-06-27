@@ -1076,6 +1076,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "Forge-loop cycles need an explicit worktree isolation contract so concurrent mutating runs cannot trample one another.",
         },
         LoopComponent {
+            id: "cycle-evidence-checklist",
+            surface: "checklists",
+            path: ".codex/checklists/forge-loop-cycle.toml",
+            rationale: "Every forge-loop cycle needs a durable evidence checklist for tests, audits, PR state, merge evidence, and main fast-forward proof.",
+        },
+        LoopComponent {
             id: "deep-research-exhaustion-report",
             surface: "docs",
             path: "docs/forge-loop/deep-research-exhaustion-2026-06-27.md",
@@ -2029,7 +2035,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 22);
+        assert_eq!(report.checked_components, 23);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -2133,6 +2139,35 @@ mod tests {
                 "compact prompt missing {required}"
             );
         }
+    }
+
+    #[test]
+    fn forge_loop_cycle_evidence_checklist_requires_merge_proof() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let checklist = fs::read_to_string(root.join(".codex/checklists/forge-loop-cycle.toml"))
+            .expect("read cycle checklist");
+        let prompt = fs::read_to_string(root.join(".codex/prompts/forge-loop.md"))
+            .expect("read forge-loop prompt");
+
+        for required in [
+            "strict_upgrade_only = true",
+            "commit_push_pr_required = true",
+            "component_audit",
+            "target_mining_audit",
+            "forge_loop_tests",
+            "required_checks_green = true",
+            "merged_at = true",
+            "main_fast_forwarded = true",
+        ] {
+            assert!(
+                checklist.contains(required),
+                "cycle checklist missing {required}"
+            );
+        }
+        assert!(prompt.contains(".codex/checklists/forge-loop-cycle.toml"));
     }
 
     #[test]
