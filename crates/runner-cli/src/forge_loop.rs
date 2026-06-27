@@ -146,6 +146,7 @@ pub struct DocsDriftReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CycleManifest {
     pub goal: String,
+    pub pr_title: String,
     pub once: bool,
     pub auto_merge: bool,
     pub strict_upgrade_only: bool,
@@ -639,6 +640,7 @@ fn cycle_number_from_goal(goal: &str) -> Option<u8> {
 fn cycle_manifest(args: &RunArgs) -> CycleManifest {
     CycleManifest {
         goal: args.goal.clone(),
+        pr_title: cycle_pr_title(&args.goal),
         once: args.once,
         auto_merge: args.auto_merge,
         strict_upgrade_only: true,
@@ -828,6 +830,7 @@ mod tests {
         });
 
         assert_eq!(manifest.goal, "cycle 05 reliability upgrade");
+        assert_eq!(manifest.pr_title, "chore: forge loop cycle 05");
         assert!(manifest.once);
         assert!(manifest.auto_merge);
         assert!(manifest.strict_upgrade_only);
@@ -842,6 +845,20 @@ mod tests {
                 CyclePhase::Upgrade,
             ]
         );
+    }
+
+    #[test]
+    fn cycle_manifest_records_deterministic_pr_title() {
+        let manifest = cycle_manifest(&RunArgs {
+            goal: "Resume the interrupted 10-cycle objective: execute isolated cycle 08 of 10"
+                .into(),
+            out: PathBuf::from("_work/forge-loop"),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        });
+
+        assert_eq!(manifest.pr_title, "chore: forge loop cycle 08");
     }
 
     #[test]
