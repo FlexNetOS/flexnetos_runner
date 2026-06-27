@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -420,32 +421,29 @@ fn parse_check_rollup(text: &str) -> Result<CheckRollupPayload> {
 }
 
 fn classify_runner_health(checks: &[CheckRollupEntry]) -> RunnerHealthReport {
-    let mut pending_local_checks = Vec::new();
-    let mut passed_local_checks = Vec::new();
-    let mut failed_local_checks = Vec::new();
+    let mut local_check_states: BTreeMap<String, CheckState> = BTreeMap::new();
 
     for check in checks
         .iter()
         .filter(|check| is_local_runner_check(&check.name))
     {
-        let status = check.status.to_ascii_lowercase();
-        let conclusion = check.conclusion.to_ascii_lowercase();
-        if matches!(status.as_str(), "queued" | "pending" | "in_progress") || conclusion.is_empty()
-        {
-            pending_local_checks.push(check.name.clone());
-        } else if conclusion == "success" {
-            passed_local_checks.push(check.name.clone());
-        } else {
-            failed_local_checks.push(check.name.clone());
-        }
+        local_check_states
+            .entry(check.name.clone())
+            .and_modify(|state| *state = state.merged_with(check_state(check)))
+            .or_insert_with(|| check_state(check));
     }
 
-    pending_local_checks.sort();
-    pending_local_checks.dedup();
-    passed_local_checks.sort();
-    passed_local_checks.dedup();
-    failed_local_checks.sort();
-    failed_local_checks.dedup();
+    let mut pending_local_checks = Vec::new();
+    let mut passed_local_checks = Vec::new();
+    let mut failed_local_checks = Vec::new();
+
+    for (name, state) in local_check_states {
+        match state {
+            CheckState::Pending => pending_local_checks.push(name),
+            CheckState::Passed => passed_local_checks.push(name),
+            CheckState::Failed => failed_local_checks.push(name),
+        }
+    }
 
     let runner_pressure = !pending_local_checks.is_empty();
     RunnerHealthReport {
@@ -458,6 +456,35 @@ fn classify_runner_health(checks: &[CheckRollupEntry]) -> RunnerHealthReport {
         } else {
             "local self-hosted required checks are not currently queued"
         },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CheckState {
+    Pending,
+    Passed,
+    Failed,
+}
+
+impl CheckState {
+    fn merged_with(self, other: CheckState) -> CheckState {
+        match (self, other) {
+            (CheckState::Pending, _) | (_, CheckState::Pending) => CheckState::Pending,
+            (CheckState::Passed, _) | (_, CheckState::Passed) => CheckState::Passed,
+            (CheckState::Failed, CheckState::Failed) => CheckState::Failed,
+        }
+    }
+}
+
+fn check_state(check: &CheckRollupEntry) -> CheckState {
+    let status = check.status.to_ascii_lowercase();
+    let conclusion = check.conclusion.to_ascii_lowercase();
+    if matches!(status.as_str(), "queued" | "pending" | "in_progress") || conclusion.is_empty() {
+        CheckState::Pending
+    } else if conclusion == "success" {
+        CheckState::Passed
+    } else {
+        CheckState::Failed
     }
 }
 
@@ -1161,6 +1188,60 @@ mod tests {
                 "Semantic PR Title".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn runner_health_prefers_pending_replacement_over_cancelled_duplicate() {
+        let payload = CheckRollupPayload {
+            status_check_rollup: vec![
+                CheckRollupEntry {
+                    name: "Semantic PR Title".into(),
+                    status: "COMPLETED".into(),
+                    conclusion: "CANCELLED".into(),
+                },
+                CheckRollupEntry {
+                    name: "Semantic PR Title".into(),
+                    status: "QUEUED".into(),
+                    conclusion: String::new(),
+                },
+            ],
+        };
+
+        let report = classify_runner_health(&payload.status_check_rollup);
+
+        assert_eq!(
+            report.pending_local_checks,
+            vec!["Semantic PR Title".to_string()]
+        );
+        assert!(report.failed_local_checks.is_empty());
+        assert!(report.runner_pressure);
+    }
+
+    #[test]
+    fn runner_health_prefers_success_replacement_over_cancelled_duplicate() {
+        let payload = CheckRollupPayload {
+            status_check_rollup: vec![
+                CheckRollupEntry {
+                    name: "Semantic PR Title".into(),
+                    status: "COMPLETED".into(),
+                    conclusion: "CANCELLED".into(),
+                },
+                CheckRollupEntry {
+                    name: "Semantic PR Title".into(),
+                    status: "COMPLETED".into(),
+                    conclusion: "SUCCESS".into(),
+                },
+            ],
+        };
+
+        let report = classify_runner_health(&payload.status_check_rollup);
+
+        assert_eq!(
+            report.passed_local_checks,
+            vec!["Semantic PR Title".to_string()]
+        );
+        assert!(report.failed_local_checks.is_empty());
+        assert!(!report.runner_pressure);
     }
 
     #[test]
