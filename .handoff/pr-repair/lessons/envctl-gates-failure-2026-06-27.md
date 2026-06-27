@@ -38,3 +38,17 @@ Start by comparing gates logs for envctl#284 and envctl#281. If the failing comm
 same, open one shared incident/base-fix lane. If the signatures differ, split into individual repair
 lanes.
 ```
+
+## Prototype confirmation — 2026-06-27
+
+The `.idea` → `.handoff` prototype inspected live GitHub state for both PRs and confirmed the
+shared signature. `FlexNetOS/envctl#284` gates run `28281171897` / job `83797089887` and
+`FlexNetOS/envctl#281` gates run `28280061204` / job `83793897460` both fail in
+`bash ci/gates/loop-state.sh` with:
+
+```text
+LOOP-STATE GATE FAIL — .handoff/loop/plan/loop_state.md: cycle_budget is not a non-negative integer (got: '<missing>')
+```
+
+Decision: keep the classification as `cross_pr_shared_failure` and route the next action to one
+shared envctl loop-state incident lane, not two separate PR workers.

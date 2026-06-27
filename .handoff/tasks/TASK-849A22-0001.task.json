@@ -1,0 +1,31 @@
+{
+  "schema": "handoff.task.v1",
+  "id": "TASK-849A22-0001",
+  "title": "[supervisor] Promote the completed V5 pr-repair brainstorm from .handoff/",
+  "status": "done",
+  "priority": "P1",
+  "objective": "Fix: Promote the completed V5 pr-repair brainstorm from .handoff/.idea into the handoff execution workflow, resync the local hf kernel, repair ledger durability ignores, and create the first prototype incident/queue artifact for repeated envctl gates failures. Keep all work scoped to .handoff artifacts and repository ignore policy.",
+  "path_scope": [
+    ".handoff/**",
+    ".gitignore"
+  ],
+  "acceptance_criteria": [
+    "[supervisor] A regression test reproduces the defect, then asserts the fixed behavior; `cargo test` is green.",
+    "Drift audit passes: no out-of-scope write (edits stay within path_scope) and the intent_lock is unchanged."
+  ],
+  "test_commands": [
+    "cargo test",
+    "cargo clippy --all-targets -- -D warnings"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "allows_network": false,
+  "allows_dependency_addition": false,
+  "correlation_id": "wf-pr-repair-prototype-20260627",
+  "role": "supervisor",
+  "intent_lock": {
+    "objective_hash": "blake3:a3fe0e4ec0a3ab1a253c476e9769fead1f4e51fd1af04a0e261bea13b0575d84",
+    "path_scope_hash": "blake3:775ec21f496f9927ba8931ccaf5861e2d18b44313afc89a9e192d8d48d12b225",
+    "acceptance_hash": "blake3:9a304923a46937c66cca19b95511025619abbdbf00f5ecf993c36d6b18f32cf5"
+  }
+}
