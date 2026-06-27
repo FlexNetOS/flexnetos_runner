@@ -1,0 +1,808 @@
+[
+  {
+    "repo": "FlexNetOS/flexnetos_runner",
+    "number": 88,
+    "title": "chore: bridge runner sustain schedule gaps",
+    "url": "https://github.com/FlexNetOS/flexnetos_runner/pull/88",
+    "headRefName": "chore/runner-sustain-bridge-duration",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T18:48:14Z",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "",
+    "counts": {
+      "success": 4,
+      "failure": 0,
+      "pending": 3,
+      "cancelled": 0,
+      "neutral": 1,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [
+      "Local Linux CI",
+      "Semantic PR Title",
+      "Analyze (rust)"
+    ],
+    "suggested_classification": "awaiting_ci_or_stale_queued"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 337,
+    "title": "codex: mark GPT-5.6 Sol official preview",
+    "url": "https://github.com/FlexNetOS/envctl/pull/337",
+    "headRefName": "codex/gpt56-sol-official",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-27T18:47:59Z",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "",
+    "counts": {
+      "success": 4,
+      "failure": 0,
+      "pending": 5,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [
+      "clippy",
+      "MSRV (Rust 1.88)",
+      "cargo audit",
+      "test",
+      "gates"
+    ],
+    "suggested_classification": "awaiting_ci_or_stale_queued"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 308,
+    "title": "ci: gate meta-local review docs",
+    "url": "https://github.com/FlexNetOS/envctl/pull/308",
+    "headRefName": "task-0078-review-upgrade",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-27T13:02:45Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 9,
+      "failure": 0,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [],
+    "suggested_classification": "blocked_or_mergeability_unknown"
+  },
+  {
+    "repo": "FlexNetOS/vox",
+    "number": 3,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/vox/pull/3",
+    "headRefName": "task/d633ac-handoff-fleet-sync-vox",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:59:48Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 4,
+      "failure": 3,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "Linux (CUDA)",
+      "Windows (CPU)",
+      "Windows (CUDA)"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/yazelix",
+    "number": 2,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/yazelix/pull/2",
+    "headRefName": "task/d633ac-handoff-fleet-sync-yazelix",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:59:46Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 12,
+      "failure": 0,
+      "pending": 0,
+      "cancelled": 1,
+      "neutral": 0,
+      "skipped": 6,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [],
+    "suggested_classification": "green_candidate"
+  },
+  {
+    "repo": "FlexNetOS/ruflo",
+    "number": 3,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/ruflo/pull/3",
+    "headRefName": "task/d633ac-handoff-fleet-sync-ruflo",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T13:10:34Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 99,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 3,
+      "other": 0
+    },
+    "failed_checks": [
+      "Static regression guards (#2267 YAML +"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/kasetto",
+    "number": 2,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/kasetto/pull/2",
+    "headRefName": "task/d633ac-handoff-fleet-sync-kasetto",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:59:40Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 4,
+      "failure": 2,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "Rust \u00b7 CI",
+      "Next \u00b7 CI"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/inferrs",
+    "number": 2,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/inferrs/pull/2",
+    "headRefName": "task/d633ac-handoff-fleet-sync-inferrs",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:59:38Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 7,
+      "failure": 3,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "Build (aarch64-unknown-linux-gnu)",
+      "Build (x86_64-pc-windows-msvc)",
+      "Build (aarch64-pc-windows-msvc)"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/cuda-oxide",
+    "number": 1,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/cuda-oxide/pull/1",
+    "headRefName": "task/d633ac-handoff-fleet-sync-cuda-oxide",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:59:36Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 25,
+      "failure": 2,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 1,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "Analyze (actions)",
+      "Analyze (rust)"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/rusty-idd",
+    "number": 132,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/rusty-idd/pull/132",
+    "headRefName": "task/d633ac-handoff-fleet-sync",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:52:00Z",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "",
+    "counts": {
+      "success": 5,
+      "failure": 2,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "rust",
+      "promote-verify"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/meta_cli",
+    "number": 5,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/meta_cli/pull/5",
+    "headRefName": "task/d633ac-handoff-fleet-sync",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:48:47Z",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "",
+    "counts": {
+      "success": 6,
+      "failure": 3,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "Test (ubuntu-latest)",
+      "Test (macos-latest)",
+      "Test (windows-latest)"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/codex",
+    "number": 3,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/codex/pull/3",
+    "headRefName": "task/d633ac-handoff-fleet-sync",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:43:22Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 10,
+      "failure": 18,
+      "pending": 0,
+      "cancelled": 5,
+      "neutral": 0,
+      "skipped": 3,
+      "other": 0
+    },
+    "failed_checks": [
+      "Bazel test on macos-15-xlarge for aarch64-apple-darwin",
+      "cargo-deny",
+      "build-test",
+      "python-sdk",
+      "Bazel test on macos-15-xlarge for x86_64-apple-darwin",
+      "Bazel test on windows-latest for x86_64-pc-windows-gnullvm shard 1/4",
+      "sdks",
+      "Bazel test on windows-latest for x86_64-pc-windows-gnullvm shard 2/4",
+      "Bazel test on windows-latest for x86_64-pc-windows-gnullvm shard 3/4",
+      "Bazel test on windows-latest for x86_64-pc-windows-gnullvm shard 4/4",
+      "Bazel clippy on macos-15-xlarge for aarch64-apple-darwin",
+      "Bazel clippy on windows-latest for x86_64-pc-windows-gnullvm",
+      "Verify release build on macos-15-xlarge for aarch64-apple-darwin",
+      "Argument comment lint - macOS",
+      "Verify release build on windows-latest for x86_64-pc-windows-gnullvm",
+      "Argument comment lint - Windows",
+      "Bazel test on windows-latest for x86_64-pc-windows-gnullvm",
+      "CI results (required)"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/ECC",
+    "number": 2,
+    "title": "chore: apply handoff fleet deployment sync",
+    "url": "https://github.com/FlexNetOS/ECC/pull/2",
+    "headRefName": "task/d633ac-handoff-fleet-sync",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T12:43:17Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 40,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "Security Scan"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/prompt_hub",
+    "number": 188,
+    "title": "docs(plans): inferrs is the FlexNetOS org fork (same-org adopt)",
+    "url": "https://github.com/FlexNetOS/prompt_hub/pull/188",
+    "headRefName": "chore/inference-inferrs-correction",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T08:34:34Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 4,
+      "failure": 0,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [],
+    "suggested_classification": "blocked_or_mergeability_unknown"
+  },
+  {
+    "repo": "FlexNetOS/icm",
+    "number": 5,
+    "title": "test(icm): RED \u2014 recency/time-aware memory decay contract (plan cycle 7)",
+    "url": "https://github.com/FlexNetOS/icm/pull/5",
+    "headRefName": "plan/icm-red-tests",
+    "baseRefName": "develop",
+    "updatedAt": "2026-06-27T07:37:34Z",
+    "mergeStateStatus": "CLEAN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 0,
+      "failure": 0,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [],
+    "suggested_classification": "green_candidate"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 287,
+    "title": "plan(icm): cycle 7 \u2014 persistent-memory organ, SIDECAR convergence verdict",
+    "url": "https://github.com/FlexNetOS/envctl/pull/287",
+    "headRefName": "plan/loop-icm",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-27T07:39:12Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 8,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "gates"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/meta",
+    "number": 69,
+    "title": "chore(fleet): remove 4 empty repos (flexnetos_wiki/brain, my-wiki, assets)",
+    "url": "https://github.com/FlexNetOS/meta/pull/69",
+    "headRefName": "chore/remove-empty-repos",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T18:47:36Z",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "",
+    "counts": {
+      "success": 9,
+      "failure": 4,
+      "pending": 3,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 1,
+      "other": 0
+    },
+    "failed_checks": [
+      "Test (macos-latest)",
+      "Test (windows-latest)",
+      "Integration Tests (macos-latest)",
+      "envctl (meta-tree build)"
+    ],
+    "pending_checks": [
+      "Test (ubuntu-latest)",
+      "Clippy",
+      "Integration Tests (ubuntu-latest)"
+    ],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/prompt_hub",
+    "number": 184,
+    "title": "test(prompt-hub): additive RED suite \u2014 ADR-0007 goal-artifact emission contract",
+    "url": "https://github.com/FlexNetOS/prompt_hub/pull/184",
+    "headRefName": "plan/prompt-hub-red-tests",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T06:27:48Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 18,
+      "failure": 2,
+      "pending": 0,
+      "cancelled": 6,
+      "neutral": 0,
+      "skipped": 15,
+      "other": 0
+    },
+    "failed_checks": [
+      "Test (ubuntu-latest, 1.91.1)",
+      "Format"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 284,
+    "title": "plan(loop-prompt-hub): cycle 6 \u2014 prompt_hub (Front-Door intent STORE)",
+    "url": "https://github.com/FlexNetOS/envctl/pull/284",
+    "headRefName": "plan/loop-prompt-hub",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-27T06:27:00Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 8,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "gates"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/grit",
+    "number": 5,
+    "title": "test(grit): additive RED suite \u2014 union-step-2 symbol-merge contract",
+    "url": "https://github.com/FlexNetOS/grit/pull/5",
+    "headRefName": "plan/grit-red-tests",
+    "baseRefName": "develop",
+    "updatedAt": "2026-06-27T05:36:08Z",
+    "mergeStateStatus": "UNSTABLE",
+    "reviewDecision": "",
+    "counts": {
+      "success": 0,
+      "failure": 2,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 1,
+      "other": 0
+    },
+    "failed_checks": [
+      "macOS",
+      "Linux"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 281,
+    "title": "plan(loop-grit): cycle 5 \u2014 grit (merge/lock substrate for the union)",
+    "url": "https://github.com/FlexNetOS/envctl/pull/281",
+    "headRefName": "plan/loop-grit",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-27T05:35:36Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 8,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "gates"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/meta",
+    "number": 68,
+    "title": "meta-plugin: route meta MCP through meta root",
+    "url": "https://github.com/FlexNetOS/meta/pull/68",
+    "headRefName": "fix-codex-mcp-meta-plugin-routing",
+    "baseRefName": "main",
+    "updatedAt": "2026-06-27T05:24:04Z",
+    "mergeStateStatus": "DIRTY",
+    "reviewDecision": "",
+    "counts": {
+      "success": 8,
+      "failure": 6,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "validate",
+      "Test (macos-latest)",
+      "Test (windows-latest)",
+      "Integration Tests (ubuntu-latest)",
+      "Integration Tests (macos-latest)",
+      "envctl (meta-tree build)"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "merge_conflict"
+  },
+  {
+    "repo": "FlexNetOS/weave",
+    "number": 157,
+    "title": "test(weave-core): additive RED suite \u2014 A2A v1.0 interop adapter (planning P8 contract)",
+    "url": "https://github.com/FlexNetOS/weave/pull/157",
+    "headRefName": "plan/weave-red-tests",
+    "baseRefName": "develop",
+    "updatedAt": "2026-06-27T04:27:16Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 7,
+      "failure": 7,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "rustfmt",
+      "test",
+      "build (libsql backend)",
+      "sign",
+      "libsql + sign",
+      "surfaces",
+      "libsql + surfaces"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 277,
+    "title": "plan(loop-weave): cycle 4 \u2014 weave (A2A transport plane) [parallel instance]",
+    "url": "https://github.com/FlexNetOS/envctl/pull/277",
+    "headRefName": "plan/loop-weave",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-27T04:26:51Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 8,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "gates"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/handoff",
+    "number": 184,
+    "title": "build(union A-U1): git-pin RuVector + envctl sibling deps so handoff builds standalone",
+    "url": "https://github.com/FlexNetOS/handoff/pull/184",
+    "headRefName": "feat/union-a-u1-ruvector-gitpin",
+    "baseRefName": "develop",
+    "updatedAt": "2026-06-27T03:27:20Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 13,
+      "failure": 2,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "Test (macos-latest)",
+      "Test (windows-latest)"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/handoff",
+    "number": 183,
+    "title": "test(work-order): additive RED suite \u2014 fail-closed handoff.task.v1 loader (union P8 contract)",
+    "url": "https://github.com/FlexNetOS/handoff/pull/183",
+    "headRefName": "plan/handoff-union-cycle2",
+    "baseRefName": "develop",
+    "updatedAt": "2026-06-27T02:55:23Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 22,
+      "failure": 16,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "AI Gatekeeper",
+      "AI Gatekeeper",
+      "Test (ubuntu-latest)",
+      "Test (ubuntu-latest)",
+      "Test (macos-latest)",
+      "Test (macos-latest)",
+      "Test (windows-latest)",
+      "Test (windows-latest)",
+      "Test (no default features)",
+      "Test (no default features)",
+      "Test (ubuntu-latest)",
+      "Test (macos-latest)",
+      "Test (windows-latest)",
+      "Clippy",
+      "Clippy",
+      "Clippy"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/rusty-idd",
+    "number": 131,
+    "title": "test(work-order): additive RED suite \u2014 fail-closed handoff.task.v1 card consumer (planning P8 contract)",
+    "url": "https://github.com/FlexNetOS/rusty-idd/pull/131",
+    "headRefName": "plan/rusty-idd-red-tests",
+    "baseRefName": "develop",
+    "updatedAt": "2026-06-27T01:39:05Z",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "",
+    "counts": {
+      "success": 5,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "rust"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 269,
+    "title": "plan(fleet-convergence): cycles 1\u20132 \u2014 rusty-idd plan + handoff/rusty-idd union plan",
+    "url": "https://github.com/FlexNetOS/envctl/pull/269",
+    "headRefName": "plan/fleet-convergence-first-run",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-27T03:28:15Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 8,
+      "failure": 1,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [
+      "gates"
+    ],
+    "pending_checks": [],
+    "suggested_classification": "pr_test_regression_or_policy_failure"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 267,
+    "title": "envctl: enforce meta-local regular frontdoors",
+    "url": "https://github.com/FlexNetOS/envctl/pull/267",
+    "headRefName": "meta-local-health-continue",
+    "baseRefName": "master",
+    "updatedAt": "2026-06-26T22:56:25Z",
+    "mergeStateStatus": "UNKNOWN",
+    "reviewDecision": "",
+    "counts": {
+      "success": 3,
+      "failure": 0,
+      "pending": 0,
+      "cancelled": 0,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [],
+    "suggested_classification": "blocked_or_mergeability_unknown"
+  },
+  {
+    "repo": "FlexNetOS/envctl",
+    "number": 257,
+    "title": "chore(handoff): clear TASK-0002 lock drift via hf relock + ignore generated maps",
+    "url": "https://github.com/FlexNetOS/envctl/pull/257",
+    "headRefName": "chore/relock-task-0002-and-ignore-maps",
+    "baseRefName": "develop",
+    "updatedAt": "2026-06-26T11:33:20Z",
+    "mergeStateStatus": "BLOCKED",
+    "reviewDecision": "",
+    "counts": {
+      "success": 3,
+      "failure": 0,
+      "pending": 0,
+      "cancelled": 6,
+      "neutral": 0,
+      "skipped": 0,
+      "other": 0
+    },
+    "failed_checks": [],
+    "pending_checks": [],
+    "suggested_classification": "blocked_or_mergeability_unknown"
+  }
+]

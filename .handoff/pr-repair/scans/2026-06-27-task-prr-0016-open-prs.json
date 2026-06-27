@@ -1,0 +1,442 @@
+[
+  {
+    "isDraft": false,
+    "number": 88,
+    "repository": {
+      "name": "flexnetos_runner",
+      "nameWithOwner": "FlexNetOS/flexnetos_runner"
+    },
+    "title": "chore: bridge runner sustain schedule gaps",
+    "updatedAt": "2026-06-27T18:48:14Z",
+    "url": "https://github.com/FlexNetOS/flexnetos_runner/pull/88"
+  },
+  {
+    "isDraft": false,
+    "number": 337,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "codex: mark GPT-5.6 Sol official preview",
+    "updatedAt": "2026-06-27T18:47:59Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/337"
+  },
+  {
+    "isDraft": false,
+    "number": 308,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "ci: gate meta-local review docs",
+    "updatedAt": "2026-06-27T13:02:45Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/308"
+  },
+  {
+    "isDraft": false,
+    "number": 3,
+    "repository": {
+      "name": "vox",
+      "nameWithOwner": "FlexNetOS/vox"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:59:48Z",
+    "url": "https://github.com/FlexNetOS/vox/pull/3"
+  },
+  {
+    "isDraft": false,
+    "number": 2,
+    "repository": {
+      "name": "yazelix",
+      "nameWithOwner": "FlexNetOS/yazelix"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:59:46Z",
+    "url": "https://github.com/FlexNetOS/yazelix/pull/2"
+  },
+  {
+    "isDraft": false,
+    "number": 3,
+    "repository": {
+      "name": "ruflo",
+      "nameWithOwner": "FlexNetOS/ruflo"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T13:10:34Z",
+    "url": "https://github.com/FlexNetOS/ruflo/pull/3"
+  },
+  {
+    "isDraft": false,
+    "number": 2,
+    "repository": {
+      "name": "kasetto",
+      "nameWithOwner": "FlexNetOS/kasetto"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:59:40Z",
+    "url": "https://github.com/FlexNetOS/kasetto/pull/2"
+  },
+  {
+    "isDraft": false,
+    "number": 2,
+    "repository": {
+      "name": "inferrs",
+      "nameWithOwner": "FlexNetOS/inferrs"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:59:38Z",
+    "url": "https://github.com/FlexNetOS/inferrs/pull/2"
+  },
+  {
+    "isDraft": false,
+    "number": 1,
+    "repository": {
+      "name": "cuda-oxide",
+      "nameWithOwner": "FlexNetOS/cuda-oxide"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:59:36Z",
+    "url": "https://github.com/FlexNetOS/cuda-oxide/pull/1"
+  },
+  {
+    "isDraft": false,
+    "number": 132,
+    "repository": {
+      "name": "rusty-idd",
+      "nameWithOwner": "FlexNetOS/rusty-idd"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:52:00Z",
+    "url": "https://github.com/FlexNetOS/rusty-idd/pull/132"
+  },
+  {
+    "isDraft": false,
+    "number": 5,
+    "repository": {
+      "name": "meta_cli",
+      "nameWithOwner": "FlexNetOS/meta_cli"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:48:47Z",
+    "url": "https://github.com/FlexNetOS/meta_cli/pull/5"
+  },
+  {
+    "isDraft": false,
+    "number": 3,
+    "repository": {
+      "name": "codex",
+      "nameWithOwner": "FlexNetOS/codex"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:43:22Z",
+    "url": "https://github.com/FlexNetOS/codex/pull/3"
+  },
+  {
+    "isDraft": false,
+    "number": 2,
+    "repository": {
+      "name": "ECC",
+      "nameWithOwner": "FlexNetOS/ECC"
+    },
+    "title": "chore: apply handoff fleet deployment sync",
+    "updatedAt": "2026-06-27T12:43:17Z",
+    "url": "https://github.com/FlexNetOS/ECC/pull/2"
+  },
+  {
+    "isDraft": false,
+    "number": 188,
+    "repository": {
+      "name": "prompt_hub",
+      "nameWithOwner": "FlexNetOS/prompt_hub"
+    },
+    "title": "docs(plans): inferrs is the FlexNetOS org fork (same-org adopt)",
+    "updatedAt": "2026-06-27T08:34:34Z",
+    "url": "https://github.com/FlexNetOS/prompt_hub/pull/188"
+  },
+  {
+    "isDraft": false,
+    "number": 5,
+    "repository": {
+      "name": "icm",
+      "nameWithOwner": "FlexNetOS/icm"
+    },
+    "title": "test(icm): RED \u2014 recency/time-aware memory decay contract (plan cycle 7)",
+    "updatedAt": "2026-06-27T07:37:34Z",
+    "url": "https://github.com/FlexNetOS/icm/pull/5"
+  },
+  {
+    "isDraft": false,
+    "number": 287,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "plan(icm): cycle 7 \u2014 persistent-memory organ, SIDECAR convergence verdict",
+    "updatedAt": "2026-06-27T07:39:12Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/287"
+  },
+  {
+    "isDraft": false,
+    "number": 69,
+    "repository": {
+      "name": "meta",
+      "nameWithOwner": "FlexNetOS/meta"
+    },
+    "title": "chore(fleet): remove 4 empty repos (flexnetos_wiki/brain, my-wiki, assets)",
+    "updatedAt": "2026-06-27T18:47:36Z",
+    "url": "https://github.com/FlexNetOS/meta/pull/69"
+  },
+  {
+    "isDraft": false,
+    "number": 184,
+    "repository": {
+      "name": "prompt_hub",
+      "nameWithOwner": "FlexNetOS/prompt_hub"
+    },
+    "title": "test(prompt-hub): additive RED suite \u2014 ADR-0007 goal-artifact emission contract",
+    "updatedAt": "2026-06-27T06:27:48Z",
+    "url": "https://github.com/FlexNetOS/prompt_hub/pull/184"
+  },
+  {
+    "isDraft": false,
+    "number": 284,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "plan(loop-prompt-hub): cycle 6 \u2014 prompt_hub (Front-Door intent STORE)",
+    "updatedAt": "2026-06-27T06:27:00Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/284"
+  },
+  {
+    "isDraft": false,
+    "number": 5,
+    "repository": {
+      "name": "grit",
+      "nameWithOwner": "FlexNetOS/grit"
+    },
+    "title": "test(grit): additive RED suite \u2014 union-step-2 symbol-merge contract",
+    "updatedAt": "2026-06-27T05:36:08Z",
+    "url": "https://github.com/FlexNetOS/grit/pull/5"
+  },
+  {
+    "isDraft": false,
+    "number": 281,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "plan(loop-grit): cycle 5 \u2014 grit (merge/lock substrate for the union)",
+    "updatedAt": "2026-06-27T05:35:36Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/281"
+  },
+  {
+    "isDraft": false,
+    "number": 68,
+    "repository": {
+      "name": "meta",
+      "nameWithOwner": "FlexNetOS/meta"
+    },
+    "title": "meta-plugin: route meta MCP through meta root",
+    "updatedAt": "2026-06-27T05:24:04Z",
+    "url": "https://github.com/FlexNetOS/meta/pull/68"
+  },
+  {
+    "isDraft": false,
+    "number": 157,
+    "repository": {
+      "name": "weave",
+      "nameWithOwner": "FlexNetOS/weave"
+    },
+    "title": "test(weave-core): additive RED suite \u2014 A2A v1.0 interop adapter (planning P8 contract)",
+    "updatedAt": "2026-06-27T04:27:16Z",
+    "url": "https://github.com/FlexNetOS/weave/pull/157"
+  },
+  {
+    "isDraft": false,
+    "number": 277,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "plan(loop-weave): cycle 4 \u2014 weave (A2A transport plane) [parallel instance]",
+    "updatedAt": "2026-06-27T04:26:51Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/277"
+  },
+  {
+    "isDraft": false,
+    "number": 184,
+    "repository": {
+      "name": "handoff",
+      "nameWithOwner": "FlexNetOS/handoff"
+    },
+    "title": "build(union A-U1): git-pin RuVector + envctl sibling deps so handoff builds standalone",
+    "updatedAt": "2026-06-27T03:27:20Z",
+    "url": "https://github.com/FlexNetOS/handoff/pull/184"
+  },
+  {
+    "isDraft": false,
+    "number": 183,
+    "repository": {
+      "name": "handoff",
+      "nameWithOwner": "FlexNetOS/handoff"
+    },
+    "title": "test(work-order): additive RED suite \u2014 fail-closed handoff.task.v1 loader (union P8 contract)",
+    "updatedAt": "2026-06-27T02:55:23Z",
+    "url": "https://github.com/FlexNetOS/handoff/pull/183"
+  },
+  {
+    "isDraft": false,
+    "number": 131,
+    "repository": {
+      "name": "rusty-idd",
+      "nameWithOwner": "FlexNetOS/rusty-idd"
+    },
+    "title": "test(work-order): additive RED suite \u2014 fail-closed handoff.task.v1 card consumer (planning P8 contract)",
+    "updatedAt": "2026-06-27T01:39:05Z",
+    "url": "https://github.com/FlexNetOS/rusty-idd/pull/131"
+  },
+  {
+    "isDraft": false,
+    "number": 269,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "plan(fleet-convergence): cycles 1\u20132 \u2014 rusty-idd plan + handoff/rusty-idd union plan",
+    "updatedAt": "2026-06-27T03:28:15Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/269"
+  },
+  {
+    "isDraft": false,
+    "number": 267,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "envctl: enforce meta-local regular frontdoors",
+    "updatedAt": "2026-06-26T22:56:25Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/267"
+  },
+  {
+    "isDraft": false,
+    "number": 257,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "chore(handoff): clear TASK-0002 lock drift via hf relock + ignore generated maps",
+    "updatedAt": "2026-06-26T11:33:20Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/257"
+  },
+  {
+    "isDraft": false,
+    "number": 179,
+    "repository": {
+      "name": "handoff",
+      "nameWithOwner": "FlexNetOS/handoff"
+    },
+    "title": "feat(hf): add `hf relock` verb + ensure /.handoff/maps/ ignore canonically",
+    "updatedAt": "2026-06-26T11:32:34Z",
+    "url": "https://github.com/FlexNetOS/handoff/pull/179"
+  },
+  {
+    "isDraft": false,
+    "number": 130,
+    "repository": {
+      "name": "rusty-idd",
+      "nameWithOwner": "FlexNetOS/rusty-idd"
+    },
+    "title": "docs: map LifeOS meta front door plan",
+    "updatedAt": "2026-06-26T11:22:17Z",
+    "url": "https://github.com/FlexNetOS/rusty-idd/pull/130"
+  },
+  {
+    "isDraft": false,
+    "number": 94,
+    "repository": {
+      "name": "meta-ruvector",
+      "nameWithOwner": "FlexNetOS/meta-ruvector"
+    },
+    "title": "bench(ruvector-core): quantify quantized-index memory/recall/latency tradeoff (#563)",
+    "updatedAt": "2026-06-26T11:21:52Z",
+    "url": "https://github.com/FlexNetOS/meta-ruvector/pull/94"
+  },
+  {
+    "isDraft": false,
+    "number": 255,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "chore(handoff): status-truth reconcile \u2014 entire .handoff backlog 54/54 DONE",
+    "updatedAt": "2026-06-26T11:04:27Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/255"
+  },
+  {
+    "isDraft": false,
+    "number": 254,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "handoff: spec migration adoption engine v2",
+    "updatedAt": "2026-06-26T10:27:06Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/254"
+  },
+  {
+    "isDraft": false,
+    "number": 93,
+    "repository": {
+      "name": "meta-ruvector",
+      "nameWithOwner": "FlexNetOS/meta-ruvector"
+    },
+    "title": "feat(ruvector-core): apply quantization to the index \u2014 real memory reduction (#563)",
+    "updatedAt": "2026-06-26T10:11:16Z",
+    "url": "https://github.com/FlexNetOS/meta-ruvector/pull/93"
+  },
+  {
+    "isDraft": false,
+    "number": 253,
+    "repository": {
+      "name": "envctl",
+      "nameWithOwner": "FlexNetOS/envctl"
+    },
+    "title": "[codex] add Claude plan-loop command shims",
+    "updatedAt": "2026-06-26T10:08:20Z",
+    "url": "https://github.com/FlexNetOS/envctl/pull/253"
+  },
+  {
+    "isDraft": false,
+    "number": 92,
+    "repository": {
+      "name": "meta-ruvector",
+      "nameWithOwner": "FlexNetOS/meta-ruvector"
+    },
+    "title": "release: reconcile develop \u2192 main (union merge, strict gate green)",
+    "updatedAt": "2026-06-26T11:50:31Z",
+    "url": "https://github.com/FlexNetOS/meta-ruvector/pull/92"
+  },
+  {
+    "isDraft": false,
+    "number": 90,
+    "repository": {
+      "name": "meta-ruvector",
+      "nameWithOwner": "FlexNetOS/meta-ruvector"
+    },
+    "title": "docs(workspace): crate-level //! docs + READMEs for 40 library crates",
+    "updatedAt": "2026-06-26T09:07:41Z",
+    "url": "https://github.com/FlexNetOS/meta-ruvector/pull/90"
+  },
+  {
+    "isDraft": false,
+    "number": 179,
+    "repository": {
+      "name": "prompt_hub",
+      "nameWithOwner": "FlexNetOS/prompt_hub"
+    },
+    "title": "Revert vendoring (#178) \u2014 meta CARGO_HOME + needs-manifest replace it",
+    "updatedAt": "2026-06-26T06:06:43Z",
+    "url": "https://github.com/FlexNetOS/prompt_hub/pull/179"
+  }
+]
