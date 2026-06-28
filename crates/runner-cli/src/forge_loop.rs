@@ -2898,6 +2898,7 @@ pub fn codex_invocation(prompt: String) -> CodexInvocation {
 pub fn research_sources() -> Vec<ResearchSource> {
     vec![
         ResearchSource { id: "openai-codex", url: "https://github.com/openai/codex", purpose: "Codex Rust CLI behavior, noninteractive execution, JSONL, and upstream issues" },
+        ResearchSource { id: "codex-config-advanced-docs", url: "https://developers.openai.com/codex/config-advanced", purpose: "Codex project config, hooks, rules, custom agents, model flags, sandbox, and auto-compaction settings" },
         ResearchSource { id: "codex-github-action-docs", url: "https://developers.openai.com/codex/github-action", purpose: "Codex Action prompt-file, codex-args, sandbox, safety-strategy, output, and structured schema controls" },
         ResearchSource { id: "codex-permissions-docs", url: "https://developers.openai.com/codex/permissions", purpose: "Permission-profile migration, filesystem/network least privilege, and sandbox/profile non-composition rules" },
         ResearchSource { id: "codex-subagents-docs", url: "https://developers.openai.com/codex/subagents", purpose: "Project custom agents, explicit fan-out, inherited sandbox behavior, and max thread/depth controls" },
@@ -3402,6 +3403,7 @@ mod tests {
             .map(|s| s.id)
             .collect::<Vec<_>>();
         assert!(ids.contains(&"openai-codex"));
+        assert!(ids.contains(&"codex-config-advanced-docs"));
         assert!(ids.contains(&"codex-github-action-docs"));
         assert!(ids.contains(&"codex-permissions-docs"));
         assert!(ids.contains(&"codex-subagents-docs"));
