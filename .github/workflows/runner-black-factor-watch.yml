@@ -15,6 +15,7 @@ on:
       - CI
       - Semantic PR Title
       - Runner Sustain
+      - Codex Forge Loop
     types:
       - completed
 

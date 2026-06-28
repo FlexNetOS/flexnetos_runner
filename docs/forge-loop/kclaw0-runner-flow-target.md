@@ -27,7 +27,7 @@ This still does not by itself prove the 12+ hour kclaw0 persistence target; that
 
 ## Runner Black Factor Watch and refill policy
 
-`runner-black-factor-watch.yml` runs from GitHub-hosted capacity so it does not consume the local self-hosted runner pool. It is both schedule-driven and event-driven: every completed `CI` or `Semantic PR Title` workflow run wakes the watch through `workflow_run`, every completed `Runner Sustain` run explicitly dispatches the watch with `trigger_source=sustain_completion`, and every completed `Codex Forge Loop` run explicitly dispatches the watch with `trigger_source=codex_completion` because GitHub suppresses some token-dispatched workflow-run chains. This keeps the sustain backlog rehydrated as soon as required-check pressure clears or a growth cycle frees the self-hosted lane instead of waiting only for GitHub's cron scheduler. It captures run and PR history, writes a `runner-pressure.env` witness, tops up a small `Runner Sustain` active/queued backlog, proves instantaneous `runner-flow-audit --strict` when there is no local-check pressure, records a non-strict runner-flow audit while pending required checks temporarily own the runner lane, records non-strict black-factor progress, and uploads the run/PR/audit files as evidence artifacts. Failed required checks still make the strict proof fail after pending work drains; pending PR or main-branch local checks make the watch record a non-strict audit and stay green instead of adding red noise while required work is actively draining, even if the open PR still carries a stale failed-pressure witness from a superseded check run. The backlog target is clamped to 1-4 runs and defaults to 4, meaning one active plus one queued replacement per local lane when no required local checks are waiting.
+`runner-black-factor-watch.yml` runs from GitHub-hosted capacity so it does not consume the local self-hosted runner pool. It is both schedule-driven and event-driven: every completed `CI`, `Semantic PR Title`, or fully completed `Codex Forge Loop` workflow run wakes the watch through `workflow_run`, every completed `Runner Sustain` run explicitly dispatches the watch with `trigger_source=sustain_completion`, and every Codex growth job also explicitly dispatches the watch with `trigger_source=codex_completion` because GitHub suppresses some token-dispatched workflow-run chains. The Codex `workflow_run` wakeup is intentionally redundant with the explicit dispatch: the explicit dispatch can occur while PR checks or the Codex workflow itself still appear active, so the completed-workflow wakeup rehydrates sustain after that pressure has actually cleared. This keeps the sustain backlog rehydrated as soon as required-check pressure clears or a growth cycle frees the self-hosted lane instead of waiting only for GitHub's cron scheduler. It captures run and PR history, writes a `runner-pressure.env` witness, tops up a small `Runner Sustain` active/queued backlog, proves instantaneous `runner-flow-audit --strict` when there is no local-check pressure, records a non-strict runner-flow audit while pending required checks temporarily own the runner lane, records non-strict black-factor progress, and uploads the run/PR/audit files as evidence artifacts. Failed required checks still make the strict proof fail after pending work drains; pending PR or main-branch local checks make the watch record a non-strict audit and stay green instead of adding red noise while required work is actively draining, even if the open PR still carries a stale failed-pressure witness from a superseded check run. The backlog target is clamped to 1-4 runs and defaults to 4, meaning one active plus one queued replacement per local lane when no required local checks are waiting.
 
 ## Observed-window black-factor audit
 
@@ -72,9 +72,12 @@ after the runner black-factor lane is already healthy without stacking a new sel
 the previous PR has merged.
 
 When a `Codex Forge Loop` run completes, it now performs a completion rehydrate before artifact
-upload: it tops up the `Runner Sustain` backlog when no PR-local or required-run pressure exists,
-dispatches `Runner Black Factor Watch` with `trigger_source=codex_completion`, and dispatches
-`Agentic System Watch` with the same trigger. The agentic watch waits briefly on that trigger so the
-completed Codex run leaves the active run list before it evaluates another growth dispatch. It still
-refuses to launch another Codex cycle while any PR is open or another Codex run is active, so the
-completion wakeup closes post-growth idle gaps without violating the merge-before-next-cycle invariant.
+upload: it waits and retries for PR-local or required-run pressure to clear, tops up the
+`Runner Sustain` backlog, dispatches `Runner Black Factor Watch` with
+`trigger_source=codex_completion`, and dispatches `Agentic System Watch` with the same trigger. The
+black-factor watch also wakes from the fully completed Codex workflow_run event, giving the system a
+redundant post-completion retry if the explicit dispatch was still racing visible PR/Codex pressure.
+The agentic watch waits briefly on that trigger so the completed Codex run leaves the active run list
+before it evaluates another growth dispatch. It still refuses to launch another Codex cycle while any
+PR is open or another Codex run is active, so the completion wakeup closes post-growth idle gaps
+without violating the merge-before-next-cycle invariant.

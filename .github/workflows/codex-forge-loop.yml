@@ -103,6 +103,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MIN_SUSTAIN_BACKLOG: '4'
+          POST_CODEX_REHYDRATE_RETRY_SECONDS: '30'
+          POST_CODEX_REHYDRATE_RETRY_ATTEMPTS: '10'
         run: |
           set -euo pipefail
           echo "codex_completion_rehydrate=started" > codex-completion-rehydrate.env
@@ -139,10 +141,28 @@ jobs:
             case "$run_count" in (*[!0-9]*|'') run_count=1 ;; esac
             echo $((pr_count + run_count))
           }
+          retry_seconds="${POST_CODEX_REHYDRATE_RETRY_SECONDS:-30}"
+          retry_attempts="${POST_CODEX_REHYDRATE_RETRY_ATTEMPTS:-10}"
+          case "$retry_seconds" in (*[!0-9]*|'') retry_seconds=30 ;; esac
+          case "$retry_attempts" in (*[!0-9]*|'') retry_attempts=10 ;; esac
+          if [ "$retry_seconds" -lt 5 ]; then retry_seconds=5; fi
+          if [ "$retry_seconds" -gt 120 ]; then retry_seconds=120; fi
+          if [ "$retry_attempts" -lt 0 ]; then retry_attempts=0; fi
+          if [ "$retry_attempts" -gt 20 ]; then retry_attempts=20; fi
           pr_pressure="$(pr_pressure_count)"
           case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1 ;; esac
+          pressure_attempt=0
+          while [ "$pr_pressure" -gt 0 ] && [ "$pressure_attempt" -lt "$retry_attempts" ]; do
+            pressure_attempt=$((pressure_attempt + 1))
+            echo "::notice::Codex completion waiting ${retry_seconds}s for PR-local pressure to clear before sustain rehydrate (${pressure_attempt}/${retry_attempts}, pressure=${pr_pressure})"
+            sleep "$retry_seconds"
+            pr_pressure="$(pr_pressure_count)"
+            case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1 ;; esac
+          done
+          echo "rehydrate_pressure_after=${pr_pressure}" >> codex-completion-rehydrate.env
+          echo "rehydrate_pressure_attempts=${pressure_attempt}" >> codex-completion-rehydrate.env
           if [ "$pr_pressure" -gt 0 ]; then
-            echo "::notice::skipping Codex completion sustain rehydrate because ${pr_pressure} PR-local checks need the runner lane"
+            echo "::notice::skipping Codex completion sustain rehydrate because ${pr_pressure} PR-local checks still need the runner lane after ${pressure_attempt} retries"
             echo "sustain=skipped_pr_pressure" >> codex-completion-rehydrate.env
           else
             if ! active_sustain="$(gh run list --workflow runner-sustain.yml --limit 100 --json status --jq '
