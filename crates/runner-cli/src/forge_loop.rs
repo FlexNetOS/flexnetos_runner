@@ -631,6 +631,7 @@ pub struct CycleManifest {
 pub struct CompactContinuityArtifact {
     pub enabled: bool,
     pub compact_prompt: String,
+    pub compact_summary_events: Vec<String>,
     pub phases: Vec<CyclePhase>,
     pub active_phase: CyclePhase,
     pub current_phase_index: usize,
@@ -3586,6 +3587,7 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
     CompactContinuityArtifact {
         enabled: true,
         compact_prompt: COMPACT_PROMPT_PATH.into(),
+        compact_summary_events: vec!["PreCompact".into(), "PostCompact".into()],
         phases: required_phases(),
         active_phase: CyclePhase::Red,
         current_phase_index: 0,
@@ -4294,6 +4296,16 @@ R  docs/old.md -> docs/new.md
         assert!(artifact.phase_source_validation_next_action.contains(
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
         ));
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_compact_summary_hook_events() {
+        let artifact = compact_continuity_artifact();
+
+        assert_eq!(
+            artifact.compact_summary_events,
+            vec!["PreCompact".to_string(), "PostCompact".to_string()]
+        );
     }
 
     #[test]
