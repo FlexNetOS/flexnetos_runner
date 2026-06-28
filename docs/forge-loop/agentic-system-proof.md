@@ -20,6 +20,10 @@ previous narrower proofs.
    runner gap when useful work exists.
 5. **Fleet truth** — local self-hosted runner lanes must be attributable and not silently occupied
    by external unhealthy work during the proof.
+6. **Self-improvement dispatch** — `Agentic System Watch` must periodically prove this audit and,
+   when `OPENAI_API_KEY` exists, no PR is open, no PR-local checks are under pressure, and no Codex
+   run is already active, dispatch `Codex Forge Loop` for the next strict-upgrade
+   research/adapt/grow cycle.
 
 Strict live proof command:
 
