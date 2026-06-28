@@ -22,6 +22,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "cargo run -q -p runner-cli -- forge-loop docs-drift --json",
     "cargo run -q -p runner-cli -- forge-loop target-mining-audit --json",
     "cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
+    "cargo run -q -p runner-cli -- forge-loop agentic-system-audit --json",
     "cargo test --workspace --all-features",
     "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "cargo audit --deny warnings",
@@ -49,6 +50,8 @@ pub enum ForgeLoopCommand {
     RunnerOpsSloAudit(RunnerOpsSloAuditArgs),
     /// Audit live local self-hosted runner lane ownership, including cross-repo pressure.
     RunnerFleetAudit(RunnerFleetAuditArgs),
+    /// Audit the full 24/7 agentic loop: research, evaluation, adaptation, growth, runners, and PR flow.
+    AgenticSystemAudit(AgenticSystemAuditArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
     DocsDrift(DocsDriftArgs),
     /// Inventory Codex loop components and config surfaces for upgrade planning.
@@ -209,6 +212,67 @@ pub struct RunnerFleetAuditArgs {
     #[arg(long)]
     pub json: bool,
     /// Return non-zero when external lane pressure exceeds the allowed budget.
+    #[arg(long)]
+    pub strict: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AgenticSystemAuditArgs {
+    /// Workspace root to scan.
+    #[arg(long, default_value = ".")]
+    pub root: PathBuf,
+    /// JSON from `gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url`.
+    #[arg(long)]
+    pub runs_json: Option<PathBuf>,
+    /// JSON from `gh pr list --state open --json state,mergedAt,statusCheckRollup,url`.
+    #[arg(long)]
+    pub open_prs_json: Option<PathBuf>,
+    /// JSON from `gh pr list --state all --json state,mergedAt,statusCheckRollup,url`.
+    #[arg(long)]
+    pub prs_history_json: Option<PathBuf>,
+    /// Expected repository that should own local dark-factory lanes for this proof.
+    #[arg(long, default_value = "FlexNetOS/flexnetos_runner")]
+    pub expected_repository: String,
+    /// Optional JSON fixture/input of observed GitHub Actions jobs; when omitted, scan /proc.
+    #[arg(long)]
+    pub fleet_jobs_json: Option<PathBuf>,
+    /// procfs root to scan for live GitHub Actions job environments.
+    #[arg(long, default_value = "/proc")]
+    pub proc_root: PathBuf,
+    /// Minimum observed black-factor proof window in hours.
+    #[arg(long, default_value_t = 12)]
+    pub min_window_hours: u64,
+    /// Minimum observed operations SLO burn-in window in hours.
+    #[arg(long, default_value_t = 1)]
+    pub min_slo_window_hours: u64,
+    /// Maximum allowed observed idle gap between useful runner intervals.
+    #[arg(long, default_value_t = 10)]
+    pub max_idle_gap_minutes: u64,
+    /// Minimum active/queued Runner Sustain backlog required at audit time.
+    #[arg(long, default_value_t = 1)]
+    pub min_active_or_queued_sustain: usize,
+    /// Minimum successful event-driven Runner Black Factor Watch runs in the SLO window.
+    #[arg(long, default_value_t = 1)]
+    pub min_event_watch_wakeups: usize,
+    /// Maximum failed operational workflow runs allowed in the SLO window.
+    #[arg(long, default_value_t = 0)]
+    pub max_failed_ops_runs: usize,
+    /// Minimum duration-proven successful Runner Sustain workflow runs in the black-factor window.
+    #[arg(long, default_value_t = 72)]
+    pub min_sustain_runs: usize,
+    /// Minimum wall-clock duration required before a Runner Sustain success counts as useful work.
+    #[arg(long, default_value_t = 5)]
+    pub min_sustain_duration_minutes: u64,
+    /// Minimum merged PRs with clean required checks in the black-factor window.
+    #[arg(long, default_value_t = 1)]
+    pub min_clean_merged_prs: usize,
+    /// Maximum external-repository jobs allowed to occupy local runner lanes.
+    #[arg(long, default_value_t = 0)]
+    pub max_external_jobs: usize,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return non-zero unless every end-to-end agentic-system proof facet is present.
     #[arg(long)]
     pub strict: bool,
 }
@@ -401,6 +465,24 @@ pub struct RunnerFleetAuditReport {
     pub missing_evidence: Vec<&'static str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AgenticSystemAuditReport {
+    pub kclaw0_target: &'static str,
+    pub components: ComponentsAuditReport,
+    pub target_mining: TargetMiningAuditReport,
+    pub docs_drift: DocsDriftReport,
+    pub runner_flow: Option<RunnerFlowAuditReport>,
+    pub runner_black_factor: Option<RunnerBlackFactorAuditReport>,
+    pub runner_ops_slo: Option<RunnerOpsSloAuditReport>,
+    pub runner_fleet: RunnerFleetAuditReport,
+    pub research_loop_evidence: bool,
+    pub evaluation_loop_evidence: bool,
+    pub adaptation_loop_evidence: bool,
+    pub growth_loop_evidence: bool,
+    pub end_to_end_ready: bool,
+    pub missing_evidence: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct PrHistoryEntry {
     #[serde(default)]
@@ -550,6 +632,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::RunnerBlackFactorAudit(args) => runner_black_factor_audit(args),
         ForgeLoopCommand::RunnerOpsSloAudit(args) => runner_ops_slo_audit(args),
         ForgeLoopCommand::RunnerFleetAudit(args) => runner_fleet_audit(args),
+        ForgeLoopCommand::AgenticSystemAudit(args) => agentic_system_audit(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
         ForgeLoopCommand::TargetMiningAudit(args) => target_mining_audit(args),
@@ -724,7 +807,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "runner_flow_audit": "fxrun forge-loop runner-flow-audit --json",
         "runner_black_factor_audit": "fxrun forge-loop runner-black-factor-audit --json",
         "runner_ops_slo_audit": "fxrun forge-loop runner-ops-slo-audit --json",
-        "runner_fleet_audit": "fxrun forge-loop runner-fleet-audit --json"
+        "runner_fleet_audit": "fxrun forge-loop runner-fleet-audit --json",
+        "agentic_system_audit": "fxrun forge-loop agentic-system-audit --json"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -744,6 +828,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         println!("  black-factor proof : use `fxrun forge-loop runner-black-factor-audit --json`");
         println!("  ops SLO burn-in    : use `fxrun forge-loop runner-ops-slo-audit --json`");
         println!("  fleet lane audit   : use `fxrun forge-loop runner-fleet-audit --json`");
+        println!("  agentic system     : use `fxrun forge-loop agentic-system-audit --json`");
         println!("  component audit    : use `fxrun forge-loop components-audit --json`");
         println!("  target mining      : use `fxrun forge-loop target-mining-audit --json`");
         println!(
@@ -964,6 +1049,72 @@ fn runner_fleet_audit(args: RunnerFleetAuditArgs) -> Result<()> {
     }
 }
 
+fn agentic_system_audit(args: AgenticSystemAuditArgs) -> Result<()> {
+    let report = agentic_system_audit_report(&args)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop agentic system audit");
+        println!("  kclaw0 target        : {}", report.kclaw0_target);
+        println!(
+            "  component inventory  : {}/{}",
+            report.components.present_components.len(),
+            report.components.checked_components
+        );
+        println!(
+            "  target mining        : {}/{}",
+            report.target_mining.covered_targets.len(),
+            report.target_mining.checked_targets
+        );
+        println!("  docs drift           : {}", report.docs_drift.drift.len());
+        println!("  always researching   : {}", report.research_loop_evidence);
+        println!(
+            "  always evaluating    : {}",
+            report.evaluation_loop_evidence
+        );
+        println!(
+            "  always adapting      : {}",
+            report.adaptation_loop_evidence
+        );
+        println!("  always growing       : {}", report.growth_loop_evidence);
+        println!("  runner flow          : {}", report.runner_flow.is_some());
+        println!(
+            "  black-factor proof   : {}",
+            report
+                .runner_black_factor
+                .as_ref()
+                .is_some_and(|runner| runner.exceeded)
+        );
+        println!(
+            "  ops burn-in proof    : {}",
+            report
+                .runner_ops_slo
+                .as_ref()
+                .is_some_and(|ops| ops.burn_in_ready)
+        );
+        println!(
+            "  fleet ready          : {}",
+            report.runner_fleet.fleet_ready
+        );
+        println!("  end-to-end ready     : {}", report.end_to_end_ready);
+        if !report.missing_evidence.is_empty() {
+            println!("  missing evidence     :");
+            for item in &report.missing_evidence {
+                println!("    - {item}");
+            }
+        }
+    }
+
+    if args.strict && !report.end_to_end_ready {
+        Err(anyhow!(
+            "agentic system evidence incomplete: {}",
+            report.missing_evidence.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOpsSloAuditReport> {
     let runs = parse_json_vec::<WorkflowRunEntry>(&args.runs_json)?;
     let prs = parse_json_vec::<PrFlowEntry>(&args.prs_json)?;
@@ -1113,6 +1264,192 @@ fn runner_fleet_audit_report(args: &RunnerFleetAuditArgs) -> Result<RunnerFleetA
         external_repositories,
         jobs,
         fleet_ready,
+        missing_evidence,
+    })
+}
+
+fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticSystemAuditReport> {
+    let components = components_audit_report(&args.root);
+    let target_mining = target_mining_audit_report(&args.root);
+    let docs_drift = docs_drift_report(&args.root)?;
+
+    let runner_flow = match (&args.runs_json, &args.open_prs_json) {
+        (Some(runs_json), Some(prs_json)) => {
+            Some(runner_flow_audit_report(&RunnerFlowAuditArgs {
+                root: args.root.clone(),
+                runs_json: Some(runs_json.clone()),
+                prs_json: Some(prs_json.clone()),
+                json: true,
+                strict: false,
+            })?)
+        }
+        _ => None,
+    };
+    let runner_black_factor = match (&args.runs_json, &args.prs_history_json) {
+        (Some(runs_json), Some(prs_json)) => Some(runner_black_factor_audit_report(
+            &RunnerBlackFactorAuditArgs {
+                runs_json: runs_json.clone(),
+                prs_json: prs_json.clone(),
+                min_window_hours: args.min_window_hours,
+                min_sustain_runs: args.min_sustain_runs,
+                min_sustain_duration_minutes: args.min_sustain_duration_minutes,
+                min_clean_merged_prs: args.min_clean_merged_prs,
+                json: true,
+                strict: false,
+            },
+        )?),
+        _ => None,
+    };
+    let runner_ops_slo = match (&args.runs_json, &args.open_prs_json) {
+        (Some(runs_json), Some(prs_json)) => {
+            Some(runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+                runs_json: runs_json.clone(),
+                prs_json: prs_json.clone(),
+                min_window_hours: args.min_slo_window_hours,
+                max_idle_gap_minutes: args.max_idle_gap_minutes,
+                min_active_or_queued_sustain: args.min_active_or_queued_sustain,
+                min_event_watch_wakeups: args.min_event_watch_wakeups,
+                max_failed_ops_runs: args.max_failed_ops_runs,
+                min_sustain_duration_minutes: args.min_sustain_duration_minutes,
+                json: true,
+                strict: false,
+            })?)
+        }
+        _ => None,
+    };
+    let runner_fleet = runner_fleet_audit_report(&RunnerFleetAuditArgs {
+        expected_repository: args.expected_repository.clone(),
+        jobs_json: args.fleet_jobs_json.clone(),
+        proc_root: args.proc_root.clone(),
+        max_external_jobs: args.max_external_jobs,
+        json: true,
+        strict: false,
+    })?;
+
+    let research_loop_evidence = target_mining.missing_targets.is_empty()
+        && target_mining
+            .covered_targets
+            .iter()
+            .any(|target| target == "kclaw0")
+        && target_mining
+            .covered_targets
+            .iter()
+            .any(|target| target == "kclaw0-referenced-resources")
+        && all_file_terms_present(
+            &args.root,
+            &[
+                (
+                    ".agents/skills/forge-loop-research/SKILL.md",
+                    "Required sources",
+                ),
+                (
+                    "docs/forge-loop/codex-target-mining.md",
+                    "kclaw0 referenced resources",
+                ),
+            ],
+        );
+    let evaluation_loop_evidence = components.missing_components.is_empty()
+        && docs_drift.drift.is_empty()
+        && all_file_terms_present(
+            &args.root,
+            &[
+                (
+                    ".codex/checklists/forge-loop-cycle.toml",
+                    "target_mining_audit",
+                ),
+                (".codex/checklists/forge-loop-cycle.toml", "docs_drift"),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "agentic_system_audit_report",
+                ),
+            ],
+        );
+    let adaptation_loop_evidence = all_file_terms_present(
+        &args.root,
+        &[
+            ("docs/kclaw0-upgrade-ledger.md", "self-upgrade"),
+            (
+                "docs/kclaw0-upgrade-ledger.md",
+                "kclaw0 target-mining proof",
+            ),
+            (
+                "docs/kclaw0-upgrade-ledger.md",
+                "kclaw0 referenced-resource proof",
+            ),
+        ],
+    );
+    let growth_loop_evidence = runner_black_factor.as_ref().is_some_and(|black| {
+        black.exceeded && black.clean_merged_prs >= black.min_clean_merged_prs
+    }) && runner_ops_slo.as_ref().is_some_and(|ops| ops.burn_in_ready)
+        && runner_flow
+            .as_ref()
+            .is_some_and(|flow| flow.pr_flow_seamless && !flow.idle_without_work);
+
+    let mut missing_evidence = Vec::new();
+    if !components.missing_components.is_empty() {
+        missing_evidence.push("component_inventory");
+    }
+    if !target_mining.missing_targets.is_empty() {
+        missing_evidence.push("target_mining");
+    }
+    if !docs_drift.drift.is_empty() {
+        missing_evidence.push("docs_drift");
+    }
+    if !research_loop_evidence {
+        missing_evidence.push("always_researching");
+    }
+    if !evaluation_loop_evidence {
+        missing_evidence.push("always_evaluating");
+    }
+    if !adaptation_loop_evidence {
+        missing_evidence.push("always_adapting");
+    }
+    if runner_flow.is_none() {
+        missing_evidence.push("runner_flow_live_evidence");
+    } else if runner_flow
+        .as_ref()
+        .is_some_and(|flow| !flow.missing_evidence.is_empty())
+    {
+        missing_evidence.push("runner_flow");
+    }
+    if runner_black_factor.is_none() {
+        missing_evidence.push("black_factor_live_evidence");
+    } else if runner_black_factor
+        .as_ref()
+        .is_some_and(|black| !black.exceeded)
+    {
+        missing_evidence.push("black_factor_exceeded");
+    }
+    if runner_ops_slo.is_none() {
+        missing_evidence.push("ops_slo_live_evidence");
+    } else if runner_ops_slo
+        .as_ref()
+        .is_some_and(|ops| !ops.burn_in_ready)
+    {
+        missing_evidence.push("ops_slo_burn_in");
+    }
+    if !runner_fleet.fleet_ready {
+        missing_evidence.push("fleet_lane_ownership");
+    }
+    if !growth_loop_evidence {
+        missing_evidence.push("always_growing");
+    }
+
+    let end_to_end_ready = missing_evidence.is_empty();
+    Ok(AgenticSystemAuditReport {
+        kclaw0_target: "end-to-end 24/7 agentic system that is always researching, evaluating, adapting, growing, and improving while runners and PRs flow",
+        components,
+        target_mining,
+        docs_drift,
+        runner_flow,
+        runner_black_factor,
+        runner_ops_slo,
+        runner_fleet,
+        research_loop_evidence,
+        evaluation_loop_evidence,
+        adaptation_loop_evidence,
+        growth_loop_evidence,
+        end_to_end_ready,
         missing_evidence,
     })
 }
@@ -2057,6 +2394,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     "runner-fleet-audit --strict",
                 ),
                 (
+                    "docs/forge-loop/agentic-system-proof.md",
+                    "agentic-system-audit --strict",
+                ),
+                (
                     ".github/workflows/runner-sustain.yml",
                     "name: Runner Sustain",
                 ),
@@ -2077,6 +2418,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 (
                     "crates/runner-cli/src/forge_loop.rs",
                     "runner_fleet_audit_flags_external_repo_lane_pressure",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "agentic_system_audit_report",
                 ),
                 ("crates/runner-cli/src/forge_loop.rs", "kclaw0"),
             ],
@@ -2295,6 +2640,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "docs",
             path: "docs/forge-loop/kclaw0-runner-flow-target.md",
             rationale: "The kclaw0 runner-flow target records the dark-factory/swarm evidence requirements before the harness can claim runners exceeded the target.",
+        },
+        LoopComponent {
+            id: "agentic-system-proof",
+            surface: "docs",
+            path: "docs/forge-loop/agentic-system-proof.md",
+            rationale: "The end-to-end agentic-system proof maps always-researching, evaluating, adapting, and growing claims to a single strict audit gate.",
         },
         LoopComponent {
             id: "worktree-isolation-contract",
@@ -3293,7 +3644,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 26);
+        assert_eq!(report.checked_components, 27);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -3894,6 +4245,77 @@ mod tests {
     }
 
     #[test]
+    fn agentic_system_audit_accepts_composed_live_proof() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root")
+            .to_path_buf();
+        let temp =
+            std::env::temp_dir().join(format!("fxrun-agentic-system-audit-{}", std::process::id()));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let open_prs = temp.join("open-prs.json");
+        let history_prs = temp.join("history-prs.json");
+        let jobs = temp.join("jobs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:05:00Z"},
+              {"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_run","displayTitle":"Runner Black Factor Watch (workflow_run Runner Sustain)","createdAt":"2026-06-27T00:06:00Z","updatedAt":"2026-06-27T00:07:00Z"},
+              {"name":"CI","status":"completed","conclusion":"success","event":"pull_request","headBranch":"feature","createdAt":"2026-06-27T00:10:00Z","updatedAt":"2026-06-27T00:25:00Z"},
+              {"name":"Semantic PR Title","status":"completed","conclusion":"success","event":"pull_request_target","headBranch":"feature","createdAt":"2026-06-27T00:11:00Z","updatedAt":"2026-06-27T00:12:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:05:00Z"},
+              {"name":"Runner Sustain","status":"in_progress","conclusion":"","event":"workflow_dispatch","createdAt":"2026-06-27T01:05:00Z","updatedAt":"2026-06-27T01:05:00Z"},
+              {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","createdAt":"2026-06-27T01:06:00Z","updatedAt":"2026-06-27T01:06:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&open_prs, r#"[]"#).expect("open prs json");
+        fs::write(
+            &history_prs,
+            r#"[{"state":"MERGED","mergedAt":"2026-06-27T00:30:00Z","statusCheckRollup":[{"name":"Local Linux CI","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}]"#,
+        )
+        .expect("history prs json");
+        fs::write(
+            &jobs,
+            r#"[{"repository":"FlexNetOS/flexnetos_runner","workflow":"Runner Sustain","run_id":"1","job":"local-runner-sustain","workspace":"/runner/_work/flexnetos_runner","pids":[10]}]"#,
+        )
+        .expect("jobs json");
+
+        let report = agentic_system_audit_report(&AgenticSystemAuditArgs {
+            root,
+            runs_json: Some(runs),
+            open_prs_json: Some(open_prs),
+            prs_history_json: Some(history_prs),
+            expected_repository: "FlexNetOS/flexnetos_runner".to_string(),
+            fleet_jobs_json: Some(jobs),
+            proc_root: PathBuf::from("/proc"),
+            min_window_hours: 1,
+            min_slo_window_hours: 1,
+            max_idle_gap_minutes: 120,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_runs: 1,
+            min_sustain_duration_minutes: 5,
+            min_clean_merged_prs: 1,
+            max_external_jobs: 0,
+            json: true,
+            strict: false,
+        })
+        .expect("agentic audit");
+
+        assert!(report.end_to_end_ready, "{:?}", report.missing_evidence);
+        assert!(report.research_loop_evidence);
+        assert!(report.evaluation_loop_evidence);
+        assert!(report.adaptation_loop_evidence);
+        assert!(report.growth_loop_evidence);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
     fn parse_nul_env_extracts_github_action_context() {
         let env = parse_nul_env(
             b"GITHUB_REPOSITORY=FlexNetOS/meta\0GITHUB_RUN_ID=28310752662\0IGNORED\0",
@@ -4324,6 +4746,10 @@ mod tests {
         assert!(
             ci.contains("forge-loop target-mining-audit --strict"),
             "CI must enforce the forge-loop target mining contract"
+        );
+        assert!(
+            ci.contains("forge-loop agentic-system-audit"),
+            "CI must exercise the agentic-system audit surface"
         );
     }
 

@@ -50,3 +50,10 @@ The default CLI window is intentionally short enough for rapid regression checks
 ## Fleet lane ownership audit
 
 The local self-hosted runners are a shared fleet resource, so a repo-local GitHub run list can look healthy while another repository is occupying one of the physical lanes. `fxrun forge-loop runner-fleet-audit --strict` closes that blind spot for operator-side proofs by scanning live GitHub Actions job environments that are still attached to a `Runner.Worker` process from procfs, deduplicating child processes into unique workflow jobs, and failing when any job outside the expected repository owns a local runner lane. This does not replace the run-history SLO; it explains delayed sessions and queued checks that are invisible to this repository's Actions history.
+
+## End-to-end agentic system audit
+
+`fxrun forge-loop agentic-system-audit --strict` composes the runner-flow, black-factor, operations
+SLO, fleet-lane, component, docs-drift, and target-mining gates into one completion proof for the
+owner's broader 24/7 agentic-system claim. It must be green before claiming the system is always
+researching, evaluating, adapting, growing, and improving.

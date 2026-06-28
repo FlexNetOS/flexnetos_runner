@@ -37,7 +37,7 @@ enum Cmd {
     /// Run the Codex-backed TDD forge-loop seed.
     ForgeLoop {
         #[command(subcommand)]
-        cmd: forge_loop::ForgeLoopCommand,
+        cmd: Box<forge_loop::ForgeLoopCommand>,
     },
     /// Report rails + seam wiring status.
     Doctor,
@@ -102,7 +102,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        Cmd::ForgeLoop { cmd } => forge_loop::execute(cmd)?,
+        Cmd::ForgeLoop { cmd } => forge_loop::execute(*cmd)?,
         Cmd::Doctor => {
             let rails = safety::Rails::default();
             println!("fxrun");
