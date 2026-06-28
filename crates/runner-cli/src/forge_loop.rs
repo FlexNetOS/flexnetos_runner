@@ -26,6 +26,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop run --dry-run --out /tmp/fxrun-forge-loop-gate-dry-run --goal \"scheduled subscription-auth Codex self-improvement\"",
+    "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture",
     "rtk cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
     "rtk cargo run -q -p runner-cli -- forge-loop agentic-system-audit --json",
     "rtk cargo test --workspace --all-features",
@@ -4543,6 +4544,15 @@ R  docs/old.md -> docs/new.md
                 &"rtk cargo run -q -p runner-cli -- forge-loop run --dry-run --out /tmp/fxrun-forge-loop-gate-dry-run --goal \"scheduled subscription-auth Codex self-improvement\""
             ),
             "scheduled validation must dry-run the forge-loop runner to prove compact-continuity artifact generation"
+        );
+    }
+
+    #[test]
+    fn scheduled_gate_contract_exercises_evaluation_surface() {
+        assert!(
+            REQUIRED_GATE_COMMANDS
+                .contains(&"rtk cargo run -q -p runner-cli -- forge-loop eval --fixture"),
+            "scheduled validation must run a deterministic forge-loop evaluation fixture"
         );
     }
 
