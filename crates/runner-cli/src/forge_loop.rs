@@ -47,6 +47,8 @@ pub enum ForgeLoopCommand {
     RunnerBlackFactorAudit(RunnerBlackFactorAuditArgs),
     /// Audit unattended dark-factory operational SLO evidence over a burn-in window.
     RunnerOpsSloAudit(RunnerOpsSloAuditArgs),
+    /// Audit live local self-hosted runner lane ownership, including cross-repo pressure.
+    RunnerFleetAudit(RunnerFleetAuditArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
     DocsDrift(DocsDriftArgs),
     /// Inventory Codex loop components and config surfaces for upgrade planning.
@@ -185,6 +187,28 @@ pub struct RunnerOpsSloAuditArgs {
     #[arg(long)]
     pub json: bool,
     /// Return non-zero when the burn-in SLO evidence is incomplete.
+    #[arg(long)]
+    pub strict: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RunnerFleetAuditArgs {
+    /// Expected repository that should own local dark-factory lanes for this proof.
+    #[arg(long, default_value = "FlexNetOS/flexnetos_runner")]
+    pub expected_repository: String,
+    /// Optional JSON fixture/input of observed GitHub Actions jobs; when omitted, scan /proc.
+    #[arg(long)]
+    pub jobs_json: Option<PathBuf>,
+    /// procfs root to scan for live GitHub Actions job environments.
+    #[arg(long, default_value = "/proc")]
+    pub proc_root: PathBuf,
+    /// Maximum external-repository jobs allowed to occupy local runner lanes.
+    #[arg(long, default_value_t = 0)]
+    pub max_external_jobs: usize,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return non-zero when external lane pressure exceeds the allowed budget.
     #[arg(long)]
     pub strict: bool,
 }
@@ -341,6 +365,42 @@ pub struct RunnerOpsSloAuditReport {
     pub missing_evidence: Vec<&'static str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunnerFleetJob {
+    #[serde(default)]
+    pub repository: String,
+    #[serde(default)]
+    pub workflow: String,
+    #[serde(default)]
+    pub run_id: String,
+    #[serde(default)]
+    pub job: String,
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub head_ref: String,
+    #[serde(default)]
+    pub ref_name: String,
+    #[serde(default)]
+    pub workspace: String,
+    #[serde(default)]
+    pub pids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerFleetAuditReport {
+    pub kclaw0_target: &'static str,
+    pub expected_repository: String,
+    pub total_jobs: usize,
+    pub expected_repository_jobs: usize,
+    pub external_repository_jobs: usize,
+    pub max_external_jobs: usize,
+    pub external_repositories: BTreeMap<String, usize>,
+    pub jobs: Vec<RunnerFleetJob>,
+    pub fleet_ready: bool,
+    pub missing_evidence: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct PrHistoryEntry {
     #[serde(default)]
@@ -487,6 +547,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::RunnerFlowAudit(args) => runner_flow_audit(args),
         ForgeLoopCommand::RunnerBlackFactorAudit(args) => runner_black_factor_audit(args),
         ForgeLoopCommand::RunnerOpsSloAudit(args) => runner_ops_slo_audit(args),
+        ForgeLoopCommand::RunnerFleetAudit(args) => runner_fleet_audit(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
         ForgeLoopCommand::TargetMiningAudit(args) => target_mining_audit(args),
@@ -660,7 +721,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
         "runner_flow_audit": "fxrun forge-loop runner-flow-audit --json",
         "runner_black_factor_audit": "fxrun forge-loop runner-black-factor-audit --json",
-        "runner_ops_slo_audit": "fxrun forge-loop runner-ops-slo-audit --json"
+        "runner_ops_slo_audit": "fxrun forge-loop runner-ops-slo-audit --json",
+        "runner_fleet_audit": "fxrun forge-loop runner-fleet-audit --json"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -679,6 +741,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         println!("  runner flow        : use `fxrun forge-loop runner-flow-audit --json`");
         println!("  black-factor proof : use `fxrun forge-loop runner-black-factor-audit --json`");
         println!("  ops SLO burn-in    : use `fxrun forge-loop runner-ops-slo-audit --json`");
+        println!("  fleet lane audit   : use `fxrun forge-loop runner-fleet-audit --json`");
         println!("  component audit    : use `fxrun forge-loop components-audit --json`");
         println!("  target mining      : use `fxrun forge-loop target-mining-audit --json`");
         println!(
@@ -856,6 +919,49 @@ fn runner_ops_slo_audit(args: RunnerOpsSloAuditArgs) -> Result<()> {
     }
 }
 
+fn runner_fleet_audit(args: RunnerFleetAuditArgs) -> Result<()> {
+    let report = runner_fleet_audit_report(&args)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop runner fleet audit");
+        println!("  kclaw0 target       : {}", report.kclaw0_target);
+        println!("  expected repository : {}", report.expected_repository);
+        println!("  total jobs          : {}", report.total_jobs);
+        println!(
+            "  expected repo jobs  : {}",
+            report.expected_repository_jobs
+        );
+        println!(
+            "  external repo jobs  : {}",
+            report.external_repository_jobs
+        );
+        println!("  max external jobs   : {}", report.max_external_jobs);
+        if !report.external_repositories.is_empty() {
+            println!("  external repositories:");
+            for (repo, count) in &report.external_repositories {
+                println!("    - {repo}: {count}");
+            }
+        }
+        println!("  fleet ready         : {}", report.fleet_ready);
+        if !report.missing_evidence.is_empty() {
+            println!("  missing evidence    :");
+            for item in &report.missing_evidence {
+                println!("    - {item}");
+            }
+        }
+    }
+
+    if args.strict && !report.fleet_ready {
+        Err(anyhow!(
+            "runner fleet audit evidence incomplete: {}",
+            report.missing_evidence.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOpsSloAuditReport> {
     let runs = parse_json_vec::<WorkflowRunEntry>(&args.runs_json)?;
     let prs = parse_json_vec::<PrFlowEntry>(&args.prs_json)?;
@@ -969,6 +1075,117 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
         burn_in_ready,
         missing_evidence,
     })
+}
+
+fn runner_fleet_audit_report(args: &RunnerFleetAuditArgs) -> Result<RunnerFleetAuditReport> {
+    let jobs = if let Some(path) = &args.jobs_json {
+        parse_json_vec::<RunnerFleetJob>(path)?
+    } else {
+        scan_proc_for_runner_jobs(&args.proc_root)?
+    };
+    let jobs = dedupe_runner_fleet_jobs(jobs);
+    let expected_repository_jobs = jobs
+        .iter()
+        .filter(|job| job.repository == args.expected_repository)
+        .count();
+    let mut external_repositories = BTreeMap::new();
+    for job in jobs
+        .iter()
+        .filter(|job| job.repository != args.expected_repository)
+    {
+        *external_repositories
+            .entry(job.repository.clone())
+            .or_insert(0) += 1;
+    }
+    let external_repository_jobs = jobs.len().saturating_sub(expected_repository_jobs);
+    let mut missing_evidence = Vec::new();
+    if external_repository_jobs > args.max_external_jobs {
+        missing_evidence.push("external_runner_lane_pressure");
+    }
+    let fleet_ready = missing_evidence.is_empty();
+
+    Ok(RunnerFleetAuditReport {
+        kclaw0_target: "local self-hosted runner lanes are attributable and not invisibly occupied by cross-repo work during dark-factory proof",
+        expected_repository: args.expected_repository.clone(),
+        total_jobs: jobs.len(),
+        expected_repository_jobs,
+        external_repository_jobs,
+        max_external_jobs: args.max_external_jobs,
+        external_repositories,
+        jobs,
+        fleet_ready,
+        missing_evidence,
+    })
+}
+
+fn scan_proc_for_runner_jobs(proc_root: &Path) -> Result<Vec<RunnerFleetJob>> {
+    let mut jobs = Vec::new();
+    let entries = fs::read_dir(proc_root)
+        .with_context(|| format!("read proc root {}", proc_root.display()))?;
+    for entry in entries {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let Some(pid) = file_name.to_string_lossy().parse::<u32>().ok() else {
+            continue;
+        };
+        let environ_path = entry.path().join("environ");
+        let Ok(environ) = fs::read(&environ_path) else {
+            continue;
+        };
+        let env = parse_nul_env(&environ);
+        let Some(repository) = env.get("GITHUB_REPOSITORY").cloned() else {
+            continue;
+        };
+        if repository.is_empty() {
+            continue;
+        }
+        jobs.push(RunnerFleetJob {
+            repository,
+            workflow: env.get("GITHUB_WORKFLOW").cloned().unwrap_or_default(),
+            run_id: env.get("GITHUB_RUN_ID").cloned().unwrap_or_default(),
+            job: env.get("GITHUB_JOB").cloned().unwrap_or_default(),
+            action: env.get("GITHUB_ACTION").cloned().unwrap_or_default(),
+            head_ref: env.get("GITHUB_HEAD_REF").cloned().unwrap_or_default(),
+            ref_name: env.get("GITHUB_REF_NAME").cloned().unwrap_or_default(),
+            workspace: env.get("GITHUB_WORKSPACE").cloned().unwrap_or_default(),
+            pids: vec![pid],
+        });
+    }
+    Ok(jobs)
+}
+
+fn parse_nul_env(raw: &[u8]) -> BTreeMap<String, String> {
+    raw.split(|byte| *byte == 0)
+        .filter_map(|entry| {
+            if entry.is_empty() {
+                return None;
+            }
+            let text = String::from_utf8_lossy(entry);
+            let (key, value) = text.split_once('=')?;
+            Some((key.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+fn dedupe_runner_fleet_jobs(jobs: Vec<RunnerFleetJob>) -> Vec<RunnerFleetJob> {
+    let mut by_key: BTreeMap<(String, String, String, String), RunnerFleetJob> = BTreeMap::new();
+    for mut job in jobs {
+        let key = (
+            job.repository.clone(),
+            job.run_id.clone(),
+            job.job.clone(),
+            job.workspace.clone(),
+        );
+        by_key
+            .entry(key)
+            .and_modify(|existing| {
+                existing.pids.append(&mut job.pids);
+                existing.pids.sort_unstable();
+                existing.pids.dedup();
+            })
+            .or_insert(job);
+    }
+    by_key.into_values().collect()
 }
 
 fn runner_black_factor_audit_report(
@@ -3366,6 +3583,104 @@ mod tests {
         assert_eq!(report.failed_ops_runs, 0);
         assert!(!report.missing_evidence.contains(&"failed_ops_budget"));
         fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_fleet_audit_flags_external_repo_lane_pressure() {
+        let temp =
+            std::env::temp_dir().join(format!("fxrun-runner-fleet-audit-{}", std::process::id()));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let jobs = temp.join("jobs.json");
+        fs::write(
+            &jobs,
+            r#"[
+              {"repository":"FlexNetOS/flexnetos_runner","workflow":"Runner Sustain","run_id":"1","job":"local-runner-sustain","workspace":"/runner/_work/flexnetos_runner","pids":[10,11]},
+              {"repository":"FlexNetOS/meta","workflow":"CI","run_id":"2","job":"integration","workspace":"/runner/_work/meta","head_ref":"chore/remove-empty-repos","pids":[20,21]},
+              {"repository":"FlexNetOS/meta","workflow":"CI","run_id":"2","job":"integration","workspace":"/runner/_work/meta","head_ref":"chore/remove-empty-repos","pids":[22]}
+            ]"#,
+        )
+        .expect("jobs json");
+
+        let report = runner_fleet_audit_report(&RunnerFleetAuditArgs {
+            expected_repository: "FlexNetOS/flexnetos_runner".to_string(),
+            jobs_json: Some(jobs),
+            proc_root: PathBuf::from("/proc"),
+            max_external_jobs: 0,
+            json: true,
+            strict: false,
+        })
+        .expect("fleet audit");
+
+        assert!(!report.fleet_ready);
+        assert_eq!(report.total_jobs, 2);
+        assert_eq!(report.expected_repository_jobs, 1);
+        assert_eq!(report.external_repository_jobs, 1);
+        assert_eq!(report.external_repositories.get("FlexNetOS/meta"), Some(&1));
+        assert!(
+            report
+                .missing_evidence
+                .contains(&"external_runner_lane_pressure"),
+            "{:?}",
+            report.missing_evidence
+        );
+        let meta_job = report
+            .jobs
+            .iter()
+            .find(|job| job.repository == "FlexNetOS/meta")
+            .expect("meta job");
+        assert_eq!(meta_job.pids, vec![20, 21, 22]);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_fleet_audit_passes_when_only_expected_repo_owns_lanes() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-fleet-audit-pass-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let jobs = temp.join("jobs.json");
+        fs::write(
+            &jobs,
+            r#"[
+              {"repository":"FlexNetOS/flexnetos_runner","workflow":"Runner Sustain","run_id":"1","job":"local-runner-sustain","workspace":"/runner/_work/flexnetos_runner","pids":[10]}
+            ]"#,
+        )
+        .expect("jobs json");
+
+        let report = runner_fleet_audit_report(&RunnerFleetAuditArgs {
+            expected_repository: "FlexNetOS/flexnetos_runner".to_string(),
+            jobs_json: Some(jobs),
+            proc_root: PathBuf::from("/proc"),
+            max_external_jobs: 0,
+            json: true,
+            strict: false,
+        })
+        .expect("fleet audit");
+
+        assert!(report.fleet_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.total_jobs, 1);
+        assert_eq!(report.external_repository_jobs, 0);
+        assert!(report.external_repositories.is_empty());
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn parse_nul_env_extracts_github_action_context() {
+        let env = parse_nul_env(
+            b"GITHUB_REPOSITORY=FlexNetOS/meta\0GITHUB_RUN_ID=28310752662\0IGNORED\0",
+        );
+        assert_eq!(
+            env.get("GITHUB_REPOSITORY").map(String::as_str),
+            Some("FlexNetOS/meta")
+        );
+        assert_eq!(
+            env.get("GITHUB_RUN_ID").map(String::as_str),
+            Some("28310752662")
+        );
+        assert!(!env.contains_key("IGNORED"));
     }
 
     #[test]
