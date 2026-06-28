@@ -645,6 +645,7 @@ pub struct CompactContinuityArtifact {
     pub active_phase: CyclePhase,
     pub current_phase_index: usize,
     pub source_coverage: Vec<String>,
+    pub research_output_contract: Vec<String>,
     pub validation_state: Vec<String>,
     pub next_action: String,
     pub phase_source_validation_next_action: String,
@@ -3409,8 +3410,13 @@ fn research_prompt(focus: &str, sources: &[ResearchSource]) -> String {
         .map(|s| format!("- {}: {} ({})", s.id, s.url, s.purpose))
         .collect::<Vec<_>>()
         .join("\n");
+    let output_contract = research_output_contract()
+        .into_iter()
+        .map(|item| format!("- {item}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     format!(
-        "Research Codex forge-loop improvements focused on {focus}. Scan these references and return actionable, source-attributed upgrades for reliability, accuracy, and speed:\n{list}\n\nOutput format:\n- one-line summary\n- source-attributed findings\n- loop component/config inventory\n- one recommended smallest safe self-upgrade\n- tests required before merge"
+        "Research Codex forge-loop improvements focused on {focus}. Scan these references and return actionable, source-attributed upgrades for reliability, accuracy, and speed:\n{list}\n\nOutput format:\n{output_contract}"
     )
 }
 
@@ -3625,6 +3631,7 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             .into_iter()
             .map(|source| format!("{}: {} ({})", source.id, source.url, source.purpose))
             .collect(),
+        research_output_contract: research_output_contract(),
         validation_state: REQUIRED_GATE_COMMANDS
             .iter()
             .map(|command| (*command).to_string())
@@ -3634,6 +3641,19 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
     }
+}
+
+fn research_output_contract() -> Vec<String> {
+    [
+        "one-line summary",
+        "source-attributed findings",
+        "loop component/config inventory",
+        "one recommended smallest safe self-upgrade",
+        "tests required before merge",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
 
 fn timestamp_label() -> Result<String> {
@@ -4346,6 +4366,27 @@ R  docs/old.md -> docs/new.md
             artifact.compact_summary_events,
             vec!["PreCompact".to_string(), "PostCompact".to_string()]
         );
+    }
+
+    #[test]
+    fn compact_continuity_artifact_preserves_research_output_contract() {
+        let artifact = compact_continuity_artifact();
+
+        for required in [
+            "one-line summary",
+            "source-attributed findings",
+            "loop component/config inventory",
+            "one recommended smallest safe self-upgrade",
+            "tests required before merge",
+        ] {
+            assert!(
+                artifact
+                    .research_output_contract
+                    .iter()
+                    .any(|entry| entry.contains(required)),
+                "compact continuity artifact missing research output contract item {required}"
+            );
+        }
     }
 
     #[test]
