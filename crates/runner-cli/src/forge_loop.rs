@@ -611,7 +611,6 @@ struct CheckRollupEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CycleManifest {
-    #[serde(default = "default_cycle_manifest_schema_version")]
     pub schema_version: u8,
     pub goal: String,
     pub pr_title: String,
@@ -3157,10 +3156,6 @@ fn validate_cycle_manifest(manifest: &CycleManifest) -> Result<()> {
     Ok(())
 }
 
-fn default_cycle_manifest_schema_version() -> u8 {
-    CYCLE_MANIFEST_SCHEMA_VERSION
-}
-
 fn validate_eval_input(input: &EvalInput) -> Result<()> {
     if input.retry_count > MAX_EVAL_RETRY_COUNT {
         return Err(anyhow!(
@@ -3717,6 +3712,7 @@ mod tests {
         fs::write(
             &path,
             r#"{
+                "schema_version": 1,
                 "goal": "Resume the interrupted 10-cycle objective: execute isolated cycle 10 of 10",
                 "pr_title": "chore: forge loop cycle 10",
                 "prompt_sha256": "sha256-not-the-real-prompt",
@@ -3762,6 +3758,35 @@ mod tests {
         assert!(
             error.root_cause().to_string().contains("schema_version"),
             "error should name the unsupported schema version: {error}"
+        );
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn eval_manifest_rejects_missing_schema_version() {
+        let path = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-missing-schema-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &path,
+            r#"{
+                "goal": "upgrade manifest schema witness",
+                "pr_title": "chore: forge loop self-upgrade",
+                "prompt_sha256": "ignored",
+                "once": true,
+                "auto_merge": true,
+                "strict_upgrade_only": true,
+                "phases": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]
+            }"#,
+        )
+        .expect("manifest");
+
+        let error = parse_cycle_manifest(&path).expect_err("missing schema must fail");
+        assert!(
+            error.root_cause().to_string().contains("schema_version"),
+            "error should name the missing schema version: {error}"
         );
 
         fs::remove_file(path).ok();
