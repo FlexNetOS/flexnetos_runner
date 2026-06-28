@@ -3425,7 +3425,7 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
         active_phase: CyclePhase::Red,
         source_coverage: research_sources()
             .into_iter()
-            .map(|source| source.url.to_string())
+            .map(|source| format!("{}: {} ({})", source.id, source.url, source.purpose))
             .collect(),
         validation_state: REQUIRED_GATE_COMMANDS
             .iter()
@@ -4040,7 +4040,10 @@ R  docs/old.md -> docs/new.md
         assert_eq!(parsed.active_phase, CyclePhase::Red);
         for source in research_sources() {
             assert!(
-                parsed.source_coverage.contains(&source.url.to_string()),
+                parsed
+                    .source_coverage
+                    .iter()
+                    .any(|entry| entry.contains(source.id) && entry.contains(source.url)),
                 "compact continuity artifact missing {}",
                 source.url
             );
@@ -5075,6 +5078,21 @@ R  docs/old.md -> docs/new.md
             assert!(
                 compact_prompt.contains(required),
                 "compact prompt missing {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_covers_full_research_source_matrix() {
+        let continuity = compact_continuity_artifact();
+        for source in research_sources() {
+            assert!(
+                continuity
+                    .source_coverage
+                    .iter()
+                    .any(|entry| entry.contains(source.id) && entry.contains(source.url)),
+                "compact continuity artifact missing research source {}",
+                source.id
             );
         }
     }
