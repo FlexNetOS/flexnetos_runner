@@ -23,7 +23,8 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo fmt --all -- --check",
     "rtk cargo test -p runner-cli --all-features forge_loop::tests",
     "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json",
-    "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --json",
+    "rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict",
+    "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
     "rtk cargo run -q -p runner-cli -- forge-loop agentic-system-audit --json",
     "rtk cargo test --workspace --all-features",
@@ -4170,6 +4171,22 @@ R  docs/old.md -> docs/new.md
         assert!(gates
             .iter()
             .any(|gate| gate == "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json"));
+    }
+
+    #[test]
+    fn scheduled_gate_contract_enforces_strict_component_and_target_audits() {
+        assert!(
+            REQUIRED_GATE_COMMANDS.contains(
+                &"rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict"
+            ),
+            "scheduled validation must include the strict component inventory audit"
+        );
+        assert!(
+            REQUIRED_GATE_COMMANDS.contains(
+                &"rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
+            ),
+            "scheduled validation must include the strict target-mining audit"
+        );
     }
 
     #[test]
