@@ -814,18 +814,7 @@ fn research(args: ResearchArgs) -> Result<()> {
 fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
     let report = evaluate(EvalInput::fixture());
     let allowed = report.score >= args.min_score && report.upgrade_allowed;
-    let plan = serde_json::json!({
-        "score": report.score,
-        "min_score": args.min_score,
-        "allowed": allowed,
-        "branch_prefix": "codex/forge-loop-self-upgrade",
-        "merge_policy": "auto-merge green when repository settings allow; otherwise merge after green checks",
-        "strict_upgrade_only": true,
-        "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
-        "required_local_checks": REQUIRED_LOCAL_CHECKS,
-        "required_gate_commands": REQUIRED_GATE_COMMANDS,
-        "components_audit": "fxrun forge-loop components-audit --json"
-    });
+    let plan = self_upgrade_plan(args.min_score);
     println!("{}", serde_json::to_string_pretty(&plan)?);
     if args.dry_run || !allowed {
         return Ok(());
@@ -839,6 +828,25 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
         return Err(anyhow!("codex self-upgrade failed with status {status}"));
     }
     Ok(())
+}
+
+fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
+    let report = evaluate(EvalInput::fixture());
+    let allowed = report.score >= min_score && report.upgrade_allowed;
+    serde_json::json!({
+        "score": report.score,
+        "min_score": min_score,
+        "allowed": allowed,
+        "branch_prefix": "codex/forge-loop-self-upgrade",
+        "merge_policy": "auto-merge green when repository settings allow; otherwise merge after green checks",
+        "strict_upgrade_only": true,
+        "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
+        "required_local_checks": REQUIRED_LOCAL_CHECKS,
+        "required_gate_commands": REQUIRED_GATE_COMMANDS,
+        "components_audit": "fxrun forge-loop components-audit --json",
+        "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
+        "compact_continuity": "compact-continuity.json"
+    })
 }
 
 fn self_upgrade_prompt(score: u8) -> String {
@@ -4176,6 +4184,17 @@ R  docs/old.md -> docs/new.md
         assert!(artifact.phase_source_validation_next_action.contains(
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
         ));
+    }
+
+    #[test]
+    fn self_upgrade_plan_exports_continuity_and_target_mining_contracts() {
+        let plan = self_upgrade_plan(70);
+
+        assert_eq!(
+            plan["target_mining_audit"],
+            "fxrun forge-loop target-mining-audit --json"
+        );
+        assert_eq!(plan["compact_continuity"], "compact-continuity.json");
     }
 
     #[test]
