@@ -363,6 +363,10 @@ pub struct CodexInvocation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvalInput {
+    #[serde(default)]
+    pub cycle_goal: Option<String>,
+    #[serde(default)]
+    pub prompt_sha256: Option<String>,
     pub red_test_first: bool,
     pub gates_passed: bool,
     pub retry_count: u8,
@@ -774,7 +778,9 @@ fn eval(args: EvalArgs) -> Result<()> {
         return Err(anyhow!("provide --fixture or --metrics <path>"));
     };
     if let Some(path) = args.manifest {
-        parse_cycle_manifest(&path)?;
+        let manifest = parse_cycle_manifest(&path)?;
+        validate_eval_manifest_pair(&input, &manifest)
+            .with_context(|| format!("validate metrics against manifest {}", path.display()))?;
     }
     let report = evaluate(input);
     println!("{}", serde_json::to_string_pretty(&report)?);
@@ -3167,9 +3173,44 @@ fn validate_eval_input(input: &EvalInput) -> Result<()> {
     Ok(())
 }
 
+fn validate_eval_manifest_pair(input: &EvalInput, manifest: &CycleManifest) -> Result<()> {
+    match input.cycle_goal.as_deref() {
+        Some(goal) if goal == manifest.goal => {}
+        Some(goal) => {
+            return Err(anyhow!(
+                "cycle_goal {:?} does not match manifest goal {:?}",
+                goal,
+                manifest.goal
+            ));
+        }
+        None => {
+            return Err(anyhow!(
+                "cycle_goal is required when --manifest is provided"
+            ))
+        }
+    }
+
+    match input.prompt_sha256.as_deref() {
+        Some(hash) if hash == manifest.prompt_sha256 => Ok(()),
+        Some(hash) => Err(anyhow!(
+            "prompt_sha256 {:?} does not match manifest prompt_sha256 {:?}",
+            hash,
+            manifest.prompt_sha256
+        )),
+        None => Err(anyhow!(
+            "prompt_sha256 is required when --manifest is provided"
+        )),
+    }
+}
+
 impl EvalInput {
     pub fn fixture() -> Self {
+        let cycle_goal = "scheduled subscription-auth Codex self-improvement".to_string();
         Self {
+            prompt_sha256: Some(runner_core::constitution::hash(
+                cycle_prompt(&cycle_goal, true).as_bytes(),
+            )),
+            cycle_goal: Some(cycle_goal),
             red_test_first: true,
             gates_passed: true,
             retry_count: 0,
@@ -3562,6 +3603,32 @@ mod tests {
     }
 
     #[test]
+    fn eval_manifest_rejects_metrics_from_different_cycle_prompt() {
+        let manifest = cycle_manifest(&RunArgs {
+            goal: "scheduled subscription-auth Codex self-improvement".into(),
+            out: PathBuf::from("_work/forge-loop"),
+            dry_run: false,
+            auto_merge: true,
+            once: true,
+        });
+        let other_goal = "cycle 19 unrelated target".to_string();
+        let metrics = EvalInput {
+            cycle_goal: Some(other_goal.clone()),
+            prompt_sha256: Some(runner_core::constitution::hash(
+                cycle_prompt(&other_goal, manifest.auto_merge).as_bytes(),
+            )),
+            ..EvalInput::fixture()
+        };
+
+        let error = validate_eval_manifest_pair(&metrics, &manifest)
+            .expect_err("metrics from a different prompt contract must fail");
+        assert!(
+            error.to_string().contains("cycle_goal"),
+            "error should name the mismatched run contract: {error}"
+        );
+    }
+
+    #[test]
     fn evaluation_quarantines_missing_red_or_gates() {
         let report = evaluate(EvalInput {
             red_test_first: false,
@@ -3570,6 +3637,7 @@ mod tests {
             useful_research_items: 0,
             runtime_secs: 2000,
             diff_files: 50,
+            ..EvalInput::fixture()
         });
         assert!(report.score < 50);
         assert_eq!(report.verdict, "quarantine");
