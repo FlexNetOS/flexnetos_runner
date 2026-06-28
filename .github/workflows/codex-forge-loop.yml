@@ -61,7 +61,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # local ChatGPT auth fallback runs codex exec with subscription-backed CODEX_HOME.
+          # local ChatGPT auth fallback runs the Rust forge-loop engine directly; no outer codex exec sandbox.
           case "${MODEL_INPUT}" in (*[!A-Za-z0-9._:-]*|'') echo "::error::invalid model input"; exit 1 ;; esac
           case "${EFFORT_INPUT}" in (low|medium|high|xhigh) ;; (*) echo "::error::invalid effort input"; exit 1 ;; esac
           case "${PROMPT_FILE_INPUT}" in (.github/codex/prompts/*.md) ;; (*) echo "::error::invalid prompt_file input"; exit 1 ;; esac
@@ -81,20 +81,12 @@ jobs:
             exit 1
           fi
           "${CODEX_BIN}" login status
-          "${CODEX_BIN}" --ask-for-approval never exec \
-            --ignore-user-config \
-            --ephemeral \
-            --sandbox workspace-write \
-            -m "${MODEL_INPUT}" \
-            --config features.auto_compaction=true \
-            --config "model_reasoning_effort=\"${EFFORT_INPUT}\"" \
-            --config model_auto_compact_token_limit=3000000 \
-            --config 'model_auto_compact_token_limit_scope="total"' \
-            --config tool_output_token_limit=12000 \
-            --output-schema .github/codex/schemas/forge-loop-output.schema.json \
-            --output-last-message codex-forge-loop-output.md \
-            < "${PROMPT_FILE_INPUT}"
+          export FXRUN_CODEX="${CODEX_BIN}"
+          cargo run -q -p runner-cli -- forge-loop run \
+            --goal "scheduled subscription-auth Codex self-improvement" \
+            2>&1 | tee codex-forge-loop-output.md
       - name: Upload Codex output
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: codex-forge-loop-output

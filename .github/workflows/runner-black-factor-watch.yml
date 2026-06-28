@@ -68,7 +68,7 @@ jobs:
           ] | length' prs-open.json)"
           required_run_pressure="$(jq '[
             .[]
-            | select((.name == "CI" or .name == "Semantic PR Title")
+            | select((.name == "CI" or .name == "Semantic PR Title" or .name == "Codex Forge Loop" or .name == ".github/workflows/codex-forge-loop.yml" or (.name | startswith("Codex Forge Loop (")))
               and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
           ] | length' runs-live.json)"
           case "$pr_pending_pressure" in (*[!0-9]*|'') pr_pending_pressure=1 ;; esac

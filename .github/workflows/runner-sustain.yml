@@ -65,7 +65,7 @@ jobs:
             if ! run_count="$(gh run list --limit 100 --json name,status --jq '
               [
                 .[]
-                | select((.name == "CI" or .name == "Semantic PR Title")
+                | select((.name == "CI" or .name == "Semantic PR Title" or .name == "Codex Forge Loop" or .name == ".github/workflows/codex-forge-loop.yml" or (.name | startswith("Codex Forge Loop (")))
                   and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
               ] | length
             ')"; then
@@ -117,7 +117,7 @@ jobs:
             if ! run_count="$(gh run list --limit 100 --json name,status --jq '
               [
                 .[]
-                | select((.name == "CI" or .name == "Semantic PR Title")
+                | select((.name == "CI" or .name == "Semantic PR Title" or .name == "Codex Forge Loop" or .name == ".github/workflows/codex-forge-loop.yml" or (.name | startswith("Codex Forge Loop (")))
                   and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
               ] | length
             ')"; then
@@ -173,7 +173,7 @@ jobs:
           if ! run_pressure="$(gh run list --limit 100 --json name,status --jq '
             [
               .[]
-              | select((.name == "CI" or .name == "Semantic PR Title")
+              | select((.name == "CI" or .name == "Semantic PR Title" or .name == "Codex Forge Loop" or .name == ".github/workflows/codex-forge-loop.yml" or (.name | startswith("Codex Forge Loop (")))
                 and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
             ] | length
           ')"; then
