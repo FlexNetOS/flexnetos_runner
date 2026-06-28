@@ -1928,7 +1928,8 @@ fn is_successful_runner_watch_rehydration(run: &WorkflowRunEntry) -> bool {
         return true;
     }
     run.event.eq_ignore_ascii_case("workflow_dispatch")
-        && run.display_title.contains("sustain_completion")
+        && (run.display_title.contains("sustain_completion")
+            || run.display_title.contains("codex_completion"))
 }
 
 fn is_failed_conclusion(conclusion: &str) -> bool {
@@ -4295,7 +4296,7 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
-    fn runner_ops_slo_audit_accepts_explicit_sustain_completion_watch_wakeup() {
+    fn runner_ops_slo_audit_accepts_explicit_completion_watch_wakeups() {
         let temp = std::env::temp_dir().join(format!(
             "fxrun-runner-ops-slo-explicit-watch-{}",
             std::process::id()
@@ -4309,6 +4310,7 @@ R  docs/old.md -> docs/new.md
             r#"[
               {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
               {"name":"Runner Black Factor Watch (workflow_dispatch sustain_completion)","status":"completed","conclusion":"success","event":"workflow_dispatch","displayTitle":"Runner Black Factor Watch (workflow_dispatch sustain_completion)","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:31:00Z"},
+              {"name":"Runner Black Factor Watch (workflow_dispatch codex_completion)","status":"completed","conclusion":"success","event":"workflow_dispatch","displayTitle":"Runner Black Factor Watch (workflow_dispatch codex_completion)","createdAt":"2026-06-27T00:32:00Z","updatedAt":"2026-06-27T00:33:00Z"},
               {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:40:00Z","updatedAt":"2026-06-27T00:46:00Z"},
               {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:50:00Z","updatedAt":"2026-06-27T00:56:00Z"},
               {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
@@ -4323,7 +4325,7 @@ R  docs/old.md -> docs/new.md
             min_window_hours: 1,
             max_idle_gap_minutes: 40,
             min_active_or_queued_sustain: 1,
-            min_event_watch_wakeups: 1,
+            min_event_watch_wakeups: 2,
             max_failed_ops_runs: 0,
             min_sustain_duration_minutes: 5,
             json: true,
@@ -4332,7 +4334,7 @@ R  docs/old.md -> docs/new.md
         .expect("ops slo report");
 
         assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
-        assert_eq!(report.event_watch_wakeups, 1);
+        assert_eq!(report.event_watch_wakeups, 2);
         fs::remove_dir_all(temp).ok();
     }
 
@@ -5054,6 +5056,12 @@ R  docs/old.md -> docs/new.md
             "invalid prompt_file input",
             "features.auto_compaction=true",
             "model_auto_compact_token_limit=3000000",
+            "Rehydrate sustain/watch after Codex completion",
+            "codex-completion-rehydrate.env",
+            "MIN_SUSTAIN_BACKLOG: '4'",
+            "dispatching Runner Sustain from Codex completion lane",
+            "gh workflow run runner-black-factor-watch.yml --ref main -f trigger_source=codex_completion",
+            "gh workflow run agentic-system-watch.yml --ref main -f trigger_source=codex_completion",
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
         }
@@ -5080,6 +5088,10 @@ R  docs/old.md -> docs/new.md
             "workflow_run:",
             "Runner Black Factor Watch",
             "actions: write",
+            "Let Codex completion leave active set",
+            "TRIGGER_SOURCE: ${{ inputs.trigger_source || '' }}",
+            "codex_completion",
+            "waiting for completed Codex run to leave the active run list",
             "refreshing once after black-factor top-up settles",
             "agentic-system-audit",
             "--strict",

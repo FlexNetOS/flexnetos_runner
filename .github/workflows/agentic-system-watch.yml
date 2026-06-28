@@ -32,6 +32,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      - name: Let Codex completion leave active set
+        shell: bash
+        env:
+          TRIGGER_SOURCE: ${{ inputs.trigger_source || '' }}
+        run: |
+          set -euo pipefail
+          if [ "${TRIGGER_SOURCE}" = "codex_completion" ]; then
+            echo "::notice::waiting for completed Codex run to leave the active run list"
+            sleep 90
+          fi
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Capture run and PR history

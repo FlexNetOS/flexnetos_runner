@@ -25,7 +25,12 @@ previous narrower proofs.
    no PR-local checks are under pressure, and no Codex run is already active, it dispatches
    `Codex Forge Loop` for the next strict-upgrade research/adapt/grow cycle. The Codex workflow
    uses `OPENAI_API_KEY` when that repo secret exists and otherwise falls back to the
-   already-authenticated local ChatGPT/Codex subscription on the self-hosted runner.
+   already-authenticated local ChatGPT/Codex subscription on the self-hosted runner. Each completed
+   Codex run rehydrates sustain work, wakes `Runner Black Factor Watch`, and wakes
+   `Agentic System Watch` with `trigger_source=codex_completion`; that watch waits briefly for the
+   completed Codex run to leave the active run list, so a growth cycle cannot leave the runner lane
+   idle until the next cron tick. The same open-PR and active-Codex guards prevent stacking the next
+   growth run before the current cycle's PR has merged.
 
 Strict live proof command:
 
