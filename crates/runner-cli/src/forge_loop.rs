@@ -169,6 +169,9 @@ pub struct RunnerOpsSloAuditArgs {
     /// JSON from `gh pr list --state open --json statusCheckRollup,url`.
     #[arg(long)]
     pub prs_json: PathBuf,
+    /// Optional JSON from `gh pr list --state all --json state,mergedAt,statusCheckRollup,url` used to prove failed Codex growth was recovered by a clean merged self-upgrade PR.
+    #[arg(long)]
+    pub prs_history_json: Option<PathBuf>,
     /// Minimum observed burn-in window in hours.
     #[arg(long, default_value_t = 1)]
     pub min_window_hours: u64,
@@ -1168,6 +1171,10 @@ fn agentic_system_audit(args: AgenticSystemAuditArgs) -> Result<()> {
 fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOpsSloAuditReport> {
     let runs = parse_json_vec::<WorkflowRunEntry>(&args.runs_json)?;
     let prs = parse_json_vec::<PrFlowEntry>(&args.prs_json)?;
+    let pr_history = match &args.prs_history_json {
+        Some(path) => parse_json_vec::<PrHistoryEntry>(path)?,
+        None => Vec::new(),
+    };
 
     let timestamps = runs
         .iter()
@@ -1226,7 +1233,7 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
         .filter(|run| run_in_window(run))
         .filter(|run| is_ops_workflow(&run.name))
         .filter(|run| run.status.eq_ignore_ascii_case("completed"))
-        .filter(|run| is_failed_ops_run(run, &runs))
+        .filter(|run| is_failed_ops_run(run, &runs, &pr_history))
         .count();
 
     let mut queued_required_checks = 0;
@@ -1269,7 +1276,7 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
     let burn_in_ready = missing_evidence.is_empty();
 
     Ok(RunnerOpsSloAuditReport {
-        kclaw0_target: "unattended dark-factory operations burn-in with bounded idle gaps, event-driven rehydration, clean PR flow, and zero failed operational runs",
+        kclaw0_target: "unattended dark-factory operations burn-in with bounded idle gaps, event-driven rehydration, clean PR flow, and zero unrecovered failed operational runs",
         observed_window_minutes,
         min_window_minutes,
         max_idle_gap_minutes_observed,
@@ -1369,6 +1376,7 @@ fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticS
             Some(runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
                 runs_json: runs_json.clone(),
                 prs_json: prs_json.clone(),
+                prs_history_json: args.prs_history_json.clone(),
                 min_window_hours: args.min_slo_window_hours,
                 max_idle_gap_minutes: args.max_idle_gap_minutes,
                 min_active_or_queued_sustain: args.min_active_or_queued_sustain,
@@ -1939,13 +1947,20 @@ fn is_failed_conclusion(conclusion: &str) -> bool {
     )
 }
 
-fn is_failed_ops_run(run: &WorkflowRunEntry, runs: &[WorkflowRunEntry]) -> bool {
+fn is_failed_ops_run(
+    run: &WorkflowRunEntry,
+    runs: &[WorkflowRunEntry],
+    pr_history: &[PrHistoryEntry],
+) -> bool {
     if !is_failed_conclusion(&run.conclusion) {
         return false;
     }
     if run.conclusion.eq_ignore_ascii_case("cancelled")
         && has_nearby_successful_replacement(run, runs)
     {
+        return false;
+    }
+    if is_codex_forge_loop_name(&run.name) && has_nearby_clean_merged_pr_recovery(run, pr_history) {
         return false;
     }
     true
@@ -1969,6 +1984,33 @@ fn has_nearby_successful_replacement(run: &WorkflowRunEntry, runs: &[WorkflowRun
                 .as_deref()
                 .and_then(parse_rfc3339_utc_seconds)
                 .is_some_and(|created| (created - cancelled_at).abs() <= 10 * 60)
+    })
+}
+
+fn has_nearby_clean_merged_pr_recovery(
+    run: &WorkflowRunEntry,
+    pr_history: &[PrHistoryEntry],
+) -> bool {
+    let Some(failed_at) = run
+        .updated_at
+        .as_deref()
+        .or(run.created_at.as_deref())
+        .and_then(parse_rfc3339_utc_seconds)
+    else {
+        return false;
+    };
+    pr_history.iter().any(|pr| {
+        pr.state.eq_ignore_ascii_case("MERGED")
+            && classify_runner_health(&pr.status_check_rollup)
+                .failed_local_checks
+                .is_empty()
+            && pr
+                .merged_at
+                .as_deref()
+                .and_then(parse_rfc3339_utc_seconds)
+                .is_some_and(|merged_at| {
+                    merged_at >= failed_at && merged_at.saturating_sub(failed_at) <= 30 * 60
+                })
     })
 }
 
@@ -4276,6 +4318,7 @@ R  docs/old.md -> docs/new.md
         let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
             runs_json: runs,
             prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 10,
             min_active_or_queued_sustain: 1,
@@ -4324,6 +4367,7 @@ R  docs/old.md -> docs/new.md
         let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
             runs_json: runs,
             prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 40,
             min_active_or_queued_sustain: 1,
@@ -4353,6 +4397,57 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
+    fn runner_ops_slo_audit_counts_codex_failure_recovered_by_clean_pr() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-codex-recovered-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        let pr_history = temp.join("prs-history.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
+              {"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_run","displayTitle":"Runner Black Factor Watch (workflow_run Runner Sustain)","headBranch":"main","createdAt":"2026-06-27T00:06:00Z","updatedAt":"2026-06-27T00:07:00Z"},
+              {"name":"Codex Forge Loop","status":"completed","conclusion":"failure","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:10:00Z","updatedAt":"2026-06-27T00:16:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:35:00Z","updatedAt":"2026-06-27T00:41:00Z"},
+              {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+        fs::write(
+            &pr_history,
+            r#"[
+              {"state":"MERGED","mergedAt":"2026-06-27T00:21:00Z","statusCheckRollup":[{"name":"Local Linux CI","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}
+            ]"#,
+        )
+        .expect("prs history json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            prs_history_json: Some(pr_history),
+            min_window_hours: 1,
+            max_idle_gap_minutes: 30,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.failed_ops_runs, 0);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
     fn runner_ops_slo_audit_reports_idle_failure_and_pr_pressure() {
         let temp =
             std::env::temp_dir().join(format!("fxrun-runner-ops-slo-fail-{}", std::process::id()));
@@ -4377,6 +4472,7 @@ R  docs/old.md -> docs/new.md
         let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
             runs_json: runs,
             prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 10,
             min_active_or_queued_sustain: 1,
@@ -4439,6 +4535,7 @@ R  docs/old.md -> docs/new.md
         let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
             runs_json: runs,
             prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 10,
             min_active_or_queued_sustain: 1,
@@ -4480,6 +4577,7 @@ R  docs/old.md -> docs/new.md
         let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
             runs_json: runs,
             prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 10,
             min_active_or_queued_sustain: 1,
@@ -4528,6 +4626,7 @@ R  docs/old.md -> docs/new.md
         let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
             runs_json: runs,
             prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 60,
             min_active_or_queued_sustain: 1,
@@ -4570,6 +4669,7 @@ R  docs/old.md -> docs/new.md
         let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
             runs_json: runs,
             prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 60,
             min_active_or_queued_sustain: 1,
