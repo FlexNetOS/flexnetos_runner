@@ -4694,6 +4694,7 @@ mod tests {
             "workflow_run:",
             "Runner Black Factor Watch",
             "actions: write",
+            "refreshing once after black-factor top-up settles",
             "OPENAI_API_KEY",
             "agentic-system-audit",
             "--strict",
