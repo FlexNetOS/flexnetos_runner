@@ -1960,9 +1960,7 @@ fn is_failed_ops_run(
     if !is_failed_conclusion(&run.conclusion) {
         return false;
     }
-    if run.conclusion.eq_ignore_ascii_case("cancelled")
-        && has_nearby_successful_replacement(run, runs)
-    {
+    if has_nearby_successful_replacement(run, runs) {
         return false;
     }
     if is_codex_forge_loop_name(&run.name) && has_nearby_clean_merged_pr_recovery(run, pr_history) {
@@ -4513,6 +4511,51 @@ R  docs/old.md -> docs/new.md
             runs_json: runs,
             prs_json: prs,
             prs_history_json: Some(pr_history),
+            min_window_hours: 1,
+            max_idle_gap_minutes: 30,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.failed_ops_runs, 0);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_ops_slo_audit_counts_failed_ops_recovered_by_successful_replacement() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-recovered-replacements-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
+              {"name":"Runner Black Factor Watch (workflow_run CI)","status":"completed","conclusion":"failure","event":"workflow_run","headBranch":"main","createdAt":"2026-06-27T00:10:00Z","updatedAt":"2026-06-27T00:11:00Z"},
+              {"name":"Runner Black Factor Watch (workflow_run CI)","status":"completed","conclusion":"success","event":"workflow_run","headBranch":"main","createdAt":"2026-06-27T00:14:00Z","updatedAt":"2026-06-27T00:15:00Z"},
+              {"name":"CI","status":"completed","conclusion":"action_required","event":"pull_request","headBranch":"codex/self-upgrade","createdAt":"2026-06-27T00:20:00Z","updatedAt":"2026-06-27T00:20:00Z"},
+              {"name":"CI","status":"completed","conclusion":"success","event":"pull_request","headBranch":"codex/self-upgrade","createdAt":"2026-06-27T00:23:00Z","updatedAt":"2026-06-27T00:25:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:35:00Z","updatedAt":"2026-06-27T00:41:00Z"},
+              {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            prs_history_json: None,
             min_window_hours: 1,
             max_idle_gap_minutes: 30,
             min_active_or_queued_sustain: 1,
