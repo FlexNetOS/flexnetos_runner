@@ -40,3 +40,9 @@ This still does not by itself prove the 12+ hour kclaw0 persistence target; that
 The run-history input must come from `gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,url`; a yielded, too-short, or old-outside-the-latest-proof-window Runner Sustain run is not counted as useful black-factor work. Until those conditions pass from GitHub run/PR history, the goal remains in-progress even if instantaneous `runner-flow-audit --strict` passes.
 
 The audit also reports `remaining_sustain_runs` and `min_minutes_to_sustain_target`, a lower-bound projection based on the configured minimum useful-work duration. This keeps the gap to the 72-run proof target machine-visible on every watch artifact.
+
+## Operational SLO burn-in audit
+
+`fxrun forge-loop runner-ops-slo-audit --strict` is the broader maturity gate for claims that the dark-factory runner operation is unattended, not merely threshold-complete. It consumes current GitHub run history and open-PR status, then checks a configurable burn-in window for bounded Runner Sustain idle gaps, an active/queued sustain backlog at audit time, successful event-driven `Runner Black Factor Watch` rehydration after workflow completions, zero failed operational workflow runs inside the window, and seamless open-PR local checks.
+
+The default CLI window is intentionally short enough for rapid regression checks (`--min-window-hours 1`), while an operational completion claim should raise that window to the owner's burn-in target (for example 24 or 72 hours) and keep `--max-failed-ops-runs 0`. This closes the earlier ambiguity between "black-factor threshold exceeded" and "operations maturity complete": the black-factor audit proves the kclaw0 duration/count target, while the SLO audit proves that the current automation can keep itself rehydrated without visible idle gaps or failed ops over the selected burn-in window.
