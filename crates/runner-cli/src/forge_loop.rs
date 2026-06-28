@@ -20,15 +20,15 @@ const TOOL_OUTPUT_TOKEN_LIMIT: u32 = 12_000;
 const COMPACT_PROMPT_PATH: &str = ".codex/prompts/compact-forge-loop.md";
 const CODEX_FORGE_LOOP_OUTPUT: &str = "codex-forge-loop-output.md";
 const REQUIRED_GATE_COMMANDS: &[&str] = &[
-    "cargo fmt --all -- --check",
-    "cargo test -p runner-cli --all-features forge_loop::tests",
-    "cargo run -q -p runner-cli -- forge-loop docs-drift --json",
-    "cargo run -q -p runner-cli -- forge-loop target-mining-audit --json",
-    "cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
-    "cargo run -q -p runner-cli -- forge-loop agentic-system-audit --json",
-    "cargo test --workspace --all-features",
-    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-    "cargo audit --deny warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo test -p runner-cli --all-features forge_loop::tests",
+    "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json",
+    "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --json",
+    "rtk cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
+    "rtk cargo run -q -p runner-cli -- forge-loop agentic-system-audit --json",
+    "rtk cargo test --workspace --all-features",
+    "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "rtk cargo audit --deny warnings",
 ];
 
 #[derive(Subcommand, Debug, Clone)]
@@ -4046,7 +4046,7 @@ R  docs/old.md -> docs/new.md
             );
         }
         assert!(parsed.validation_state.contains(
-            &"cargo clippy --workspace --all-targets --all-features -- -D warnings".to_string()
+            &"rtk cargo clippy --workspace --all-targets --all-features -- -D warnings".to_string()
         ));
         assert!(parsed
             .next_action
@@ -4064,12 +4064,18 @@ R  docs/old.md -> docs/new.md
             .as_array()
             .expect("gate commands");
 
+        assert!(
+            gates.iter().all(|gate| gate
+                .as_str()
+                .is_some_and(|command| command.starts_with("rtk "))),
+            "scheduled forge-loop gate commands must preserve rtk shell discipline"
+        );
         assert!(gates
             .iter()
-            .any(|gate| gate == "cargo audit --deny warnings"));
+            .any(|gate| gate == "rtk cargo audit --deny warnings"));
         assert!(gates
             .iter()
-            .any(|gate| gate == "cargo run -q -p runner-cli -- forge-loop docs-drift --json"));
+            .any(|gate| gate == "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json"));
     }
 
     #[test]
