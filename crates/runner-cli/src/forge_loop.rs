@@ -3205,6 +3205,12 @@ mod tests {
         for required in [
             "Runner Black Factor Watch",
             "*/5 * * * *",
+            "workflow_run:",
+            "workflows:",
+            "- CI",
+            "- Semantic PR Title",
+            "- Runner Sustain",
+            "completed",
             "runs-on: ubuntu-latest",
             "actions: write",
             "MIN_SUSTAIN_BACKLOG: '4'",
@@ -3233,6 +3239,8 @@ mod tests {
             );
         }
         assert!(target.contains("Runner Black Factor Watch"));
+        assert!(target.contains("schedule-driven and event-driven"));
+        assert!(target.contains("PR pressure clears"));
         assert!(target.contains("tops up a small `Runner Sustain` active/queued backlog"));
         assert!(target.contains("pending PR checks make the watch yield green"));
         assert!(target.contains("clamped to 1-4"));
