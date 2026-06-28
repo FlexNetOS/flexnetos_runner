@@ -630,10 +630,13 @@ pub struct CycleManifest {
 pub struct CompactContinuityArtifact {
     pub enabled: bool,
     pub compact_prompt: String,
+    pub phases: Vec<CyclePhase>,
     pub active_phase: CyclePhase,
+    pub current_phase_index: usize,
     pub source_coverage: Vec<String>,
     pub validation_state: Vec<String>,
     pub next_action: String,
+    pub phase_source_validation_next_action: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3457,7 +3460,9 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
     CompactContinuityArtifact {
         enabled: true,
         compact_prompt: COMPACT_PROMPT_PATH.into(),
+        phases: required_phases(),
         active_phase: CyclePhase::Red,
+        current_phase_index: 0,
         source_coverage: research_sources()
             .into_iter()
             .map(|source| format!("{}: {} ({})", source.id, source.url, source.purpose))
@@ -3467,6 +3472,9 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             .map(|command| (*command).to_string())
             .collect(),
         next_action: "continue with the next required forge-loop phase".into(),
+        phase_source_validation_next_action:
+            "phase=Red source_coverage=complete validation_state=pending next_action=continue"
+                .into(),
     }
 }
 
@@ -4148,6 +4156,18 @@ R  docs/old.md -> docs/new.md
             .contains("next required forge-loop phase"));
 
         fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_structured_required_phase_contract() {
+        let artifact = compact_continuity_artifact();
+
+        assert_eq!(artifact.phases, required_phases());
+        assert_eq!(artifact.current_phase_index, 0);
+        assert_eq!(artifact.active_phase, CyclePhase::Red);
+        assert!(artifact.phase_source_validation_next_action.contains(
+            "phase=Red source_coverage=complete validation_state=pending next_action=continue"
+        ));
     }
 
     #[test]
