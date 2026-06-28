@@ -5212,6 +5212,11 @@ R  docs/old.md -> docs/new.md
             !workflow.contains("if: ${{ secrets."),
             "GitHub Actions does not allow secrets in job-level if expressions"
         );
+        assert!(
+            !workflow.contains("      GH_TOKEN: ${{ github.token }}
+      MODEL_INPUT:"),
+            "publisher job env must not inherit the app GITHUB_TOKEN or bot-created PR checks stay detached"
+        );
 
         for required in [
             "runs-on: [self-hosted, linux, x64, local, flexnetos]",
@@ -5232,7 +5237,12 @@ R  docs/old.md -> docs/new.md
             "FXRUN_CODEX",
             "cargo run -q -p runner-cli -- forge-loop run",
             "tee codex-forge-loop-output.md",
-            "GH_TOKEN:",
+            "GH_CONFIG_DIR:",
+            "persist-credentials: false",
+            "Configure local GitHub auth for publisher",
+            "unset GH_TOKEN GITHUB_TOKEN",
+            "gh auth setup-git --hostname github.com",
+            "git remote set-url origin",
             "actions: write",
             "PROMPT_FILE_INPUT:",
             "invalid prompt_file input",
