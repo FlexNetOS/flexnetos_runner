@@ -43,6 +43,9 @@ jobs:
       - name: Forge-loop target mining audit
         shell: bash
         run: cargo run -p runner-cli -- forge-loop target-mining-audit --strict
+      - name: Forge-loop agentic system static audit
+        shell: bash
+        run: cargo run -p runner-cli -- forge-loop agentic-system-audit
       - name: Cargo audit
         shell: bash
         run: |
