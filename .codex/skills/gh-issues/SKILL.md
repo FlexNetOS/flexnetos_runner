@@ -1,8 +1,8 @@
 ---
 name: gh-issues
 description: "Fetch GitHub issues, spawn sub-agents to implement fixes and open PRs, then monitor and address PR review comments. Usage: /gh-issues [owner/repo] [--label bug] [--limit 5] [--milestone v1.0] [--assignee @me] [--fork user/repo] [--watch] [--interval 5] [--reviews-only] [--cron] [--dry-run] [--model glm-5] [--notify-channel -1002381931352]"
-user-invocable: true
 metadata:
+  user-invocable: true
   openclaw:
     requires:
       bins:
@@ -21,6 +21,33 @@ IMPORTANT — No `gh` CLI dependency. This skill uses curl + the GitHub REST API
 ```
 curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" ...
 ```
+
+---
+
+## Phase 0 — Meta-first FlexNetOS policy
+
+Run this phase before Phase 1 for every FlexNetOS org repo.
+
+1. Resolve the meta workspace root:
+
+   ```
+   META_ROOT=$(git rev-parse --show-toplevel 2>/dev/null | xargs -r -I{} sh -c 'p="{}"; while [ "$p" != "/" ]; do [ -f "$p/.meta.yaml" ] && { echo "$p"; exit 0; }; p=$(dirname "$p"); done' || true)
+   META_ROOT=${META_ROOT:-/home/drdave/Desktop/meta}
+   export META_ROOT
+   ```
+
+2. Work from the meta-owned checkout or an isolated worktree under `$META_ROOT/.worktrees/<slug>/<repo>`. Do not mutate random home-directory clones or a dirty base checkout.
+3. Prefix local shell/build/test/git commands with `rtk` when available.
+4. Strict upgrade only: no downgrade, removal, destructive reset, or force-push unless a replacement is installed, configured, and parity-proven.
+5. For every committed chunk, commit, push, and open a PR immediately; then arm auto-merge when repository policy allows.
+6. Before spawning agents or claiming work, check for no duplicate active sessions: open PRs, remote branches, local worktrees, and active claims for the same issue/PR.
+7. Store gh-issues claims/cursors in meta-owned state when possible:
+
+   ```
+   GH_ISSUES_STATE_DIR="${META_ROOT}/.local/state/gh-issues"
+   mkdir -p "$GH_ISSUES_STATE_DIR" 2>/dev/null || GH_ISSUES_STATE_DIR="/data/.clawdbot"
+   export GH_ISSUES_STATE_DIR
+   ```
 
 ---
 
@@ -258,9 +285,9 @@ Run these checks sequentially via exec:
    Read the claims file (create empty `{}` if missing):
 
    ```
-   CLAIMS_FILE="/data/.clawdbot/gh-issues-claims.json"
+   CLAIMS_FILE="${GH_ISSUES_STATE_DIR:-/data/.clawdbot}/gh-issues-claims.json"
    if [ ! -f "$CLAIMS_FILE" ]; then
-     mkdir -p /data/.clawdbot
+     mkdir -p "$(dirname "$CLAIMS_FILE")"
      echo '{}' > "$CLAIMS_FILE"
    fi
    ```
@@ -293,7 +320,7 @@ Run these checks sequentially via exec:
 - **Sequential cursor tracking:** Use a cursor file to track which issue to process next:
 
   ```
-  CURSOR_FILE="/data/.clawdbot/gh-issues-cursor-{SOURCE_REPO_SLUG}.json"
+  CURSOR_FILE="${GH_ISSUES_STATE_DIR:-/data/.clawdbot}/gh-issues-cursor-{SOURCE_REPO_SLUG}.json"
   # SOURCE_REPO_SLUG = owner-repo with slashes replaced by hyphens (e.g., openclaw-openclaw)
   ```
 
