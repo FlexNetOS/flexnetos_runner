@@ -1120,6 +1120,7 @@ fn runner_fleet_audit_report(args: &RunnerFleetAuditArgs) -> Result<RunnerFleetA
 
 fn scan_proc_for_runner_jobs(proc_root: &Path) -> Result<Vec<RunnerFleetJob>> {
     let mut jobs = Vec::new();
+    let proc_index = proc_index(proc_root)?;
     let entries = fs::read_dir(proc_root)
         .with_context(|| format!("read proc root {}", proc_root.display()))?;
     for entry in entries {
@@ -1128,6 +1129,9 @@ fn scan_proc_for_runner_jobs(proc_root: &Path) -> Result<Vec<RunnerFleetJob>> {
         let Some(pid) = file_name.to_string_lossy().parse::<u32>().ok() else {
             continue;
         };
+        if !has_runner_worker_ancestor(pid, &proc_index) {
+            continue;
+        }
         let environ_path = entry.path().join("environ");
         let Ok(environ) = fs::read(&environ_path) else {
             continue;
@@ -1152,6 +1156,75 @@ fn scan_proc_for_runner_jobs(proc_root: &Path) -> Result<Vec<RunnerFleetJob>> {
         });
     }
     Ok(jobs)
+}
+
+#[derive(Debug, Clone)]
+struct ProcInfo {
+    ppid: u32,
+    cmdline: String,
+}
+
+fn proc_index(proc_root: &Path) -> Result<BTreeMap<u32, ProcInfo>> {
+    let mut index = BTreeMap::new();
+    let entries = fs::read_dir(proc_root)
+        .with_context(|| format!("read proc root {}", proc_root.display()))?;
+    for entry in entries {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let Some(pid) = file_name.to_string_lossy().parse::<u32>().ok() else {
+            continue;
+        };
+        let ppid = fs::read_to_string(entry.path().join("status"))
+            .ok()
+            .and_then(|status| parse_status_ppid(&status))
+            .unwrap_or(0);
+        let cmdline = fs::read(entry.path().join("cmdline"))
+            .ok()
+            .map(|raw| {
+                String::from_utf8_lossy(&raw)
+                    .replace('\0', " ")
+                    .trim()
+                    .to_string()
+            })
+            .filter(|cmd| !cmd.is_empty())
+            .or_else(|| {
+                fs::read_to_string(entry.path().join("comm"))
+                    .ok()
+                    .map(|comm| comm.trim().to_string())
+            })
+            .unwrap_or_default();
+        index.insert(pid, ProcInfo { ppid, cmdline });
+    }
+    Ok(index)
+}
+
+fn parse_status_ppid(status: &str) -> Option<u32> {
+    status.lines().find_map(|line| {
+        let value = line.strip_prefix("PPid:")?;
+        value.trim().parse::<u32>().ok()
+    })
+}
+
+fn has_runner_worker_ancestor(pid: u32, index: &BTreeMap<u32, ProcInfo>) -> bool {
+    let mut current = Some(pid);
+    let mut depth = 0;
+    while let Some(candidate) = current {
+        depth += 1;
+        if depth > 64 {
+            return false;
+        }
+        let Some(info) = index.get(&candidate) else {
+            return false;
+        };
+        if info.cmdline.contains("Runner.Worker") {
+            return true;
+        }
+        if info.ppid == 0 || info.ppid == candidate {
+            return false;
+        }
+        current = Some(info.ppid);
+    }
+    false
 }
 
 fn parse_nul_env(raw: &[u8]) -> BTreeMap<String, String> {
@@ -3681,6 +3754,47 @@ mod tests {
             Some("28310752662")
         );
         assert!(!env.contains_key("IGNORED"));
+    }
+
+    #[test]
+    fn runner_fleet_proc_helpers_require_runner_worker_ancestry() {
+        assert_eq!(
+            parse_status_ppid("Name:\tbash\nPPid:\t1132559\nState:\tS\n"),
+            Some(1132559)
+        );
+
+        let mut index = BTreeMap::new();
+        index.insert(
+            1,
+            ProcInfo {
+                ppid: 0,
+                cmdline: "systemd".to_string(),
+            },
+        );
+        index.insert(
+            10,
+            ProcInfo {
+                ppid: 1,
+                cmdline: "/runner/bin/Runner.Worker spawnclient".to_string(),
+            },
+        );
+        index.insert(
+            11,
+            ProcInfo {
+                ppid: 10,
+                cmdline: "bash /runner/_work/_temp/script.sh".to_string(),
+            },
+        );
+        index.insert(
+            12,
+            ProcInfo {
+                ppid: 1,
+                cmdline: "claude --version".to_string(),
+            },
+        );
+
+        assert!(has_runner_worker_ancestor(11, &index));
+        assert!(!has_runner_worker_ancestor(12, &index));
     }
 
     #[test]
