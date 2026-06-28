@@ -386,6 +386,15 @@ pub struct EvalReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CodexAuthReadiness {
+    pub auth_mode: &'static str,
+    pub codex_home: String,
+    pub auth_json: String,
+    pub auth_json_present: bool,
+    pub login_status_command: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DocsDriftReport {
     pub checked_features: usize,
     pub drift: Vec<String>,
@@ -860,6 +869,7 @@ fn self_upgrade_prompt(score: u8) -> String {
 fn doctor(args: DoctorArgs) -> Result<()> {
     let report = serde_json::json!({
         "codex": codex_program(),
+        "codex_auth": codex_auth_readiness(),
         "artifact_root": DEFAULT_ARTIFACT_ROOT,
         "research_sources": research_sources(),
         "phases": ["red", "implement", "gate", "evaluate", "research", "upgrade"],
@@ -880,6 +890,11 @@ fn doctor(args: DoctorArgs) -> Result<()> {
     } else {
         println!("fxrun forge-loop");
         println!("  codex cli          : {}", codex_program());
+        let auth = codex_auth_readiness();
+        println!("  codex auth mode    : {}", auth.auth_mode);
+        println!("  codex auth file    : {}", auth.auth_json);
+        println!("  auth file present  : {}", auth.auth_json_present);
+        println!("  auth status check  : {}", auth.login_status_command);
         println!("  artifact root      : {DEFAULT_ARTIFACT_ROOT}");
         println!("  phases             : red → implement → gate → evaluate → research → upgrade");
         println!("  auto-merge policy  : green PRs when repository settings allow");
@@ -3013,6 +3028,21 @@ pub fn codex_program() -> String {
         })
 }
 
+fn codex_auth_readiness() -> CodexAuthReadiness {
+    let codex_home = std::env::var("CODEX_HOME")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| ".codex".into());
+    let auth_json = Path::new(&codex_home).join("auth.json");
+    CodexAuthReadiness {
+        auth_mode: "local_chatgpt",
+        codex_home,
+        auth_json: auth_json.display().to_string(),
+        auth_json_present: auth_json.exists(),
+        login_status_command: "rtk codex login status",
+    }
+}
+
 pub fn codex_invocation(prompt: String) -> CodexInvocation {
     CodexInvocation {
         program: codex_program(),
@@ -3664,6 +3694,16 @@ mod tests {
             .windows(2)
             .any(|w| w == ["--config", "approval_policy=\"never\""]));
         assert_eq!(inv.args.last().unwrap(), "do work");
+    }
+
+    #[test]
+    fn doctor_exports_subscription_auth_readiness_contract() {
+        let auth = codex_auth_readiness();
+
+        assert_eq!(auth.auth_mode, "local_chatgpt");
+        assert!(!auth.codex_home.is_empty());
+        assert!(auth.auth_json.ends_with("auth.json"));
+        assert_eq!(auth.login_status_command, "rtk codex login status");
     }
 
     #[test]
