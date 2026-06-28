@@ -174,7 +174,7 @@ pub struct RunnerOpsSloAuditArgs {
     /// Minimum active/queued Runner Sustain backlog required at audit time.
     #[arg(long, default_value_t = 1)]
     pub min_active_or_queued_sustain: usize,
-    /// Minimum successful workflow_run-triggered Runner Black Factor Watch runs in the window.
+    /// Minimum successful event-driven Runner Black Factor Watch runs in the window.
     #[arg(long, default_value_t = 1)]
     pub min_event_watch_wakeups: usize,
     /// Maximum failed operational workflow runs allowed in the window.
@@ -1468,14 +1468,16 @@ fn local_runner_productive_interval(
 }
 
 fn is_ops_workflow(name: &str) -> bool {
-    matches!(
-        name,
-        "Runner Sustain" | "Runner Black Factor Watch" | "CI" | "Semantic PR Title"
-    )
+    matches!(name, "Runner Sustain" | "CI" | "Semantic PR Title")
+        || is_runner_black_factor_watch_name(name)
+}
+
+fn is_runner_black_factor_watch_name(name: &str) -> bool {
+    name == "Runner Black Factor Watch" || name.starts_with("Runner Black Factor Watch (")
 }
 
 fn is_successful_runner_watch_rehydration(run: &WorkflowRunEntry) -> bool {
-    if run.name != "Runner Black Factor Watch"
+    if !is_runner_black_factor_watch_name(&run.name)
         || !run.status.eq_ignore_ascii_case("completed")
         || !run.conclusion.eq_ignore_ascii_case("success")
     {
@@ -3540,7 +3542,7 @@ mod tests {
             &runs,
             r#"[
               {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
-              {"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_dispatch","displayTitle":"Runner Black Factor Watch (workflow_dispatch sustain_completion)","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:31:00Z"},
+              {"name":"Runner Black Factor Watch (workflow_dispatch sustain_completion)","status":"completed","conclusion":"success","event":"workflow_dispatch","displayTitle":"Runner Black Factor Watch (workflow_dispatch sustain_completion)","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:31:00Z"},
               {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:40:00Z","updatedAt":"2026-06-27T00:46:00Z"},
               {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:50:00Z","updatedAt":"2026-06-27T00:56:00Z"},
               {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
@@ -3566,6 +3568,15 @@ mod tests {
         assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
         assert_eq!(report.event_watch_wakeups, 1);
         fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_ops_slo_audit_treats_watch_run_names_as_ops_workflow() {
+        assert!(is_ops_workflow("Runner Black Factor Watch"));
+        assert!(is_ops_workflow(
+            "Runner Black Factor Watch (workflow_run CI)"
+        ));
+        assert!(!is_ops_workflow("Runner Black Factor"));
     }
 
     #[test]
