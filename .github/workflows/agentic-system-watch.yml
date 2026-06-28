@@ -12,8 +12,6 @@ on:
     - cron: '*/30 * * * *'
   workflow_run:
     workflows:
-      - CI
-      - Semantic PR Title
       - Runner Black Factor Watch
     types:
       - completed
@@ -47,8 +45,23 @@ jobs:
           gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
       - name: Prove end-to-end agentic system
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if cargo run -q -p runner-cli -- forge-loop agentic-system-audit \
+            --runs-json runs-live.json \
+            --open-prs-json prs-open.json \
+            --prs-history-json prs-history.json \
+            --strict \
+            --json | tee agentic-system-audit.json; then
+            exit 0
+          fi
+          echo "::notice::agentic proof was not ready on first read; refreshing once after black-factor top-up settles"
+          sleep 90
+          gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
+          gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > prs-open.json
+          gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
           cargo run -q -p runner-cli -- forge-loop agentic-system-audit \
             --runs-json runs-live.json \
             --open-prs-json prs-open.json \

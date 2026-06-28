@@ -58,9 +58,11 @@ SLO, fleet-lane, component, docs-drift, and target-mining gates into one complet
 owner's broader 24/7 agentic-system claim. It must be green before claiming the system is always
 researching, evaluating, adapting, growing, and improving.
 
-`agentic-system-watch.yml` runs on GitHub-hosted capacity every 30 minutes and after key workflow
-completions. It captures run/PR history, runs `agentic-system-audit --strict`, and then dispatches
-`Codex Forge Loop` only when the proof is green, `OPENAI_API_KEY` exists, no PR is open, no PR-local
-checks need the pipeline, and no Codex Forge Loop run is already active. This is the scheduled growth
-lane that keeps the system researching/adapting after the runner black-factor lane is already healthy
-without stacking a new self-upgrade PR before the previous PR has merged.
+`agentic-system-watch.yml` runs on GitHub-hosted capacity every 30 minutes and after `Runner Black
+Factor Watch` completions, so it evaluates growth after the sustain backlog has had a chance to
+rehydrate. It captures run/PR history, runs `agentic-system-audit --strict`, refreshes once if the
+proof is momentarily early, and then dispatches `Codex Forge Loop` only when the proof is green,
+`OPENAI_API_KEY` exists, no PR is open, no PR-local checks need the pipeline, and no Codex Forge Loop
+run is already active. This is the scheduled growth lane that keeps the system researching/adapting
+after the runner black-factor lane is already healthy without stacking a new self-upgrade PR before
+the previous PR has merged.
