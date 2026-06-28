@@ -37,7 +37,7 @@ This still does not by itself prove the 12+ hour kclaw0 persistence target; that
 - at least 72 duration-proven successful `Runner Sustain` workflow runs in the latest 12-hour proof window, where each counted run has both `createdAt` and `updatedAt` GitHub timestamps and ran for at least 5 minutes, and
 - at least one merged PR with clean required local checks.
 
-The run-history input must come from `gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,url`; a yielded, too-short, or old-outside-the-latest-proof-window Runner Sustain run is not counted as useful black-factor work. Until those conditions pass from GitHub run/PR history, the goal remains in-progress even if instantaneous `runner-flow-audit --strict` passes.
+The run-history input must come from `gh run list --limit 3000 --json name,status,conclusion,createdAt,updatedAt,event,url`; high-churn dark-factory operation can exhaust the latest 1000 runs before the 12-hour proof window is visible, so watch workflows capture deeper history by default. A yielded, too-short, or old-outside-the-latest-proof-window Runner Sustain run is not counted as useful black-factor work. Until those conditions pass from GitHub run/PR history, the goal remains in-progress even if instantaneous `runner-flow-audit --strict` passes.
 
 The audit also reports `remaining_sustain_runs` and `min_minutes_to_sustain_target`, a lower-bound projection based on the configured minimum useful-work duration. This keeps the gap to the 72-run proof target machine-visible on every watch artifact.
 

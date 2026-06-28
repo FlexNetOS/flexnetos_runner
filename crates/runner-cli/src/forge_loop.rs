@@ -228,7 +228,7 @@ pub struct AgenticSystemAuditArgs {
     /// Workspace root to scan.
     #[arg(long, default_value = ".")]
     pub root: PathBuf,
-    /// JSON from `gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url`.
+    /// JSON from `gh run list --limit 3000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url`.
     #[arg(long)]
     pub runs_json: Option<PathBuf>,
     /// JSON from `gh pr list --state open --json state,mergedAt,statusCheckRollup,url`.
@@ -5806,6 +5806,8 @@ R  docs/old.md -> docs/new.md
             "skipped_open_pr",
             "skipped_pr_pressure",
             "skipped_active_codex",
+            "RUN_HISTORY_LIMIT: '3000'",
+            "--limit \"${RUN_HISTORY_LIMIT}\"",
             "agentic-dispatch.env",
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
@@ -6040,7 +6042,8 @@ R  docs/old.md -> docs/new.md
             "--strict",
             "runner-black-factor-audit",
             "createdAt,updatedAt,event,displayTitle",
-            "--limit 1000",
+            "RUN_HISTORY_LIMIT: '3000'",
+            "--limit \"${RUN_HISTORY_LIMIT}\"",
             "actions/upload-artifact@v7",
         ] {
             assert!(
