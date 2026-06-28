@@ -2397,6 +2397,57 @@ fn all_file_terms_present(root: &Path, terms: &[(&str, &str)]) -> bool {
 fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
     vec![
         TargetMiningTarget {
+            id: "openai-codex",
+            url: "https://github.com/openai/codex",
+            source_terms: &[
+                "https://github.com/openai/codex",
+                "Codex Rust CLI",
+                "noninteractive execution",
+            ],
+            application_terms: &[
+                ("crates/runner-cli/src/forge_loop.rs", "codex_invocation"),
+                ("crates/runner-cli/src/forge_loop.rs", "--json"),
+                ("crates/runner-cli/src/forge_loop.rs", "codex exec"),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "codex_invocation_uses_noninteractive_json_workspace_write",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "target_mining_audit_covers_full_research_source_matrix",
+                ),
+            ],
+        },
+        TargetMiningTarget {
+            id: "codex-config-advanced",
+            url: "https://developers.openai.com/codex/config-advanced",
+            source_terms: &[
+                "https://developers.openai.com/codex/config-advanced",
+                "Codex project config",
+                "auto-compaction",
+            ],
+            application_terms: &[
+                (".codex/config.toml", "auto_compaction = true"),
+                (".codex/config.toml", "experimental_compact_prompt_file"),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "features.auto_compaction=true",
+                ),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "forge_loop_config_enables_auto_compaction",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "codex_invocation_forces_auto_compaction_continuity",
+                ),
+            ],
+        },
+        TargetMiningTarget {
             id: "codex-github-action",
             url: "https://developers.openai.com/codex/github-action",
             source_terms: &[
@@ -2547,6 +2598,31 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     "target_mining_audit_report",
                 ),
                 ("crates/runner-cli/src/forge_loop.rs", "oh-my-codex"),
+            ],
+        },
+        TargetMiningTarget {
+            id: "crates-io",
+            url: "https://crates.io",
+            source_terms: &[
+                "https://crates.io",
+                "Rust crates",
+                "scheduling, tracing, structured output, evaluation, and reliability",
+            ],
+            application_terms: &[
+                ("Cargo.toml", "workspace"),
+                ("Cargo.lock", "serde_json"),
+                ("Cargo.lock", "anyhow"),
+                ("crates/runner-cli/src/forge_loop.rs", "serde_json"),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "target_mining_audit_covers_full_research_source_matrix",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "doctor_json_exports_required_gate_contract",
+                ),
             ],
         },
         TargetMiningTarget {
@@ -5406,6 +5482,26 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
+    fn target_mining_audit_covers_full_research_source_matrix() {
+        let audited_urls = expected_target_mining_targets()
+            .into_iter()
+            .map(|target| target.url)
+            .collect::<Vec<_>>();
+
+        for source in research_sources() {
+            if source.id == "kclaw0-upgrade-ledger" {
+                continue;
+            }
+            assert!(
+                audited_urls.contains(&source.url),
+                "target-mining audit missing research source {}: {}",
+                source.id,
+                source.url
+            );
+        }
+    }
+
+    #[test]
     fn forge_loop_cycle_evidence_checklist_requires_merge_proof() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -5757,7 +5853,7 @@ R  docs/old.md -> docs/new.md
             .expect("workspace root");
         let report = target_mining_audit_report(root);
 
-        assert_eq!(report.checked_targets, 7);
+        assert_eq!(report.checked_targets, 10);
         assert!(
             report
                 .covered_targets
