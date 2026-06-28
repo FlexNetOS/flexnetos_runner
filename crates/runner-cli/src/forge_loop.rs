@@ -4262,7 +4262,7 @@ mod tests {
         assert!(target.contains("required-check pressure clears"));
         assert!(target.contains("tops up a small `Runner Sustain` active/queued backlog"));
         assert!(
-            target.contains("pending PR or main-branch local checks make the watch yield green")
+            target.contains("pending PR or main-branch local checks make the watch record a non-strict audit and stay green")
         );
         assert!(target.contains("clamped to 1-4"));
         assert!(target.contains("defaults to 4"));
