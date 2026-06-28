@@ -100,8 +100,8 @@ jobs:
             # shellcheck disable=SC1091
             . ./runner-pressure.env
           fi
-          if [ "${pr_failed_pressure}" -eq 0 ] && [ "${pr_pending_pressure}" -gt 0 ]; then
-            echo "::notice::recording non-strict runner-flow audit while ${pr_pending_pressure} pending PR-local checks own the runner lane"
+          if [ "${pr_pending_pressure}" -gt 0 ]; then
+            echo "::notice::recording non-strict runner-flow audit while ${pr_pending_pressure} pending PR-local checks own the runner lane; failed-pressure witness=${pr_failed_pressure}"
             cargo run -q -p runner-cli -- forge-loop runner-flow-audit \
               --runs-json runs-live.json \
               --prs-json prs-open.json \
