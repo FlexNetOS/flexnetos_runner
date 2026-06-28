@@ -819,10 +819,7 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
     if args.dry_run || !allowed {
         return Ok(());
     }
-    let prompt = format!(
-        "You are the forge-loop self-upgrade agent. Implement exactly one small, TDD-first reliability, accuracy, or speed improvement for fxrun forge-loop. Commit, push, open a PR, and enable auto-merge if checks are green. Evaluation score: {}. Strict upgrade only; no downgrades/removals without parity proof.",
-        report.score
-    );
+    let prompt = self_upgrade_prompt(report.score);
     let invocation = codex_invocation(prompt);
     let status = Command::new(&invocation.program)
         .args(&invocation.args)
@@ -831,6 +828,12 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
         return Err(anyhow!("codex self-upgrade failed with status {status}"));
     }
     Ok(())
+}
+
+fn self_upgrade_prompt(score: u8) -> String {
+    format!(
+        "You are the forge-loop self-upgrade agent. Implement exactly one small, TDD-first reliability, accuracy, or speed improvement for fxrun forge-loop. Leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR, and enable auto-merge if checks are green when repository settings allow. Evaluation score: {score}. Strict upgrade only; no downgrades/removals without parity proof."
+    )
 }
 
 fn doctor(args: DoctorArgs) -> Result<()> {
@@ -3724,6 +3727,20 @@ mod tests {
         assert!(prompt.contains("leave the intended repository changes in the working tree"));
         assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
         assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
+    }
+
+    #[test]
+    fn self_upgrade_prompt_leaves_publish_to_outer_engine() {
+        let prompt = self_upgrade_prompt(90);
+        let prompt_lower = prompt.to_ascii_lowercase();
+
+        assert!(prompt_lower.contains("leave the intended repository changes in the working tree"));
+        assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
+        assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
+        assert!(
+            !prompt.contains("Commit, push, open a PR"),
+            "self-upgrade prompt must not ask nested Codex to publish"
+        );
     }
 
     #[test]
