@@ -3572,7 +3572,10 @@ fn run_command_owned(program: &str, args: Vec<String>) -> Result<String> {
 }
 
 fn command_invocation(program: &str, args: Vec<String>) -> (String, Vec<String>) {
-    let mut wrapped_args = Vec::with_capacity(args.len() + 1);
+    let mut wrapped_args = Vec::with_capacity(args.len() + 2);
+    if program == "find" {
+        wrapped_args.push("proxy".to_string());
+    }
     wrapped_args.push(program.to_string());
     wrapped_args.extend(args);
     ("rtk".into(), wrapped_args)
@@ -4350,6 +4353,36 @@ R  docs/old.md -> docs/new.md
         assert_eq!(
             args,
             vec!["gh".to_string(), "pr".to_string(), "create".to_string()]
+        );
+    }
+
+    #[test]
+    fn find_shell_commands_use_rtk_proxy_for_compound_predicates() {
+        let (program, args) = command_invocation(
+            "find",
+            vec![
+                ".".into(),
+                "-type".into(),
+                "f".into(),
+                "-name".into(),
+                "*.rs".into(),
+                "-print".into(),
+            ],
+        );
+
+        assert_eq!(program, "rtk");
+        assert_eq!(
+            args,
+            vec![
+                "proxy".to_string(),
+                "find".to_string(),
+                ".".to_string(),
+                "-type".to_string(),
+                "f".to_string(),
+                "-name".to_string(),
+                "*.rs".to_string(),
+                "-print".to_string(),
+            ]
         );
     }
 
