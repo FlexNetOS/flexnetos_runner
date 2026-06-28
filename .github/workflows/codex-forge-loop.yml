@@ -32,7 +32,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CODEX_HOME: /home/drdave/Desktop/meta/.local/share/codex
       CODEX_BIN: /home/drdave/.local/bin/codex
-      GH_TOKEN: ${{ github.token }}
+      GH_CONFIG_DIR: /home/drdave/.config/gh
       MODEL_INPUT: ${{ inputs.model }}
       EFFORT_INPUT: ${{ inputs.effort }}
       PROMPT_FILE_INPUT: ${{ inputs.prompt_file }}
@@ -42,7 +42,18 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
+      - name: Configure local GitHub auth for publisher
+        if: ${{ env.OPENAI_API_KEY == '' }}
+        shell: bash
+        env:
+          GH_CONFIG_DIR: ${{ env.GH_CONFIG_DIR }}
+        run: |
+          set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN
+          gh auth status --hostname github.com
+          gh auth setup-git --hostname github.com
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
       - name: Run Codex forge-loop prompt with OpenAI API key
         id: run_codex
         if: ${{ env.OPENAI_API_KEY != '' }}
