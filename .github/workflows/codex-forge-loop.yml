@@ -17,7 +17,7 @@ on:
         default: high
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
 
@@ -25,19 +25,29 @@ permissions:
 jobs:
   codex-forge-loop:
     name: Codex forge-loop action
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    timeout-minutes: 60
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CODEX_HOME: /home/drdave/Desktop/meta/.local/share/codex
+      CODEX_BIN: /home/drdave/.local/bin/codex
+      GH_TOKEN: ${{ github.token }}
+      MODEL_INPUT: ${{ inputs.model }}
+      EFFORT_INPUT: ${{ inputs.effort }}
+      PROMPT_FILE_INPUT: ${{ inputs.prompt_file }}
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - name: Run Codex forge-loop prompt
+          persist-credentials: true
+      - name: Run Codex forge-loop prompt with OpenAI API key
         id: run_codex
+        if: ${{ env.OPENAI_API_KEY != '' }}
         uses: openai/codex-action@v1
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-api-key: ${{ env.OPENAI_API_KEY }}
           prompt-file: ${{ inputs.prompt_file }}
           codex-args: '["--ephemeral","--config","features.auto_compaction=true","--config","model_auto_compact_token_limit=3000000","--config","model_auto_compact_token_limit_scope=\"total\"","--config","tool_output_token_limit=12000","--output-schema",".github/codex/schemas/forge-loop-output.schema.json"]'
           model: ${{ inputs.model }}
@@ -46,6 +56,44 @@ jobs:
           safety-strategy: drop-sudo
           allow-bots: dependabot[bot]
           output-file: codex-forge-loop-output.md
+      - name: Run Codex forge-loop prompt with local ChatGPT auth
+        if: ${{ env.OPENAI_API_KEY == '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # local ChatGPT auth fallback runs codex exec with subscription-backed CODEX_HOME.
+          case "${MODEL_INPUT}" in (*[!A-Za-z0-9._:-]*|'') echo "::error::invalid model input"; exit 1 ;; esac
+          case "${EFFORT_INPUT}" in (low|medium|high|xhigh) ;; (*) echo "::error::invalid effort input"; exit 1 ;; esac
+          case "${PROMPT_FILE_INPUT}" in (.github/codex/prompts/*.md) ;; (*) echo "::error::invalid prompt_file input"; exit 1 ;; esac
+          if [ ! -f "${PROMPT_FILE_INPUT}" ]; then
+            echo "::error::prompt file not found: ${PROMPT_FILE_INPUT}"
+            exit 1
+          fi
+          if [ ! -x "${CODEX_BIN}" ]; then
+            CODEX_BIN="$(command -v codex || true)"
+          fi
+          if [ -z "${CODEX_BIN:-}" ] || [ ! -x "${CODEX_BIN}" ]; then
+            echo "::error::codex binary not found for local ChatGPT auth fallback"
+            exit 1
+          fi
+          if [ ! -s "${CODEX_HOME}/auth.json" ]; then
+            echo "::error::CODEX_HOME auth.json missing; local ChatGPT auth fallback cannot run"
+            exit 1
+          fi
+          "${CODEX_BIN}" login status
+          "${CODEX_BIN}" --ask-for-approval never exec \
+            --ignore-user-config \
+            --ephemeral \
+            --sandbox workspace-write \
+            -m "${MODEL_INPUT}" \
+            --config features.auto_compaction=true \
+            --config "model_reasoning_effort=\"${EFFORT_INPUT}\"" \
+            --config model_auto_compact_token_limit=3000000 \
+            --config 'model_auto_compact_token_limit_scope="total"' \
+            --config tool_output_token_limit=12000 \
+            --output-schema .github/codex/schemas/forge-loop-output.schema.json \
+            --output-last-message codex-forge-loop-output.md \
+            < "${PROMPT_FILE_INPUT}"
       - name: Upload Codex output
         uses: actions/upload-artifact@v7
         with:

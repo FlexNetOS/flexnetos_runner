@@ -72,14 +72,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            echo "::notice::OPENAI_API_KEY is not configured; recorded green proof but skipped Codex Forge Loop dispatch"
-            echo "dispatch=skipped_missing_openai_api_key" > agentic-dispatch.env
-            exit 0
-          fi
           open_pr_count="$(jq 'length' prs-open.json)"
           pr_pressure="$(jq '[
             .[].statusCheckRollup[]?
@@ -89,7 +83,7 @@ jobs:
           ] | length' prs-open.json)"
           active_codex="$(jq '[
             .[]
-            | select(.name == "Codex Forge Loop"
+            | select((.name == "Codex Forge Loop" or .name == ".github/workflows/codex-forge-loop.yml" or (.name | startswith("Codex Forge Loop (")))
               and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
           ] | length' runs-live.json)"
           case "$open_pr_count" in (*[!0-9]*|'') open_pr_count=1 ;; esac
@@ -110,7 +104,7 @@ jobs:
             echo "dispatch=skipped_active_codex" > agentic-dispatch.env
             exit 0
           fi
-          echo "::notice::dispatching Codex Forge Loop for scheduled self-improvement"
+          echo "::notice::dispatching Codex Forge Loop for scheduled self-improvement; workflow will use OPENAI_API_KEY when present or local ChatGPT auth on the self-hosted runner"
           gh workflow run codex-forge-loop.yml \
             --ref main \
             -f prompt_file=.github/codex/prompts/forge-loop.md \
