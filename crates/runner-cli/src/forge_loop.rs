@@ -3732,7 +3732,7 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
         research_output_contract: research_output_contract(),
         validation_state: REQUIRED_GATE_COMMANDS
             .iter()
-            .map(|command| (*command).to_string())
+            .map(|command| format!("pending: {command}"))
             .collect(),
         next_action: "continue with the next required forge-loop phase".into(),
         phase_source_validation_next_action:
@@ -4435,7 +4435,8 @@ R  docs/old.md -> docs/new.md
             );
         }
         assert!(parsed.validation_state.contains(
-            &"rtk cargo clippy --workspace --all-targets --all-features -- -D warnings".to_string()
+            &"pending: rtk cargo clippy --workspace --all-targets --all-features -- -D warnings"
+                .to_string()
         ));
         assert!(parsed
             .next_action
@@ -4454,6 +4455,19 @@ R  docs/old.md -> docs/new.md
         assert!(artifact.phase_source_validation_next_action.contains(
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
         ));
+    }
+
+    #[test]
+    fn compact_continuity_artifact_labels_validation_entries_as_pending() {
+        let artifact = compact_continuity_artifact();
+
+        for gate in REQUIRED_GATE_COMMANDS {
+            let expected = format!("pending: {gate}");
+            assert!(
+                artifact.validation_state.contains(&expected),
+                "compact continuity artifact missing pending validation entry {expected}"
+            );
+        }
     }
 
     #[test]
