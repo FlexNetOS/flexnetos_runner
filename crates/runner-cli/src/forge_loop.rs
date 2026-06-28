@@ -3083,6 +3083,113 @@ mod tests {
     }
 
     #[test]
+    fn runner_ops_slo_audit_accepts_event_rehydrated_burn_in() {
+        let temp =
+            std::env::temp_dir().join(format!("fxrun-runner-ops-slo-pass-{}", std::process::id()));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        let mut run_items = Vec::new();
+        for minute in (0..=50).step_by(10) {
+            run_items.push(format!(
+                r#"{{"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:{minute:02}:00Z","updatedAt":"2026-06-27T00:{:02}:00Z"}}"#,
+                minute + 6
+            ));
+        }
+        run_items.push(
+            r#"{"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_run","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:31:00Z"}"#.to_string(),
+        );
+        run_items.push(
+            r#"{"name":"Runner Sustain","status":"in_progress","conclusion":"","event":"workflow_dispatch","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}"#.to_string(),
+        );
+        fs::write(&runs, format!("[{}]", run_items.join(","))).expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 1,
+            max_idle_gap_minutes: 10,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.observed_window_minutes, 60);
+        assert_eq!(report.max_idle_gap_minutes_observed, 4);
+        assert_eq!(report.active_or_queued_sustain_runs, 1);
+        assert_eq!(report.event_watch_wakeups, 1);
+        assert_eq!(report.failed_ops_runs, 0);
+        assert!(report.pr_flow_seamless);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_ops_slo_audit_reports_idle_failure_and_pr_pressure() {
+        let temp =
+            std::env::temp_dir().join(format!("fxrun-runner-ops-slo-fail-{}", std::process::id()));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:05:00Z"},
+              {"name":"CI","status":"completed","conclusion":"failure","event":"push","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:02:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(
+            &prs,
+            r#"[{"statusCheckRollup":[{"name":"Local Linux CI","status":"QUEUED","conclusion":""},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}]"#,
+        )
+        .expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 1,
+            max_idle_gap_minutes: 10,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(!report.burn_in_ready);
+        assert!(report.max_idle_gap_minutes_observed > 10);
+        assert_eq!(report.active_or_queued_sustain_runs, 0);
+        assert_eq!(report.event_watch_wakeups, 0);
+        assert_eq!(report.failed_ops_runs, 1);
+        assert_eq!(report.queued_required_checks, 1);
+        assert!(!report.pr_flow_seamless);
+        for expected in [
+            "idle_gap_slo",
+            "active_or_queued_sustain_backlog",
+            "event_watch_rehydration",
+            "failed_ops_budget",
+            "seamless_pr_flow",
+        ] {
+            assert!(
+                report.missing_evidence.contains(&expected),
+                "missing {expected}: {:?}",
+                report.missing_evidence
+            );
+        }
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
     fn rfc3339_parser_counts_minutes_between_github_timestamps() {
         let start = parse_rfc3339_utc_seconds("2026-06-27T00:00:00Z").expect("start");
         let end = parse_rfc3339_utc_seconds("2026-06-27T12:30:00Z").expect("end");
