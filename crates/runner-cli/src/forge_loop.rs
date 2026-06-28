@@ -5256,6 +5256,29 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
+    fn action_output_schema_requires_full_loop_component_inventory() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let output_schema =
+            fs::read_to_string(root.join(".github/codex/schemas/forge-loop-output.schema.json"))
+                .expect("read output schema");
+
+        for required in [
+            "model_flags",
+            "tool_surfaces",
+            "structured_output_schemas",
+            "auto_compaction_continuity_settings",
+        ] {
+            assert!(
+                output_schema.contains(required),
+                "output schema component inventory missing {required}"
+            );
+        }
+    }
+
+    #[test]
     fn compact_continuity_artifact_covers_full_research_source_matrix() {
         let continuity = compact_continuity_artifact();
         for source in research_sources() {
