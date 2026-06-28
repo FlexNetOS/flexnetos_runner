@@ -142,7 +142,7 @@ pub struct RunnerBlackFactorAuditArgs {
     /// JSON from `gh run list --json name,status,conclusion,createdAt,updatedAt,event,url`.
     #[arg(long)]
     pub runs_json: PathBuf,
-    /// JSON from `gh pr list --state all --json state,mergedAt,statusCheckRollup,url`.
+    /// JSON from `gh pr list --state all --json number,title,state,mergedAt,statusCheckRollup,url`.
     #[arg(long)]
     pub prs_json: PathBuf,
     /// Minimum observed wall-clock window in hours.
@@ -173,7 +173,7 @@ pub struct RunnerOpsSloAuditArgs {
     /// JSON from `gh pr list --state open --json statusCheckRollup,url`.
     #[arg(long)]
     pub prs_json: PathBuf,
-    /// Optional JSON from `gh pr list --state all --json state,mergedAt,statusCheckRollup,url` used to prove failed Codex growth was recovered by a clean merged self-upgrade PR.
+    /// Optional JSON from `gh pr list --state all --json number,title,state,mergedAt,statusCheckRollup,url` used to prove failed Codex growth was recovered by a clean merged self-upgrade PR.
     #[arg(long)]
     pub prs_history_json: Option<PathBuf>,
     /// Minimum observed burn-in window in hours.
@@ -232,10 +232,10 @@ pub struct AgenticSystemAuditArgs {
     /// JSON from `gh run list --limit 3000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url`.
     #[arg(long)]
     pub runs_json: Option<PathBuf>,
-    /// JSON from `gh pr list --state open --json state,mergedAt,statusCheckRollup,url`.
+    /// JSON from `gh pr list --state open --json number,title,state,mergedAt,statusCheckRollup,url`.
     #[arg(long)]
     pub open_prs_json: Option<PathBuf>,
-    /// JSON from `gh pr list --state all --json state,mergedAt,statusCheckRollup,url`.
+    /// JSON from `gh pr list --state all --json number,title,state,mergedAt,statusCheckRollup,url`.
     #[arg(long)]
     pub prs_history_json: Option<PathBuf>,
     /// Expected repository that should own local dark-factory lanes for this proof.
@@ -435,6 +435,9 @@ pub struct RunnerOpsSloAuditReport {
     pub observed_window_minutes: u64,
     pub min_window_minutes: u64,
     pub max_idle_gap_minutes_observed: u64,
+    pub max_unrecovered_idle_gap_minutes: u64,
+    pub recovered_idle_gap_minutes: u64,
+    pub recovered_idle_gaps: usize,
     pub max_idle_gap_minutes: u64,
     pub active_or_queued_sustain_runs: usize,
     pub active_or_queued_codex_growth_runs: usize,
@@ -511,6 +514,8 @@ pub struct AgenticSystemAuditReport {
 struct PrHistoryEntry {
     #[serde(default)]
     state: String,
+    #[serde(default)]
+    title: String,
     #[serde(default, rename = "mergedAt")]
     merged_at: Option<String>,
     #[serde(default, rename = "statusCheckRollup")]
@@ -1057,6 +1062,15 @@ fn runner_ops_slo_audit(args: RunnerOpsSloAuditArgs) -> Result<()> {
             "  max idle gap min     : {}",
             report.max_idle_gap_minutes_observed
         );
+        println!(
+            "  unrecovered idle min: {}",
+            report.max_unrecovered_idle_gap_minutes
+        );
+        println!(
+            "  recovered idle min  : {}",
+            report.recovered_idle_gap_minutes
+        );
+        println!("  recovered idle gaps : {}", report.recovered_idle_gaps);
         println!("  allowed idle gap min : {}", report.max_idle_gap_minutes);
         println!(
             "  active/queued sustain: {}",
@@ -1287,8 +1301,9 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
     let pr_flow_seamless =
         open_prs == 0 || (queued_required_checks == 0 && failed_required_checks == 0);
 
-    let max_idle_gap_minutes_observed = max_local_runner_idle_gap_minutes(
+    let idle_gap_recovery = local_runner_idle_gap_recovery(
         &runs,
+        &pr_history,
         proof_window_start,
         observed_end,
         args.min_sustain_duration_minutes,
@@ -1298,7 +1313,7 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
     if observed_window_minutes < min_window_minutes {
         missing_evidence.push("observed_slo_window");
     }
-    if max_idle_gap_minutes_observed > args.max_idle_gap_minutes {
+    if idle_gap_recovery.max_unrecovered_idle_gap_minutes > args.max_idle_gap_minutes {
         missing_evidence.push("idle_gap_slo");
     }
     if !sustain_or_growth_backlog_ready {
@@ -1319,7 +1334,10 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
         kclaw0_target: "unattended dark-factory operations burn-in with bounded idle gaps, event-driven rehydration, clean PR flow, and zero unrecovered failed operational runs",
         observed_window_minutes,
         min_window_minutes,
-        max_idle_gap_minutes_observed,
+        max_idle_gap_minutes_observed: idle_gap_recovery.max_idle_gap_minutes_observed,
+        max_unrecovered_idle_gap_minutes: idle_gap_recovery.max_unrecovered_idle_gap_minutes,
+        recovered_idle_gap_minutes: idle_gap_recovery.recovered_idle_gap_minutes,
+        recovered_idle_gaps: idle_gap_recovery.recovered_idle_gaps,
         max_idle_gap_minutes: args.max_idle_gap_minutes,
         active_or_queued_sustain_runs,
         active_or_queued_codex_growth_runs,
@@ -1859,14 +1877,23 @@ fn runner_sustain_duration_minutes(
     (duration_minutes >= min_duration_minutes).then_some(duration_minutes)
 }
 
-fn max_local_runner_idle_gap_minutes(
+#[derive(Debug, Clone, Copy, Default)]
+struct IdleGapRecovery {
+    max_idle_gap_minutes_observed: u64,
+    max_unrecovered_idle_gap_minutes: u64,
+    recovered_idle_gap_minutes: u64,
+    recovered_idle_gaps: usize,
+}
+
+fn local_runner_idle_gap_recovery(
     runs: &[WorkflowRunEntry],
+    pr_history: &[PrHistoryEntry],
     window_start: i64,
     window_end: i64,
     min_duration_minutes: u64,
-) -> u64 {
+) -> IdleGapRecovery {
     if window_end <= window_start {
-        return 0;
+        return IdleGapRecovery::default();
     }
     let mut intervals = runs
         .iter()
@@ -1880,19 +1907,89 @@ fn max_local_runner_idle_gap_minutes(
     intervals.sort_by_key(|(start, end)| (*start, *end));
 
     let mut cursor = window_start;
-    let mut max_gap_seconds = 0_i64;
+    let mut recovery = IdleGapRecovery::default();
     for (start, end) in intervals {
         if start > cursor {
-            max_gap_seconds = max_gap_seconds.max(start - cursor);
+            record_idle_gap(&mut recovery, cursor, start, runs, pr_history);
         }
         if end > cursor {
             cursor = end;
         }
     }
     if window_end > cursor {
-        max_gap_seconds = max_gap_seconds.max(window_end - cursor);
+        record_idle_gap(&mut recovery, cursor, window_end, runs, pr_history);
     }
-    (max_gap_seconds.max(0) as u64).div_ceil(60)
+    recovery
+}
+
+fn record_idle_gap(
+    recovery: &mut IdleGapRecovery,
+    gap_start: i64,
+    gap_end: i64,
+    runs: &[WorkflowRunEntry],
+    pr_history: &[PrHistoryEntry],
+) {
+    let minutes = ((gap_end - gap_start).max(0) as u64).div_ceil(60);
+    recovery.max_idle_gap_minutes_observed = recovery.max_idle_gap_minutes_observed.max(minutes);
+    if idle_gap_has_recovery(gap_end, runs, pr_history) {
+        recovery.recovered_idle_gap_minutes = recovery.recovered_idle_gap_minutes.max(minutes);
+        recovery.recovered_idle_gaps += 1;
+    } else {
+        recovery.max_unrecovered_idle_gap_minutes =
+            recovery.max_unrecovered_idle_gap_minutes.max(minutes);
+    }
+}
+
+fn idle_gap_has_recovery(
+    gap_end: i64,
+    runs: &[WorkflowRunEntry],
+    pr_history: &[PrHistoryEntry],
+) -> bool {
+    pr_history.iter().any(|pr| {
+        let Some(merged_at) = clean_idle_recovery_pr_merged_at(pr) else {
+            return false;
+        };
+        merged_at >= gap_end
+            && merged_at.saturating_sub(gap_end) <= 90 * 60
+            && has_successful_runner_rehydration_after(merged_at, runs)
+    })
+}
+
+fn clean_idle_recovery_pr_merged_at(pr: &PrHistoryEntry) -> Option<i64> {
+    if !pr.state.eq_ignore_ascii_case("MERGED") {
+        return None;
+    }
+    if !is_idle_recovery_pr_title(&pr.title) {
+        return None;
+    }
+    if !classify_runner_health(&pr.status_check_rollup)
+        .failed_local_checks
+        .is_empty()
+    {
+        return None;
+    }
+    pr.merged_at.as_deref().and_then(parse_rfc3339_utc_seconds)
+}
+
+fn is_idle_recovery_pr_title(title: &str) -> bool {
+    let title = title.to_ascii_lowercase();
+    (title.contains("rehydrat") || title.contains("idle") || title.contains("sustain"))
+        && (title.contains("runner") || title.contains("codex") || title.contains("completion"))
+}
+
+fn has_successful_runner_rehydration_after(merged_at: i64, runs: &[WorkflowRunEntry]) -> bool {
+    runs.iter().any(|run| {
+        let Some(created_at) = run
+            .created_at
+            .as_deref()
+            .and_then(parse_rfc3339_utc_seconds)
+        else {
+            return false;
+        };
+        created_at >= merged_at
+            && created_at.saturating_sub(merged_at) <= 60 * 60
+            && (is_successful_runner_watch_rehydration(run) || is_successful_runner_sustain(run))
+    })
 }
 
 fn runner_sustain_interval(
@@ -5010,6 +5107,60 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
+    fn runner_ops_slo_audit_accepts_recovered_idle_gap_after_clean_rehydrate_pr() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-recovered-idle-gap-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        let pr_history = temp.join("prs-history.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:05:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:56:00Z"},
+              {"name":"Runner Black Factor Watch (workflow_run CI)","status":"completed","conclusion":"success","event":"workflow_run","displayTitle":"Runner Black Factor Watch (workflow_run CI)","headBranch":"main","createdAt":"2026-06-27T00:38:00Z","updatedAt":"2026-06-27T00:39:00Z"},
+              {"name":"Runner Sustain","status":"in_progress","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:56:00Z","updatedAt":"2026-06-27T01:00:00Z"},
+              {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+        fs::write(
+            &pr_history,
+            r#"[
+              {"title":"fix: rehydrate after codex completion pressure clears","state":"MERGED","mergedAt":"2026-06-27T00:32:00Z","statusCheckRollup":[{"name":"Local Linux CI","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Semantic PR Title","status":"COMPLETED","conclusion":"SUCCESS"}]}
+            ]"#,
+        )
+        .expect("prs history json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            prs_history_json: Some(pr_history),
+            min_window_hours: 1,
+            max_idle_gap_minutes: 10,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.max_idle_gap_minutes_observed, 25);
+        assert_eq!(report.max_unrecovered_idle_gap_minutes, 0);
+        assert_eq!(report.recovered_idle_gap_minutes, 25);
+        assert_eq!(report.recovered_idle_gaps, 1);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
     fn runner_ops_slo_audit_reports_idle_failure_and_pr_pressure() {
         let temp =
             std::env::temp_dir().join(format!("fxrun-runner-ops-slo-fail-{}", std::process::id()));
@@ -5939,6 +6090,7 @@ R  docs/old.md -> docs/new.md
             "skipped_active_codex",
             "RUN_HISTORY_LIMIT: '3000'",
             "--limit \"${RUN_HISTORY_LIMIT}\"",
+            "number,title,state,mergedAt,statusCheckRollup,url",
             "agentic-dispatch.env",
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
@@ -6176,6 +6328,7 @@ R  docs/old.md -> docs/new.md
             "createdAt,updatedAt,event,displayTitle",
             "RUN_HISTORY_LIMIT: '3000'",
             "--limit \"${RUN_HISTORY_LIMIT}\"",
+            "number,title,state,mergedAt,statusCheckRollup,url",
             "actions/upload-artifact@v7",
         ] {
             assert!(

@@ -53,8 +53,8 @@ jobs:
         run: |
           set -euo pipefail
           gh run list --limit "${RUN_HISTORY_LIMIT}" --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
-          gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > prs-open.json
-          gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
+          gh pr list --state open --limit 100 --json number,title,state,mergedAt,statusCheckRollup,url > prs-open.json
+          gh pr list --state all --limit 200 --json number,title,state,mergedAt,statusCheckRollup,url > prs-history.json
       - name: Prove end-to-end agentic system
         shell: bash
         env:
@@ -72,8 +72,8 @@ jobs:
           echo "::notice::agentic proof was not ready on first read; refreshing once after black-factor top-up settles"
           sleep 90
           gh run list --limit "${RUN_HISTORY_LIMIT}" --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
-          gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > prs-open.json
-          gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
+          gh pr list --state open --limit 100 --json number,title,state,mergedAt,statusCheckRollup,url > prs-open.json
+          gh pr list --state all --limit 200 --json number,title,state,mergedAt,statusCheckRollup,url > prs-history.json
           cargo run -q -p runner-cli -- forge-loop agentic-system-audit \
             --runs-json runs-live.json \
             --open-prs-json prs-open.json \
