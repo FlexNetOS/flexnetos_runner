@@ -174,7 +174,7 @@ pub struct RunnerOpsSloAuditArgs {
     /// Maximum allowed observed idle gap between useful Runner Sustain intervals.
     #[arg(long, default_value_t = 10)]
     pub max_idle_gap_minutes: u64,
-    /// Minimum active/queued Runner Sustain backlog required at audit time.
+    /// Minimum active/queued Runner Sustain backlog required at audit time unless Codex growth is already active or queued.
     #[arg(long, default_value_t = 1)]
     pub min_active_or_queued_sustain: usize,
     /// Minimum successful event-driven Runner Black Factor Watch runs in the window.
@@ -248,7 +248,7 @@ pub struct AgenticSystemAuditArgs {
     /// Maximum allowed observed idle gap between useful runner intervals.
     #[arg(long, default_value_t = 10)]
     pub max_idle_gap_minutes: u64,
-    /// Minimum active/queued Runner Sustain backlog required at audit time.
+    /// Minimum active/queued Runner Sustain backlog required at audit time unless Codex growth is already active or queued.
     #[arg(long, default_value_t = 1)]
     pub min_active_or_queued_sustain: usize,
     /// Minimum successful event-driven Runner Black Factor Watch runs in the SLO window.
@@ -416,6 +416,8 @@ pub struct RunnerOpsSloAuditReport {
     pub max_idle_gap_minutes_observed: u64,
     pub max_idle_gap_minutes: u64,
     pub active_or_queued_sustain_runs: usize,
+    pub active_or_queued_codex_growth_runs: usize,
+    pub sustain_or_growth_backlog_ready: bool,
     pub min_active_or_queued_sustain: usize,
     pub event_watch_wakeups: usize,
     pub min_event_watch_wakeups: usize,
@@ -982,6 +984,14 @@ fn runner_ops_slo_audit(args: RunnerOpsSloAuditArgs) -> Result<()> {
             "  active/queued sustain: {}",
             report.active_or_queued_sustain_runs
         );
+        println!(
+            "  active/queued codex  : {}",
+            report.active_or_queued_codex_growth_runs
+        );
+        println!(
+            "  sustain/growth ready : {}",
+            report.sustain_or_growth_backlog_ready
+        );
         println!("  event watch wakeups  : {}", report.event_watch_wakeups);
         println!("  failed ops runs      : {}", report.failed_ops_runs);
         println!("  open PRs             : {}", report.open_prs);
@@ -1157,6 +1167,18 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
                 || run.status.eq_ignore_ascii_case("in_progress")
         })
         .count();
+    let active_or_queued_codex_growth_runs = runs
+        .iter()
+        .filter(|run| is_codex_forge_loop_name(&run.name))
+        .filter(|run| {
+            run.status.eq_ignore_ascii_case("queued")
+                || run.status.eq_ignore_ascii_case("pending")
+                || run.status.eq_ignore_ascii_case("in_progress")
+        })
+        .count();
+    let sustain_or_growth_backlog_ready = active_or_queued_sustain_runs
+        >= args.min_active_or_queued_sustain
+        || active_or_queued_codex_growth_runs > 0;
 
     let event_watch_wakeups = runs
         .iter()
@@ -1197,7 +1219,7 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
     if max_idle_gap_minutes_observed > args.max_idle_gap_minutes {
         missing_evidence.push("idle_gap_slo");
     }
-    if active_or_queued_sustain_runs < args.min_active_or_queued_sustain {
+    if !sustain_or_growth_backlog_ready {
         missing_evidence.push("active_or_queued_sustain_backlog");
     }
     if event_watch_wakeups < args.min_event_watch_wakeups {
@@ -1218,6 +1240,8 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
         max_idle_gap_minutes_observed,
         max_idle_gap_minutes: args.max_idle_gap_minutes,
         active_or_queued_sustain_runs,
+        active_or_queued_codex_growth_runs,
+        sustain_or_growth_backlog_ready,
         min_active_or_queued_sustain: args.min_active_or_queued_sustain,
         event_watch_wakeups,
         min_event_watch_wakeups: args.min_event_watch_wakeups,
@@ -1821,7 +1845,9 @@ fn local_runner_productive_interval(
     if run.name == "Runner Sustain" {
         return runner_sustain_interval(run, min_sustain_duration_minutes);
     }
-    if !matches!(run.name.as_str(), "CI" | "Semantic PR Title") {
+    if !matches!(run.name.as_str(), "CI" | "Semantic PR Title")
+        && !is_codex_forge_loop_name(&run.name)
+    {
         return None;
     }
     let start = run
@@ -1839,10 +1865,17 @@ fn local_runner_productive_interval(
 fn is_ops_workflow(name: &str) -> bool {
     matches!(name, "Runner Sustain" | "CI" | "Semantic PR Title")
         || is_runner_black_factor_watch_name(name)
+        || is_codex_forge_loop_name(name)
 }
 
 fn is_runner_black_factor_watch_name(name: &str) -> bool {
     name == "Runner Black Factor Watch" || name.starts_with("Runner Black Factor Watch (")
+}
+
+fn is_codex_forge_loop_name(name: &str) -> bool {
+    name == "Codex Forge Loop"
+        || name == ".github/workflows/codex-forge-loop.yml"
+        || name.starts_with("Codex Forge Loop (")
 }
 
 fn is_agentic_system_watch_name(name: &str) -> bool {
@@ -1907,6 +1940,7 @@ fn same_ops_replacement_family(run_name: &str, candidate_name: &str) -> bool {
     run_name == candidate_name
         || (is_runner_black_factor_watch_name(run_name)
             && is_runner_black_factor_watch_name(candidate_name))
+        || (is_codex_forge_loop_name(run_name) && is_codex_forge_loop_name(candidate_name))
         || (is_agentic_system_watch_name(run_name) && is_agentic_system_watch_name(candidate_name))
 }
 
@@ -4071,6 +4105,9 @@ mod tests {
         assert!(is_ops_workflow(
             "Runner Black Factor Watch (workflow_run CI)"
         ));
+        assert!(is_ops_workflow("Codex Forge Loop"));
+        assert!(is_ops_workflow(".github/workflows/codex-forge-loop.yml"));
+        assert!(is_ops_workflow("Codex Forge Loop (workflow_dispatch)"));
         assert!(!is_ops_workflow("Runner Black Factor"));
     }
 
@@ -4174,6 +4211,53 @@ mod tests {
 
         assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
         assert!(report.max_idle_gap_minutes_observed <= 10);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_ops_slo_audit_counts_codex_growth_as_productive_runner_work() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-codex-work-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
+              {"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_run","headBranch":"main","createdAt":"2026-06-27T00:06:00Z","updatedAt":"2026-06-27T00:07:00Z"},
+              {"name":"Codex Forge Loop","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:10:00Z","updatedAt":"2026-06-27T00:50:00Z"},
+              {"name":"Codex Forge Loop","status":"in_progress","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 1,
+            max_idle_gap_minutes: 10,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.active_or_queued_sustain_runs, 0);
+        assert_eq!(report.active_or_queued_codex_growth_runs, 1);
+        assert!(report.sustain_or_growth_backlog_ready);
+        assert!(report.max_idle_gap_minutes_observed <= 10);
+        assert!(!report
+            .missing_evidence
+            .contains(&"active_or_queued_sustain_backlog"));
         fs::remove_dir_all(temp).ok();
     }
 
