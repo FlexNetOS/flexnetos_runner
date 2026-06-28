@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
+  workflow_run:
+    workflows:
+      - CI
+      - Semantic PR Title
+      - Runner Sustain
+    types:
+      - completed
 
 permissions:
   actions: write
@@ -107,7 +114,7 @@ jobs:
             --runs-json runs-live.json \
             --prs-json prs-history.json \
             --json | tee runner-black-factor-audit.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: runner-black-factor-watch-${{ github.run_id }}
