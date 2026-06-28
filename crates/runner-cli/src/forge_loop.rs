@@ -494,6 +494,12 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
 }
 
 fn run(args: RunArgs) -> Result<()> {
+    if !args.once {
+        return Err(anyhow!(
+            "once must be true; forge-loop run executes exactly one supervised cycle"
+        ));
+    }
+
     let cycle_dir = args.out.join(timestamp_label()?);
     fs::create_dir_all(&cycle_dir)
         .with_context(|| format!("create forge-loop artifact dir {}", cycle_dir.display()))?;
@@ -2535,6 +2541,37 @@ mod tests {
                 CyclePhase::Upgrade,
             ]
         );
+    }
+
+    #[test]
+    fn run_rejects_multi_cycle_requests_before_planning() {
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-run-once-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+
+        let error = run(RunArgs {
+            goal: "attempt a forbidden second cycle".into(),
+            out: out.clone(),
+            dry_run: true,
+            auto_merge: true,
+            once: false,
+        })
+        .expect_err("run must reject multi-cycle requests before writing a plan");
+
+        assert!(
+            error.root_cause().to_string().contains("once"),
+            "error should name the single-cycle guard: {error}"
+        );
+        assert!(
+            !out.exists(),
+            "a rejected multi-cycle request must not leave cycle artifacts"
+        );
+
+        fs::remove_dir_all(out).ok();
     }
 
     #[test]
