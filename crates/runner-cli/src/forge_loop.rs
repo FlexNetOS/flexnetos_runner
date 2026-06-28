@@ -3719,6 +3719,8 @@ mod tests {
             "SLOT: ${{ inputs.lane_slot || '1' }}",
             "Yield to pull-request local checks",
             "yielding because PR pressure query failed",
+            "workflow-run pressure query failed",
+            "gh run list --limit 100 --json name,status",
             r#"case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1"#,
             "yielding mid-run",
             "gh pr list --state open",
@@ -3772,6 +3774,8 @@ mod tests {
             "skipping Runner Sustain backlog top-up because",
             "pr_pending_pressure",
             "pr_failed_pressure",
+            "required_run_pressure",
+            "required local checks need the runner lane",
             "runner-pressure.env",
             "pending PR-local checks own the runner lane",
             "dispatching Runner Sustain lane",
@@ -3789,9 +3793,11 @@ mod tests {
         }
         assert!(target.contains("Runner Black Factor Watch"));
         assert!(target.contains("schedule-driven and event-driven"));
-        assert!(target.contains("PR pressure clears"));
+        assert!(target.contains("required-check pressure clears"));
         assert!(target.contains("tops up a small `Runner Sustain` active/queued backlog"));
-        assert!(target.contains("pending PR checks make the watch yield green"));
+        assert!(
+            target.contains("pending PR or main-branch local checks make the watch yield green")
+        );
         assert!(target.contains("clamped to 1-4"));
         assert!(target.contains("defaults to 4"));
         assert!(target.contains("latest 12-hour proof window"));

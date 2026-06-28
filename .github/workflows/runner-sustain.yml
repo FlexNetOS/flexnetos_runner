@@ -49,8 +49,8 @@ jobs:
         run: |
           set -euo pipefail
           pr_pressure_count() {
-            local count
-            if ! count="$(gh pr list --state open --json statusCheckRollup --jq '
+            local pr_count run_count
+            if ! pr_count="$(gh pr list --state open --json statusCheckRollup --jq '
               [
                 .[].statusCheckRollup[]?
                 | select((.name == "Local Linux CI" or .name == "Semantic PR Title")
@@ -62,7 +62,20 @@ jobs:
               echo 1
               return 0
             fi
-            echo "$count"
+            if ! run_count="$(gh run list --limit 100 --json name,status --jq '
+              [
+                .[]
+                | select((.name == "CI" or .name == "Semantic PR Title")
+                  and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
+              ] | length
+            ')"; then
+              echo "::notice::runner-sustain yielding because workflow-run pressure query failed" >&2
+              echo 1
+              return 0
+            fi
+            case "$pr_count" in (*[!0-9]*|'') pr_count=1 ;; esac
+            case "$run_count" in (*[!0-9]*|'') run_count=1 ;; esac
+            echo $((pr_count + run_count))
           }
           pr_pressure="$(pr_pressure_count)"
           case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1 ;; esac
@@ -88,8 +101,8 @@ jobs:
           if [ "$tick_seconds" -lt 15 ]; then tick_seconds=15; fi
           if [ "$tick_seconds" -gt 300 ]; then tick_seconds=300; fi
           pr_pressure_count() {
-            local count
-            if ! count="$(gh pr list --state open --json statusCheckRollup --jq '
+            local pr_count run_count
+            if ! pr_count="$(gh pr list --state open --json statusCheckRollup --jq '
               [
                 .[].statusCheckRollup[]?
                 | select((.name == "Local Linux CI" or .name == "Semantic PR Title")
@@ -101,7 +114,20 @@ jobs:
               echo 1
               return 0
             fi
-            echo "$count"
+            if ! run_count="$(gh run list --limit 100 --json name,status --jq '
+              [
+                .[]
+                | select((.name == "CI" or .name == "Semantic PR Title")
+                  and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
+              ] | length
+            ')"; then
+              echo "::notice::runner-sustain yielding because workflow-run pressure query failed" >&2
+              echo 1
+              return 0
+            fi
+            case "$pr_count" in (*[!0-9]*|'') pr_count=1 ;; esac
+            case "$run_count" in (*[!0-9]*|'') run_count=1 ;; esac
+            echo $((pr_count + run_count))
           }
           end=$(( $(date +%s) + duration_minutes * 60 ))
           tick=0
@@ -144,7 +170,19 @@ jobs:
             echo "::notice::skipping Runner Sustain self-refill because PR pressure query failed"
             exit 0
           fi
+          if ! run_pressure="$(gh run list --limit 100 --json name,status --jq '
+            [
+              .[]
+              | select((.name == "CI" or .name == "Semantic PR Title")
+                and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
+            ] | length
+          ')"; then
+            echo "::notice::skipping Runner Sustain self-refill because workflow-run pressure query failed"
+            exit 0
+          fi
           case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1 ;; esac
+          case "$run_pressure" in (*[!0-9]*|'') run_pressure=1 ;; esac
+          pr_pressure=$((pr_pressure + run_pressure))
           if [ "$pr_pressure" -gt 0 ]; then
             echo "::notice::skipping Runner Sustain self-refill because ${pr_pressure} PR-local checks need the runner lane"
             exit 0
