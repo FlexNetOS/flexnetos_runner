@@ -3336,15 +3336,14 @@ fn publish_self_upgrade_if_needed(
     let body = format!(
         "Automated forge-loop self-upgrade.\n\nPR title: `{pr_title}`\n\nThe inner Codex session ran inside the workspace-write sandbox and left publishable repository changes in the working tree. The outer forge-loop engine committed and opened this PR so `.git` remains outside the nested Codex write surface."
     );
-    let pr_url = run_command(
+    let pr_create_output = run_command(
         "gh",
         &[
             "pr", "create", "--base", "main", "--head", &branch, "--title", pr_title, "--body",
             &body,
         ],
-    )?
-    .trim()
-    .to_string();
+    )?;
+    let pr_url = parse_pr_create_reference(&pr_create_output)?;
     append_event(
         log,
         CycleEvent {
@@ -3379,6 +3378,32 @@ fn publish_self_upgrade_if_needed(
     }
 
     Ok(Some(pr_url))
+}
+
+fn parse_pr_create_reference(output: &str) -> Result<String> {
+    let trimmed = output.trim();
+    for token in trimmed.split_whitespace().rev() {
+        let token = token.trim_matches(|c: char| matches!(c, ',' | '.' | ';' | '(' | ')'));
+        if (token.starts_with("https://") || token.starts_with("http://"))
+            && token.contains("/pull/")
+        {
+            return Ok(token.to_string());
+        }
+    }
+    for token in trimmed.split_whitespace() {
+        let token = token.trim_matches(|c: char| matches!(c, ',' | '.' | ';' | '(' | ')'));
+        if let Some(number) = token.strip_prefix('#') {
+            if !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()) {
+                return Ok(number.to_string());
+            }
+        }
+        if !token.is_empty() && token.chars().all(|c| c.is_ascii_digit()) {
+            return Ok(token.to_string());
+        }
+    }
+    Err(anyhow!(
+        "could not parse PR reference from gh pr create output: {trimmed:?}"
+    ))
 }
 
 fn dispatch_required_checks(branch: &str, pr_title: &str, log: &Path) -> Result<()> {
@@ -4244,6 +4269,32 @@ R  docs/old.md -> docs/new.md
         assert_eq!(
             args,
             vec!["gh".to_string(), "pr".to_string(), "create".to_string()]
+        );
+    }
+
+    #[test]
+    fn pr_create_reference_parser_accepts_rtk_prefixed_success_output() {
+        let parsed = parse_pr_create_reference(
+            "ok created #146 https://github.com/FlexNetOS/flexnetos_runner/pull/146\n",
+        )
+        .expect("parse rtk-wrapped gh create output");
+
+        assert_eq!(
+            parsed,
+            "https://github.com/FlexNetOS/flexnetos_runner/pull/146"
+        );
+    }
+
+    #[test]
+    fn pr_create_reference_parser_accepts_plain_url_or_number() {
+        assert_eq!(
+            parse_pr_create_reference("https://github.com/FlexNetOS/flexnetos_runner/pull/147\n")
+                .expect("plain URL"),
+            "https://github.com/FlexNetOS/flexnetos_runner/pull/147"
+        );
+        assert_eq!(
+            parse_pr_create_reference("#148\n").expect("plain PR number"),
+            "148"
         );
     }
 
