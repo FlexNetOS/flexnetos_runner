@@ -45,6 +45,8 @@ pub enum ForgeLoopCommand {
     RunnerFlowAudit(RunnerFlowAuditArgs),
     /// Audit observed runner history against the kclaw0 black-factor/dark-factory window target.
     RunnerBlackFactorAudit(RunnerBlackFactorAuditArgs),
+    /// Audit unattended dark-factory operational SLO evidence over a burn-in window.
+    RunnerOpsSloAudit(RunnerOpsSloAuditArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
     DocsDrift(DocsDriftArgs),
     /// Inventory Codex loop components and config surfaces for upgrade planning.
@@ -149,6 +151,40 @@ pub struct RunnerBlackFactorAuditArgs {
     #[arg(long)]
     pub json: bool,
     /// Return non-zero when the observed window does not exceed the target.
+    #[arg(long)]
+    pub strict: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RunnerOpsSloAuditArgs {
+    /// JSON from `gh run list --json name,status,conclusion,createdAt,updatedAt,event,url`.
+    #[arg(long)]
+    pub runs_json: PathBuf,
+    /// JSON from `gh pr list --state open --json statusCheckRollup,url`.
+    #[arg(long)]
+    pub prs_json: PathBuf,
+    /// Minimum observed burn-in window in hours.
+    #[arg(long, default_value_t = 1)]
+    pub min_window_hours: u64,
+    /// Maximum allowed observed idle gap between useful Runner Sustain intervals.
+    #[arg(long, default_value_t = 10)]
+    pub max_idle_gap_minutes: u64,
+    /// Minimum active/queued Runner Sustain backlog required at audit time.
+    #[arg(long, default_value_t = 1)]
+    pub min_active_or_queued_sustain: usize,
+    /// Minimum successful workflow_run-triggered Runner Black Factor Watch runs in the window.
+    #[arg(long, default_value_t = 1)]
+    pub min_event_watch_wakeups: usize,
+    /// Maximum failed operational workflow runs allowed in the window.
+    #[arg(long, default_value_t = 0)]
+    pub max_failed_ops_runs: usize,
+    /// Minimum wall-clock duration required before a completed Runner Sustain success counts as useful work.
+    #[arg(long, default_value_t = 5)]
+    pub min_sustain_duration_minutes: u64,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return non-zero when the burn-in SLO evidence is incomplete.
     #[arg(long)]
     pub strict: bool,
 }
@@ -284,6 +320,27 @@ pub struct RunnerBlackFactorAuditReport {
     pub missing_evidence: Vec<&'static str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerOpsSloAuditReport {
+    pub kclaw0_target: &'static str,
+    pub observed_window_minutes: u64,
+    pub min_window_minutes: u64,
+    pub max_idle_gap_minutes_observed: u64,
+    pub max_idle_gap_minutes: u64,
+    pub active_or_queued_sustain_runs: usize,
+    pub min_active_or_queued_sustain: usize,
+    pub event_watch_wakeups: usize,
+    pub min_event_watch_wakeups: usize,
+    pub failed_ops_runs: usize,
+    pub max_failed_ops_runs: usize,
+    pub open_prs: usize,
+    pub queued_required_checks: usize,
+    pub failed_required_checks: usize,
+    pub pr_flow_seamless: bool,
+    pub burn_in_ready: bool,
+    pub missing_evidence: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct PrHistoryEntry {
     #[serde(default)]
@@ -314,6 +371,8 @@ struct WorkflowRunEntry {
     status: String,
     #[serde(default)]
     conclusion: String,
+    #[serde(default)]
+    event: String,
     #[serde(default)]
     name: String,
     #[serde(default, rename = "createdAt")]
@@ -425,6 +484,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::RunnerHealth(args) => runner_health(args),
         ForgeLoopCommand::RunnerFlowAudit(args) => runner_flow_audit(args),
         ForgeLoopCommand::RunnerBlackFactorAudit(args) => runner_black_factor_audit(args),
+        ForgeLoopCommand::RunnerOpsSloAudit(args) => runner_ops_slo_audit(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
         ForgeLoopCommand::TargetMiningAudit(args) => target_mining_audit(args),
@@ -591,7 +651,8 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "required_gate_commands": REQUIRED_GATE_COMMANDS,
         "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
         "runner_flow_audit": "fxrun forge-loop runner-flow-audit --json",
-        "runner_black_factor_audit": "fxrun forge-loop runner-black-factor-audit --json"
+        "runner_black_factor_audit": "fxrun forge-loop runner-black-factor-audit --json",
+        "runner_ops_slo_audit": "fxrun forge-loop runner-ops-slo-audit --json"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -609,6 +670,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         println!("  runner health      : use `fxrun forge-loop runner-health --checks-json <gh-pr-view.json>`");
         println!("  runner flow        : use `fxrun forge-loop runner-flow-audit --json`");
         println!("  black-factor proof : use `fxrun forge-loop runner-black-factor-audit --json`");
+        println!("  ops SLO burn-in    : use `fxrun forge-loop runner-ops-slo-audit --json`");
         println!("  component audit    : use `fxrun forge-loop components-audit --json`");
         println!("  target mining      : use `fxrun forge-loop target-mining-audit --json`");
         println!(
@@ -740,6 +802,167 @@ fn runner_black_factor_audit(args: RunnerBlackFactorAuditArgs) -> Result<()> {
     }
 }
 
+fn runner_ops_slo_audit(args: RunnerOpsSloAuditArgs) -> Result<()> {
+    let report = runner_ops_slo_audit_report(&args)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop runner ops SLO audit");
+        println!("  kclaw0 target        : {}", report.kclaw0_target);
+        println!(
+            "  observed window min  : {}",
+            report.observed_window_minutes
+        );
+        println!("  required window min  : {}", report.min_window_minutes);
+        println!(
+            "  max idle gap min     : {}",
+            report.max_idle_gap_minutes_observed
+        );
+        println!("  allowed idle gap min : {}", report.max_idle_gap_minutes);
+        println!(
+            "  active/queued sustain: {}",
+            report.active_or_queued_sustain_runs
+        );
+        println!("  event watch wakeups  : {}", report.event_watch_wakeups);
+        println!("  failed ops runs      : {}", report.failed_ops_runs);
+        println!("  open PRs             : {}", report.open_prs);
+        println!("  queued required      : {}", report.queued_required_checks);
+        println!("  failed required      : {}", report.failed_required_checks);
+        println!("  PR flow seamless     : {}", report.pr_flow_seamless);
+        println!("  burn-in ready        : {}", report.burn_in_ready);
+        if !report.missing_evidence.is_empty() {
+            println!("  missing evidence     :");
+            for item in &report.missing_evidence {
+                println!("    - {item}");
+            }
+        }
+    }
+
+    if args.strict && !report.burn_in_ready {
+        Err(anyhow!(
+            "runner ops SLO evidence incomplete: {}",
+            report.missing_evidence.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOpsSloAuditReport> {
+    let runs = parse_json_vec::<WorkflowRunEntry>(&args.runs_json)?;
+    let prs = parse_json_vec::<PrFlowEntry>(&args.prs_json)?;
+
+    let timestamps = runs
+        .iter()
+        .filter_map(|run| run.created_at.as_deref())
+        .filter_map(parse_rfc3339_utc_seconds)
+        .collect::<Vec<_>>();
+    let (observed_start, observed_end) = match (timestamps.iter().min(), timestamps.iter().max()) {
+        (Some(first), Some(last)) if last >= first => (*first, *last),
+        _ => (0, 0),
+    };
+    let observed_window_minutes = if observed_end >= observed_start {
+        ((observed_end - observed_start) / 60) as u64
+    } else {
+        0
+    };
+    let min_window_minutes = args.min_window_hours.saturating_mul(60);
+    let proof_window_start = observed_end.saturating_sub((min_window_minutes as i64) * 60);
+
+    let run_in_window = |run: &WorkflowRunEntry| {
+        run.created_at
+            .as_deref()
+            .and_then(parse_rfc3339_utc_seconds)
+            .is_some_and(|created| created >= proof_window_start)
+    };
+
+    let active_or_queued_sustain_runs = runs
+        .iter()
+        .filter(|run| run.name == "Runner Sustain")
+        .filter(|run| {
+            run.status.eq_ignore_ascii_case("queued")
+                || run.status.eq_ignore_ascii_case("pending")
+                || run.status.eq_ignore_ascii_case("in_progress")
+        })
+        .count();
+
+    let event_watch_wakeups = runs
+        .iter()
+        .filter(|run| run.name == "Runner Black Factor Watch")
+        .filter(|run| run.event.eq_ignore_ascii_case("workflow_run"))
+        .filter(|run| run.status.eq_ignore_ascii_case("completed"))
+        .filter(|run| run.conclusion.eq_ignore_ascii_case("success"))
+        .filter(|run| run_in_window(run))
+        .count();
+
+    let failed_ops_runs = runs
+        .iter()
+        .filter(|run| run_in_window(run))
+        .filter(|run| is_ops_workflow(&run.name))
+        .filter(|run| run.status.eq_ignore_ascii_case("completed"))
+        .filter(|run| is_failed_conclusion(&run.conclusion))
+        .count();
+
+    let mut queued_required_checks = 0;
+    let mut failed_required_checks = 0;
+    for pr in &prs {
+        let runner_health = classify_runner_health(&pr.status_check_rollup);
+        queued_required_checks += runner_health.pending_local_checks.len();
+        failed_required_checks += runner_health.failed_local_checks.len();
+    }
+    let open_prs = prs.len();
+    let pr_flow_seamless =
+        open_prs == 0 || (queued_required_checks == 0 && failed_required_checks == 0);
+
+    let max_idle_gap_minutes_observed = max_runner_sustain_idle_gap_minutes(
+        &runs,
+        proof_window_start,
+        observed_end,
+        args.min_sustain_duration_minutes,
+    );
+
+    let mut missing_evidence = Vec::new();
+    if observed_window_minutes < min_window_minutes {
+        missing_evidence.push("observed_slo_window");
+    }
+    if max_idle_gap_minutes_observed > args.max_idle_gap_minutes {
+        missing_evidence.push("idle_gap_slo");
+    }
+    if active_or_queued_sustain_runs < args.min_active_or_queued_sustain {
+        missing_evidence.push("active_or_queued_sustain_backlog");
+    }
+    if event_watch_wakeups < args.min_event_watch_wakeups {
+        missing_evidence.push("event_watch_rehydration");
+    }
+    if failed_ops_runs > args.max_failed_ops_runs {
+        missing_evidence.push("failed_ops_budget");
+    }
+    if !pr_flow_seamless {
+        missing_evidence.push("seamless_pr_flow");
+    }
+    let burn_in_ready = missing_evidence.is_empty();
+
+    Ok(RunnerOpsSloAuditReport {
+        kclaw0_target: "unattended dark-factory operations burn-in with bounded idle gaps, event-driven rehydration, clean PR flow, and zero failed operational runs",
+        observed_window_minutes,
+        min_window_minutes,
+        max_idle_gap_minutes_observed,
+        max_idle_gap_minutes: args.max_idle_gap_minutes,
+        active_or_queued_sustain_runs,
+        min_active_or_queued_sustain: args.min_active_or_queued_sustain,
+        event_watch_wakeups,
+        min_event_watch_wakeups: args.min_event_watch_wakeups,
+        failed_ops_runs,
+        max_failed_ops_runs: args.max_failed_ops_runs,
+        open_prs,
+        queued_required_checks,
+        failed_required_checks,
+        pr_flow_seamless,
+        burn_in_ready,
+        missing_evidence,
+    })
+}
+
 fn runner_black_factor_audit_report(
     args: &RunnerBlackFactorAuditArgs,
 ) -> Result<RunnerBlackFactorAuditReport> {
@@ -861,6 +1084,83 @@ fn runner_sustain_duration_minutes(
     }
     let duration_minutes = ((updated - created) / 60) as u64;
     (duration_minutes >= min_duration_minutes).then_some(duration_minutes)
+}
+
+fn max_runner_sustain_idle_gap_minutes(
+    runs: &[WorkflowRunEntry],
+    window_start: i64,
+    window_end: i64,
+    min_duration_minutes: u64,
+) -> u64 {
+    if window_end <= window_start {
+        return 0;
+    }
+    let mut intervals = runs
+        .iter()
+        .filter(|run| run.name == "Runner Sustain")
+        .filter_map(|run| runner_sustain_interval(run, min_duration_minutes))
+        .filter_map(|(start, end)| {
+            let clipped_start = start.max(window_start);
+            let clipped_end = end.min(window_end);
+            (clipped_end >= clipped_start).then_some((clipped_start, clipped_end))
+        })
+        .collect::<Vec<_>>();
+    intervals.sort_by_key(|(start, end)| (*start, *end));
+
+    let mut cursor = window_start;
+    let mut max_gap_seconds = 0_i64;
+    for (start, end) in intervals {
+        if start > cursor {
+            max_gap_seconds = max_gap_seconds.max(start - cursor);
+        }
+        if end > cursor {
+            cursor = end;
+        }
+    }
+    if window_end > cursor {
+        max_gap_seconds = max_gap_seconds.max(window_end - cursor);
+    }
+    (max_gap_seconds.max(0) as u64).div_ceil(60)
+}
+
+fn runner_sustain_interval(
+    run: &WorkflowRunEntry,
+    min_duration_minutes: u64,
+) -> Option<(i64, i64)> {
+    if run.name != "Runner Sustain" {
+        return None;
+    }
+    let start = run
+        .created_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc_seconds)?;
+    let end = run
+        .updated_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc_seconds)
+        .unwrap_or(start);
+
+    if run.status.eq_ignore_ascii_case("queued") || run.status.eq_ignore_ascii_case("in_progress") {
+        return Some((start, end.max(start)));
+    }
+    if runner_sustain_duration_minutes(run, min_duration_minutes).is_some() {
+        return Some((start, end.max(start)));
+    }
+    None
+}
+
+fn is_ops_workflow(name: &str) -> bool {
+    matches!(
+        name,
+        "Runner Sustain" | "Runner Black Factor Watch" | "CI" | "Semantic PR Title"
+    )
+}
+
+fn is_failed_conclusion(conclusion: &str) -> bool {
+    matches!(
+        conclusion.to_ascii_lowercase().as_str(),
+        "failure" | "timed_out" | "cancelled" | "action_required"
+    )
 }
 
 fn parse_rfc3339_utc_seconds(value: &str) -> Option<i64> {
