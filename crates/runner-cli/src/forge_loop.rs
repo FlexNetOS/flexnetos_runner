@@ -2033,6 +2033,54 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 ("crates/runner-cli/src/forge_loop.rs", "oh-my-codex"),
             ],
         },
+        TargetMiningTarget {
+            id: "kclaw0",
+            url: "https://github.com/drdave-flexnetos/kclaw0",
+            source_terms: &[
+                "drdave-flexnetos/kclaw0",
+                "24/7 autonomous operation",
+                "self-upgrade pipeline",
+                "GitHub label state machine",
+                "holdout validation",
+            ],
+            application_terms: &[
+                (
+                    "docs/forge-loop/kclaw0-runner-flow-target.md",
+                    "runner-black-factor-audit --strict",
+                ),
+                (
+                    "docs/forge-loop/kclaw0-runner-flow-target.md",
+                    "runner-ops-slo-audit --strict",
+                ),
+                (
+                    "docs/forge-loop/kclaw0-runner-flow-target.md",
+                    "runner-fleet-audit --strict",
+                ),
+                (
+                    ".github/workflows/runner-sustain.yml",
+                    "name: Runner Sustain",
+                ),
+                (
+                    ".github/workflows/runner-black-factor-watch.yml",
+                    "name: Runner Black Factor Watch",
+                ),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "runner_black_factor_audit_accepts_kclaw0_window_fixture",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "runner_ops_slo_audit_accepts_event_rehydrated_burn_in",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "runner_fleet_audit_flags_external_repo_lane_pressure",
+                ),
+                ("crates/runner-cli/src/forge_loop.rs", "kclaw0"),
+            ],
+        },
     ]
 }
 
@@ -4183,7 +4231,14 @@ mod tests {
             .expect("workspace root");
         let report = target_mining_audit_report(root);
 
-        assert_eq!(report.checked_targets, 5);
+        assert_eq!(report.checked_targets, 6);
+        assert!(
+            report
+                .covered_targets
+                .iter()
+                .any(|target| target == "kclaw0"),
+            "kclaw0 target must be first-class target-mining coverage"
+        );
         assert!(
             report.missing_targets.is_empty(),
             "target mining gaps: {:?}",
