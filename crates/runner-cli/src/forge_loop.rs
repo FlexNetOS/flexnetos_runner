@@ -3231,7 +3231,7 @@ mod tests {
             "runner-black-factor-audit",
             "createdAt,updatedAt",
             "--limit 1000",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@v7",
         ] {
             assert!(
                 workflow.contains(required),

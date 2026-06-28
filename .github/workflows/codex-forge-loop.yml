@@ -47,7 +47,7 @@ jobs:
           allow-bots: dependabot[bot]
           output-file: codex-forge-loop-output.md
       - name: Upload Codex output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: codex-forge-loop-output
           path: |
