@@ -24,9 +24,8 @@ previous narrower proofs.
    after `Runner Black Factor Watch` has had a chance to top up sustain. When no PR is open,
    no PR-local checks are under pressure, and no Codex run is already active, it dispatches
    `Codex Forge Loop` for the next strict-upgrade research/adapt/grow cycle. The Codex workflow
-   uses `OPENAI_API_KEY` when that repo secret exists and otherwise falls back to the
-   already-authenticated local ChatGPT/Codex subscription on the self-hosted runner. Each completed
-   Codex run rehydrates sustain work, waits/retries for PR-local pressure to clear, wakes
+   uses the already-authenticated local ChatGPT/Codex subscription on the self-hosted runner. Each
+   completed Codex run rehydrates sustain work, waits/retries for PR-local pressure to clear, wakes
    `Runner Black Factor Watch`, and wakes `Agentic System Watch` with `trigger_source=codex_completion`;
    `Runner Black Factor Watch` also wakes from the fully completed `Codex Forge Loop` workflow_run event
    so pressure that is still visible during the explicit dispatch gets a post-completion retry. The
