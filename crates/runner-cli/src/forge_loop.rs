@@ -1405,9 +1405,11 @@ fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticS
                 "gh workflow run codex-forge-loop.yml",
             ),
             (
-                ".github/workflows/agentic-system-watch.yml",
-                "OPENAI_API_KEY",
+                ".github/workflows/codex-forge-loop.yml",
+                "openai/codex-action@v1",
             ),
+            (".github/workflows/codex-forge-loop.yml", "CODEX_HOME"),
+            (".github/workflows/codex-forge-loop.yml", "codex exec"),
         ],
     );
 
@@ -4655,6 +4657,7 @@ mod tests {
         );
 
         for required in [
+            "runs-on: [self-hosted, linux, x64, local, flexnetos]",
             "openai/codex-action@v1",
             "prompt-file:",
             "codex-args:",
@@ -4666,6 +4669,14 @@ mod tests {
             "safety-strategy: drop-sudo",
             "allow-bots:",
             "output-file:",
+            "CODEX_HOME:",
+            "login status",
+            "codex exec",
+            "--ignore-user-config",
+            "--output-last-message",
+            "GH_TOKEN:",
+            "PROMPT_FILE_INPUT:",
+            "invalid prompt_file input",
             "features.auto_compaction=true",
             "model_auto_compact_token_limit=3000000",
         ] {
@@ -4695,11 +4706,11 @@ mod tests {
             "Runner Black Factor Watch",
             "actions: write",
             "refreshing once after black-factor top-up settles",
-            "OPENAI_API_KEY",
             "agentic-system-audit",
             "--strict",
             "gh workflow run codex-forge-loop.yml",
-            "skipped_missing_openai_api_key",
+            "local ChatGPT auth",
+            "dispatch=codex_forge_loop",
             "skipped_open_pr",
             "skipped_pr_pressure",
             "skipped_active_codex",

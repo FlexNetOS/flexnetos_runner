@@ -21,9 +21,11 @@ previous narrower proofs.
 5. **Fleet truth** — local self-hosted runner lanes must be attributable and not silently occupied
    by external unhealthy work during the proof.
 6. **Self-improvement dispatch** — `Agentic System Watch` must periodically prove this audit and run
-   after `Runner Black Factor Watch` has had a chance to top up sustain. When `OPENAI_API_KEY`
-   exists, no PR is open, no PR-local checks are under pressure, and no Codex run is already active,
-   it dispatches `Codex Forge Loop` for the next strict-upgrade research/adapt/grow cycle.
+   after `Runner Black Factor Watch` has had a chance to top up sustain. When no PR is open,
+   no PR-local checks are under pressure, and no Codex run is already active, it dispatches
+   `Codex Forge Loop` for the next strict-upgrade research/adapt/grow cycle. The Codex workflow
+   uses `OPENAI_API_KEY` when that repo secret exists and otherwise falls back to the
+   already-authenticated local ChatGPT/Codex subscription on the self-hosted runner.
 
 Strict live proof command:
 
