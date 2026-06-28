@@ -653,6 +653,7 @@ pub struct CompactContinuityArtifact {
     pub source_coverage: Vec<String>,
     pub research_output_contract: Vec<String>,
     pub validation_state: Vec<String>,
+    pub validation_sources: Vec<String>,
     pub next_action: String,
     pub phase_source_validation_next_action: String,
 }
@@ -3738,10 +3739,42 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             .iter()
             .map(|command| format!("pending: {command}"))
             .collect(),
+        validation_sources: validation_source_entries(),
         next_action: "continue with the next required forge-loop phase".into(),
         phase_source_validation_next_action:
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
+    }
+}
+
+fn validation_source_entries() -> Vec<String> {
+    REQUIRED_GATE_COMMANDS
+        .iter()
+        .map(|command| {
+            format!(
+                "phase={} source=required_gate_commands validation_state=pending command={command}",
+                cycle_phase_label(validation_phase_for_command(command))
+            )
+        })
+        .collect()
+}
+
+fn validation_phase_for_command(command: &str) -> CyclePhase {
+    if command.contains("forge-loop eval --fixture") {
+        CyclePhase::Evaluate
+    } else {
+        CyclePhase::Gate
+    }
+}
+
+fn cycle_phase_label(phase: CyclePhase) -> &'static str {
+    match phase {
+        CyclePhase::Red => "Red",
+        CyclePhase::Implement => "Implement",
+        CyclePhase::Gate => "Gate",
+        CyclePhase::Evaluate => "Evaluate",
+        CyclePhase::Research => "Research",
+        CyclePhase::Upgrade => "Upgrade",
     }
 }
 
@@ -4472,6 +4505,17 @@ R  docs/old.md -> docs/new.md
                 "compact continuity artifact missing pending validation entry {expected}"
             );
         }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_attributes_evaluation_validation_source() {
+        let artifact = compact_continuity_artifact();
+
+        assert!(
+            artifact.validation_sources.iter().any(|entry| entry
+                == "phase=Evaluate source=required_gate_commands validation_state=pending command=rtk cargo run -q -p runner-cli -- forge-loop eval --fixture"),
+            "compact continuity artifact must preserve eval phase/source validation continuity"
+        );
     }
 
     #[test]
@@ -5756,6 +5800,7 @@ R  docs/old.md -> docs/new.md
             "tool_surfaces",
             "structured_output_schemas",
             "auto_compaction_continuity_settings",
+            "validation_sources",
         ] {
             assert!(
                 output_schema.contains(required),
