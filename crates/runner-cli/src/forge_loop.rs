@@ -2081,6 +2081,45 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 ("crates/runner-cli/src/forge_loop.rs", "kclaw0"),
             ],
         },
+        TargetMiningTarget {
+            id: "kclaw0-referenced-resources",
+            url: "https://github.com/drdave-flexnetos/kclaw0",
+            source_terms: &[
+                "kclaw0 referenced resources",
+                "strongdm/attractor",
+                "coleam00/Archon",
+                "Conway-Research/automaton",
+                "oh-my-pi",
+            ],
+            application_terms: &[
+                ("docs/kclaw0-upgrade-ledger.md", "Prior-art batch"),
+                (
+                    "docs/kclaw0-upgrade-ledger.md",
+                    "Cycle-11 deep-research sweep",
+                ),
+                (
+                    "docs/kclaw0-upgrade-ledger.md",
+                    "Cycle-16 deep-research sweep",
+                ),
+                ("docs/kclaw0-upgrade-ledger.md", "strongdm/attractor"),
+                ("docs/kclaw0-upgrade-ledger.md", "coleam00/Archon"),
+                ("docs/kclaw0-upgrade-ledger.md", "Conway-Research/automaton"),
+            ],
+            guard_terms: &[
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "target_mining_audit_report",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "kclaw0-referenced-resources",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "kclaw0 referenced resources must be first-class target-mining coverage",
+                ),
+            ],
+        },
     ]
 }
 
@@ -4231,13 +4270,20 @@ mod tests {
             .expect("workspace root");
         let report = target_mining_audit_report(root);
 
-        assert_eq!(report.checked_targets, 6);
+        assert_eq!(report.checked_targets, 7);
         assert!(
             report
                 .covered_targets
                 .iter()
                 .any(|target| target == "kclaw0"),
             "kclaw0 target must be first-class target-mining coverage"
+        );
+        assert!(
+            report
+                .covered_targets
+                .iter()
+                .any(|target| target == "kclaw0-referenced-resources"),
+            "kclaw0 referenced resources must be first-class target-mining coverage"
         );
         assert!(
             report.missing_targets.is_empty(),
