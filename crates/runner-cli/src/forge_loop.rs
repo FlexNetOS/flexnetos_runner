@@ -16,6 +16,7 @@ const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
 const AUTO_COMPACT_TOKEN_LIMIT: u32 = 3_000_000;
 const TOOL_OUTPUT_TOKEN_LIMIT: u32 = 12_000;
 const COMPACT_PROMPT_PATH: &str = ".codex/prompts/compact-forge-loop.md";
+const CODEX_FORGE_LOOP_OUTPUT: &str = "codex-forge-loop-output.md";
 const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "cargo fmt --all -- --check",
     "cargo test -p runner-cli --all-features forge_loop::tests",
@@ -726,6 +727,26 @@ fn run(args: RunArgs) -> Result<()> {
             },
         )?;
         return Err(anyhow!("codex exec failed with status {status}"));
+    }
+
+    let pr_title = cycle_pr_title(&args.goal);
+    match publish_self_upgrade_if_needed(&pr_title, args.auto_merge, &log)? {
+        Some(pr_url) => append_event(
+            &log,
+            CycleEvent {
+                event: "publish.pr_opened",
+                phase: CyclePhase::Upgrade,
+                detail: &pr_url,
+            },
+        )?,
+        None => append_event(
+            &log,
+            CycleEvent {
+                event: "publish.no_changes",
+                phase: CyclePhase::Evaluate,
+                detail: "codex completed without publishable repository changes",
+            },
+        )?,
     }
 
     append_event(
@@ -3120,7 +3141,7 @@ impl EvalInput {
 fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
     let pr_title = cycle_pr_title(goal);
     format!(
-        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, research one reliability/accuracy/speed improvement, and if a self-upgrade is warranted commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof.",
+        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof.",
         if auto_merge { "auto-merge once green when repository settings allow" } else { "leave the PR ready for review" }
     )
 }
@@ -3183,6 +3204,117 @@ fn research_prompt(focus: &str, sources: &[ResearchSource]) -> String {
     format!(
         "Research Codex forge-loop improvements focused on {focus}. Scan these references and return actionable, source-attributed upgrades for reliability, accuracy, and speed:\n{list}"
     )
+}
+
+fn publish_self_upgrade_if_needed(
+    pr_title: &str,
+    auto_merge: bool,
+    log: &Path,
+) -> Result<Option<String>> {
+    let status = run_command("git", &["status", "--porcelain", "--untracked-files=all"])?;
+    let paths = publishable_paths_from_status(&status);
+    if paths.is_empty() {
+        return Ok(None);
+    }
+
+    let branch = format!("codex/forge-loop-self-upgrade-{}", timestamp_label()?);
+    run_command("git", &["switch", "-c", &branch])?;
+
+    let mut add_args = vec!["add".to_string(), "--".to_string()];
+    add_args.extend(paths.iter().cloned());
+    run_command_owned("git", add_args)?;
+
+    run_command(
+        "git",
+        &[
+            "-c",
+            "user.name=codex-forge-loop",
+            "-c",
+            "user.email=codex-forge-loop@users.noreply.github.com",
+            "commit",
+            "-m",
+            pr_title,
+        ],
+    )?;
+    run_command("git", &["push", "-u", "origin", &branch])?;
+
+    let body = format!(
+        "Automated forge-loop self-upgrade.\n\nPR title: `{pr_title}`\n\nThe inner Codex session ran inside the workspace-write sandbox and left publishable repository changes in the working tree. The outer forge-loop engine committed and opened this PR so `.git` remains outside the nested Codex write surface."
+    );
+    let pr_url = run_command(
+        "gh",
+        &[
+            "pr", "create", "--base", "main", "--head", &branch, "--title", pr_title, "--body",
+            &body,
+        ],
+    )?
+    .trim()
+    .to_string();
+    append_event(
+        log,
+        CycleEvent {
+            event: "publish.pr_created",
+            phase: CyclePhase::Upgrade,
+            detail: &pr_url,
+        },
+    )?;
+
+    if auto_merge {
+        run_command(
+            "gh",
+            &[
+                "pr",
+                "merge",
+                &pr_url,
+                "--auto",
+                "--squash",
+                "--delete-branch",
+            ],
+        )?;
+        append_event(
+            log,
+            CycleEvent {
+                event: "publish.auto_merge_requested",
+                phase: CyclePhase::Upgrade,
+                detail: &pr_url,
+            },
+        )?;
+    }
+
+    Ok(Some(pr_url))
+}
+
+fn publishable_paths_from_status(status: &str) -> Vec<String> {
+    status
+        .lines()
+        .filter_map(|line| line.get(3..))
+        .map(str::trim)
+        .filter_map(|path| path.split(" -> ").last())
+        .filter(|path| *path != CODEX_FORGE_LOOP_OUTPUT)
+        .filter(|path| !path.starts_with("_work/"))
+        .filter(|path| !path.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn run_command(program: &str, args: &[&str]) -> Result<String> {
+    run_command_owned(program, args.iter().map(|arg| (*arg).to_string()).collect())
+}
+
+fn run_command_owned(program: &str, args: Vec<String>) -> Result<String> {
+    let output = Command::new(program)
+        .args(&args)
+        .output()
+        .with_context(|| format!("spawn {program} {}", args.join(" ")))?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "{program} {} failed with status {}: {}",
+            args.join(" "),
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 fn compact_continuity_artifact() -> CompactContinuityArtifact {
@@ -3544,6 +3676,32 @@ mod tests {
 
         assert!(prompt.contains("Do not start another cycle."));
         assert!(prompt.contains("PR title 'chore: forge loop cycle 07'"));
+        assert!(prompt.contains("leave the intended repository changes in the working tree"));
+        assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
+        assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
+    }
+
+    #[test]
+    fn publishable_paths_ignore_runtime_artifacts() {
+        let paths = publishable_paths_from_status(
+            r#" M crates/runner-cli/src/forge_loop.rs
+ M docs/kclaw0-upgrade-ledger.md
+?? codex-forge-loop-output.md
+?? _work/forge-loop/cycle/events.jsonl
+?? docs/forge-loop/new-artifact.md
+R  docs/old.md -> docs/new.md
+"#,
+        );
+
+        assert_eq!(
+            paths,
+            vec![
+                "crates/runner-cli/src/forge_loop.rs".to_string(),
+                "docs/kclaw0-upgrade-ledger.md".to_string(),
+                "docs/forge-loop/new-artifact.md".to_string(),
+                "docs/new.md".to_string(),
+            ]
+        );
     }
 
     #[test]
