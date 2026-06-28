@@ -2968,6 +2968,7 @@ pub fn research_sources() -> Vec<ResearchSource> {
         ResearchSource { id: "oh-my-codex", url: "https://github.com/Yeachan-Heo/oh-my-codex", purpose: "multi-agent teams, hooks, HUDs, and Codex orchestration UX" },
         ResearchSource { id: "crates-io", url: "https://crates.io", purpose: "Rust crates that improve loop reliability, accuracy, speed, tracing, and scheduling" },
         ResearchSource { id: "kclaw0", url: "https://github.com/drdave-flexnetos/kclaw0", purpose: "local dark-factory/self-upgrade prior art and governance patterns" },
+        ResearchSource { id: "kclaw0-upgrade-ledger", url: "docs/kclaw0-upgrade-ledger.md", purpose: "local applied-governance ledger for strict-upgrade parity, validation, and prior-art continuity" },
     ]
 }
 
@@ -3297,7 +3298,7 @@ fn research_prompt(focus: &str, sources: &[ResearchSource]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "Research Codex forge-loop improvements focused on {focus}. Scan these references and return actionable, source-attributed upgrades for reliability, accuracy, and speed:\n{list}"
+        "Research Codex forge-loop improvements focused on {focus}. Scan these references and return actionable, source-attributed upgrades for reliability, accuracy, and speed:\n{list}\n\nOutput format:\n- one-line summary\n- source-attributed findings\n- loop component/config inventory\n- one recommended smallest safe self-upgrade\n- tests required before merge"
     )
 }
 
@@ -5448,6 +5449,34 @@ R  docs/old.md -> docs/new.md
             "structured output schemas",
         ] {
             assert!(skill.contains(required), "skill missing {required}");
+        }
+    }
+
+    #[test]
+    fn research_prompt_requires_complete_source_attributed_output_shape() {
+        let prompt = research_prompt("subscription-auth reliability", &research_sources());
+
+        for required in [
+            "github.com/openai/codex",
+            "developers.openai.com/codex/config-advanced",
+            "developers.openai.com/codex/github-action",
+            "developers.openai.com/codex/permissions",
+            "developers.openai.com/codex/subagents",
+            "RoggeOhta/awesome-codex-cli",
+            "Yeachan-Heo/oh-my-codex",
+            "crates.io",
+            "drdave-flexnetos/kclaw0",
+            "docs/kclaw0-upgrade-ledger.md",
+            "one-line summary",
+            "source-attributed findings",
+            "loop component/config inventory",
+            "one recommended smallest safe self-upgrade",
+            "tests required before merge",
+        ] {
+            assert!(
+                prompt.contains(required),
+                "research prompt missing {required}"
+            );
         }
     }
 
