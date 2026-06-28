@@ -3,12 +3,18 @@ name: Semantic PR Title
 on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_title:
+        description: PR title to validate for action-created PR required-check dispatch
+        required: true
+        type: string
 
 permissions:
   pull-requests: read
 
 concurrency:
-  group: semantic-pr-title-${{ github.event.pull_request.number }}
+  group: semantic-pr-title-${{ github.event.pull_request.number || inputs.pr_title || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -16,7 +22,7 @@ jobs:
     name: Semantic PR Title
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     env:
-      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_TITLE: ${{ github.event.pull_request.title || inputs.pr_title }}
     steps:
       - name: Validate PR title locally
         shell: bash

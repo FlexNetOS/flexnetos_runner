@@ -12,6 +12,8 @@ const DEFAULT_CODEX: &str = "/home/drdave/Desktop/meta/.toolchains/codex/bin/cod
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
+const REQUIRED_CHECK_WORKFLOWS: &[&str] = &["ci.yml", "semantic-pr-title.yml"];
+const SEMANTIC_PR_TITLE_INPUT: &str = "pr_title";
 const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
 const AUTO_COMPACT_TOKEN_LIMIT: u32 = 3_000_000;
 const TOOL_OUTPUT_TOKEN_LIMIT: u32 = 12_000;
@@ -832,7 +834,7 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
 
 fn self_upgrade_prompt(score: u8) -> String {
     format!(
-        "You are the forge-loop self-upgrade agent. Implement exactly one small, TDD-first reliability, accuracy, or speed improvement for fxrun forge-loop. Leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR, and enable auto-merge if checks are green when repository settings allow. Evaluation score: {score}. Strict upgrade only; no downgrades/removals without parity proof."
+        "You are the forge-loop self-upgrade agent. Implement exactly one small, TDD-first reliability, accuracy, or speed improvement for fxrun forge-loop. Leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR, and enable auto-merge if checks are green when repository settings allow. Evaluation score: {score}. Strict upgrade only; no downgrades/removals without parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates."
     )
 }
 
@@ -3188,7 +3190,7 @@ impl EvalInput {
 fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
     let pr_title = cycle_pr_title(goal);
     format!(
-        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof.",
+        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates.",
         if auto_merge { "auto-merge once green when repository settings allow" } else { "leave the PR ready for review" }
     )
 }
@@ -3306,6 +3308,8 @@ fn publish_self_upgrade_if_needed(
         },
     )?;
 
+    dispatch_required_checks(&branch, pr_title, log)?;
+
     if auto_merge {
         run_command(
             "gh",
@@ -3329,6 +3333,56 @@ fn publish_self_upgrade_if_needed(
     }
 
     Ok(Some(pr_url))
+}
+
+fn dispatch_required_checks(branch: &str, pr_title: &str, log: &Path) -> Result<()> {
+    run_command(
+        "gh",
+        &[
+            "workflow",
+            "run",
+            REQUIRED_CHECK_WORKFLOWS[0],
+            "--ref",
+            branch,
+        ],
+    )?;
+    let ci_detail = format!("{}@{}", REQUIRED_CHECK_WORKFLOWS[0], branch);
+    append_event(
+        log,
+        CycleEvent {
+            event: "publish.required_check_dispatched",
+            phase: CyclePhase::Gate,
+            detail: &ci_detail,
+        },
+    )?;
+
+    let title_input = format!("{SEMANTIC_PR_TITLE_INPUT}={pr_title}");
+    run_command(
+        "gh",
+        &[
+            "workflow",
+            "run",
+            REQUIRED_CHECK_WORKFLOWS[1],
+            "--ref",
+            branch,
+            "-f",
+            &title_input,
+        ],
+    )?;
+    let semantic_detail = format!(
+        "{}@{} {}",
+        REQUIRED_CHECK_WORKFLOWS[1], SEMANTIC_PR_TITLE_INPUT, branch
+    );
+    append_event(
+        log,
+        CycleEvent {
+            event: "publish.required_check_dispatched",
+            phase: CyclePhase::Gate,
+            detail: &semantic_detail,
+        },
+    )?;
+
+    Ok(())
 }
 
 fn publishable_paths_from_status(status: &str) -> Vec<String> {
@@ -3727,6 +3781,7 @@ mod tests {
         assert!(prompt.contains("leave the intended repository changes in the working tree"));
         assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
         assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
+        assert!(prompt.contains("rtk proxy find"));
     }
 
     #[test]
@@ -3737,6 +3792,7 @@ mod tests {
         assert!(prompt_lower.contains("leave the intended repository changes in the working tree"));
         assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
         assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
+        assert!(prompt.contains("rtk proxy find"));
         assert!(
             !prompt.contains("Commit, push, open a PR"),
             "self-upgrade prompt must not ask nested Codex to publish"
@@ -5171,6 +5227,7 @@ R  docs/old.md -> docs/new.md
             "cargo run -q -p runner-cli -- forge-loop run",
             "tee codex-forge-loop-output.md",
             "GH_TOKEN:",
+            "actions: write",
             "PROMPT_FILE_INPUT:",
             "invalid prompt_file input",
             "features.auto_compaction=true",
@@ -5184,6 +5241,36 @@ R  docs/old.md -> docs/new.md
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
         }
+    }
+
+    #[test]
+    fn action_created_pr_required_checks_are_dispatchable() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let codex_workflow =
+            fs::read_to_string(root.join(".github/workflows/codex-forge-loop.yml"))
+                .expect("read Codex workflow");
+        let ci_workflow =
+            fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read CI workflow");
+        let semantic_workflow =
+            fs::read_to_string(root.join(".github/workflows/semantic-pr-title.yml"))
+                .expect("read semantic title workflow");
+
+        assert_eq!(
+            REQUIRED_CHECK_WORKFLOWS,
+            &["ci.yml", "semantic-pr-title.yml"]
+        );
+        assert_eq!(SEMANTIC_PR_TITLE_INPUT, "pr_title");
+        assert!(
+            codex_workflow.contains("actions: write"),
+            "Codex workflow needs Actions write permission to dispatch required checks"
+        );
+        assert!(ci_workflow.contains("workflow_dispatch:"));
+        assert!(semantic_workflow.contains("workflow_dispatch:"));
+        assert!(semantic_workflow.contains("pr_title:"));
+        assert!(semantic_workflow.contains("github.event.pull_request.title || inputs.pr_title"));
     }
 
     #[test]
