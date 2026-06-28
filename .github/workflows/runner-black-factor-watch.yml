@@ -60,15 +60,22 @@ jobs:
             | select((.name == "Local Linux CI" or .name == "Semantic PR Title")
               and ((.conclusion == "FAILURE") or (.conclusion == "TIMED_OUT") or (.conclusion == "CANCELLED")))
           ] | length' prs-open.json)"
+          required_run_pressure="$(jq '[
+            .[]
+            | select((.name == "CI" or .name == "Semantic PR Title")
+              and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))
+          ] | length' runs-live.json)"
           case "$pr_pending_pressure" in (*[!0-9]*|'') pr_pending_pressure=1 ;; esac
           case "$pr_failed_pressure" in (*[!0-9]*|'') pr_failed_pressure=1 ;; esac
-          pr_pressure=$((pr_pending_pressure + pr_failed_pressure))
+          case "$required_run_pressure" in (*[!0-9]*|'') required_run_pressure=1 ;; esac
+          pr_pressure=$((pr_pending_pressure + pr_failed_pressure + required_run_pressure))
           {
             echo "pr_pending_pressure=${pr_pending_pressure}"
             echo "pr_failed_pressure=${pr_failed_pressure}"
+            echo "required_run_pressure=${required_run_pressure}"
           } > runner-pressure.env
           if [ "$pr_pressure" -gt 0 ]; then
-            echo "::notice::skipping Runner Sustain backlog top-up because ${pr_pressure} PR-local checks need the runner lane"
+            echo "::notice::skipping Runner Sustain backlog top-up because ${pr_pressure} required local checks need the runner lane"
             exit 0
           fi
           active_sustain="$(jq '[.[] | select(.name == "Runner Sustain" and ((.status == "queued") or (.status == "pending") or (.status == "in_progress")))] | length' runs-live.json)"
