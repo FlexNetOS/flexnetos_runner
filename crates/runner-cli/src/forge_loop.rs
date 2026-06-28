@@ -5500,6 +5500,29 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
+    fn action_output_schema_requires_subscription_auth_evidence() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let output_schema =
+            fs::read_to_string(root.join(".github/codex/schemas/forge-loop-output.schema.json"))
+                .expect("read output schema");
+
+        for required in [
+            "auth_evidence",
+            "codex_home",
+            "login_status_checked",
+            "auth_json_present",
+        ] {
+            assert!(
+                output_schema.contains(required),
+                "output schema must require subscription auth evidence via {required}"
+            );
+        }
+    }
+
+    #[test]
     fn compact_continuity_artifact_covers_full_research_source_matrix() {
         let continuity = compact_continuity_artifact();
         for source in research_sources() {

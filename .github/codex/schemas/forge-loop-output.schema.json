@@ -5,6 +5,7 @@
   "required": [
     "summary",
     "auth_mode",
+    "auth_evidence",
     "sources_mined",
     "component_inventory",
     "verification",
@@ -21,6 +22,26 @@
         "api_key",
         "local_chatgpt"
       ]
+    },
+    "auth_evidence": {
+      "type": "object",
+      "required": [
+        "codex_home",
+        "login_status_checked",
+        "auth_json_present"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "codex_home": {
+          "type": "string"
+        },
+        "login_status_checked": {
+          "type": "boolean"
+        },
+        "auth_json_present": {
+          "type": "boolean"
+        }
+      }
     },
     "sources_mined": {
       "type": "array",
