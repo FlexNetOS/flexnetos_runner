@@ -3173,6 +3173,12 @@ mod tests {
             r#"case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1"#,
             "yielding mid-run",
             "gh pr list --state open",
+            "actions: write",
+            "Refill Runner Sustain backlog on completion",
+            "MIN_SUSTAIN_BACKLOG: '4'",
+            "dispatching Runner Sustain self-refill lane",
+            "skipping Runner Sustain self-refill because",
+            "gh workflow run runner-sustain.yml --ref main",
         ] {
             assert!(
                 workflow.contains(required),
@@ -3180,6 +3186,7 @@ mod tests {
             );
         }
         assert!(target.contains("Bridge-duration sustain policy"));
+        assert!(target.contains("self-refill replacement"));
         assert!(target.contains("12+ hour kclaw0 persistence target"));
     }
 
@@ -3251,10 +3258,15 @@ mod tests {
             "lane_slot",
             "Runner sustain slot ${{ inputs.lane_slot || '1' }}",
             "pull-requests: read",
-            "actions: read",
+            "actions: write",
             "forge-loop components-audit --strict",
             "forge-loop target-mining-audit --strict",
             "forge-loop docs-drift --json",
+            "Refill Runner Sustain backlog on completion",
+            "MIN_SUSTAIN_BACKLOG: '4'",
+            "dispatching Runner Sustain self-refill lane",
+            "skipping Runner Sustain self-refill because",
+            "gh workflow run runner-sustain.yml --ref main",
         ] {
             assert!(
                 workflow.contains(required),
@@ -3266,7 +3278,8 @@ mod tests {
             "4000-step",
             "12+ hour",
             "24/7 autonomous",
-            "up to four active/queued one-lane `Runner Sustain` workflow runs with per-run concurrency groups",
+            "up to four active/queued one-lane `Runner Sustain` workflow runs",
+            "self-refill replacement",
             "duration-proven workflow-run opportunities",
             "every 30 seconds",
             "preserving seamless PR flow",
