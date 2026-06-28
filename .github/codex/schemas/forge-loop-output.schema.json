@@ -42,7 +42,11 @@
         "skills",
         "agents",
         "permissions",
-        "github_action"
+        "github_action",
+        "model_flags",
+        "tool_surfaces",
+        "structured_output_schemas",
+        "auto_compaction_continuity_settings"
       ],
       "additionalProperties": false,
       "properties": {
@@ -65,6 +69,18 @@
           "type": "string"
         },
         "github_action": {
+          "type": "string"
+        },
+        "model_flags": {
+          "type": "string"
+        },
+        "tool_surfaces": {
+          "type": "string"
+        },
+        "structured_output_schemas": {
+          "type": "string"
+        },
+        "auto_compaction_continuity_settings": {
           "type": "string"
         }
       }
