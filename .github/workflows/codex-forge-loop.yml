@@ -29,7 +29,6 @@ jobs:
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     timeout-minutes: 60
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CODEX_HOME: /home/drdave/Desktop/meta/.local/share/codex
       CODEX_BIN: /home/drdave/.local/bin/codex
       GH_CONFIG_DIR: /home/drdave/.config/gh
@@ -44,7 +43,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Configure local GitHub auth for publisher
-        if: ${{ env.OPENAI_API_KEY == '' }}
         shell: bash
         env:
           GH_CONFIG_DIR: ${{ env.GH_CONFIG_DIR }}
@@ -54,26 +52,12 @@ jobs:
           gh auth status --hostname github.com
           gh auth setup-git --hostname github.com
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
-      - name: Run Codex forge-loop prompt with OpenAI API key
-        id: run_codex
-        if: ${{ env.OPENAI_API_KEY != '' }}
-        uses: openai/codex-action@v1
-        with:
-          openai-api-key: ${{ env.OPENAI_API_KEY }}
-          prompt-file: ${{ inputs.prompt_file }}
-          codex-args: '["--ephemeral","--config","features.auto_compaction=true","--config","model_auto_compact_token_limit=3000000","--config","model_auto_compact_token_limit_scope=\"total\"","--config","tool_output_token_limit=12000","--output-schema",".github/codex/schemas/forge-loop-output.schema.json"]'
-          model: ${{ inputs.model }}
-          effort: ${{ inputs.effort }}
-          sandbox: workspace-write
-          safety-strategy: drop-sudo
-          allow-bots: dependabot[bot]
-          output-file: codex-forge-loop-output.md
       - name: Run Codex forge-loop prompt with local ChatGPT auth
-        if: ${{ env.OPENAI_API_KEY == '' }}
+        id: run_codex
         shell: bash
         run: |
           set -euo pipefail
-          # local ChatGPT auth fallback runs the Rust forge-loop engine directly; no outer codex exec sandbox.
+          # local ChatGPT auth runs the Rust forge-loop engine directly; no outer codex exec sandbox.
           case "${MODEL_INPUT}" in (*[!A-Za-z0-9._:-]*|'') echo "::error::invalid model input"; exit 1 ;; esac
           case "${EFFORT_INPUT}" in (low|medium|high|xhigh) ;; (*) echo "::error::invalid effort input"; exit 1 ;; esac
           case "${PROMPT_FILE_INPUT}" in (.github/codex/prompts/*.md) ;; (*) echo "::error::invalid prompt_file input"; exit 1 ;; esac

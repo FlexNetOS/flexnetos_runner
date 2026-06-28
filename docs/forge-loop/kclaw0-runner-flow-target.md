@@ -63,13 +63,12 @@ Factor Watch` completions, so it evaluates growth after the sustain backlog has 
 rehydrate. It captures run/PR history, runs `agentic-system-audit --strict`, refreshes once if the
 proof is momentarily early, and then dispatches `Codex Forge Loop` only when the proof is green,
 no PR is open, no PR-local checks need the pipeline, and no Codex Forge Loop run is already active.
-The dispatched Codex workflow uses `OPENAI_API_KEY` when present, otherwise it runs the Rust
-`forge-loop run` engine directly on a self-hosted runner with the already-authenticated
-ChatGPT/Codex subscription stored in `CODEX_HOME` and exposed to the engine as `FXRUN_CODEX`. This
-avoids wrapping the engine in an outer Codex sandbox, so the engine-spawned Codex process can reach
-ChatGPT/Codex endpoints. This is the scheduled growth lane that keeps the system researching/adapting
-after the runner black-factor lane is already healthy without stacking a new self-upgrade PR before
-the previous PR has merged.
+The dispatched Codex workflow runs the Rust `forge-loop run` engine directly on a self-hosted runner
+with the already-authenticated ChatGPT/Codex subscription stored in `CODEX_HOME` and exposed to the
+engine as `FXRUN_CODEX`. This avoids wrapping the engine in an outer Codex sandbox, so the
+engine-spawned Codex process can reach ChatGPT/Codex endpoints. This is the scheduled growth lane that
+keeps the system researching/adapting after the runner black-factor lane is already healthy without
+stacking a new self-upgrade PR before the previous PR has merged.
 
 When a `Codex Forge Loop` run completes, it now performs a completion rehydrate before artifact
 upload: it waits and retries for PR-local or required-run pressure to clear, tops up the

@@ -116,7 +116,7 @@ jobs:
             echo "dispatch=skipped_active_codex" > agentic-dispatch.env
             exit 0
           fi
-          echo "::notice::dispatching Codex Forge Loop for scheduled self-improvement; workflow will use OPENAI_API_KEY when present or local ChatGPT auth on the self-hosted runner"
+          echo "::notice::dispatching Codex Forge Loop for scheduled self-improvement with local ChatGPT auth on the self-hosted runner"
           gh workflow run codex-forge-loop.yml \
             --ref main \
             -f prompt_file=.github/codex/prompts/forge-loop.md \

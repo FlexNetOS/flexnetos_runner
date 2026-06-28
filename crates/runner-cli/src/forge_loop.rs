@@ -1532,7 +1532,7 @@ fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticS
             ),
             (
                 ".github/workflows/codex-forge-loop.yml",
-                "openai/codex-action@v1",
+                "local ChatGPT auth",
             ),
             (".github/workflows/codex-forge-loop.yml", "CODEX_HOME"),
             (".github/workflows/codex-forge-loop.yml", "forge-loop run"),
@@ -2574,10 +2574,18 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
             application_terms: &[
                 (
                     ".github/workflows/codex-forge-loop.yml",
-                    "openai/codex-action@v1",
+                    "workflow_dispatch",
                 ),
-                (".github/workflows/codex-forge-loop.yml", "codex-args:"),
-                (".github/workflows/codex-forge-loop.yml", "--output-schema"),
+                (".github/workflows/codex-forge-loop.yml", "prompt_file:"),
+                (
+                    ".github/workflows/codex-forge-loop.yml",
+                    "codex-forge-loop-output.md",
+                ),
+                (
+                    ".github/workflows/codex-forge-loop.yml",
+                    "local ChatGPT auth",
+                ),
+                (".github/workflows/codex-forge-loop.yml", "FXRUN_CODEX"),
                 (
                     ".github/codex/schemas/forge-loop-output.schema.json",
                     "component_inventory",
@@ -2589,10 +2597,6 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 (
                     ".github/codex/schemas/forge-loop-output.schema.json",
                     "auth_mode",
-                ),
-                (
-                    ".github/workflows/codex-forge-loop.yml",
-                    "features.auto_compaction=true",
                 ),
             ],
             guard_terms: &[
@@ -2994,13 +2998,13 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             id: "codex-github-action",
             surface: "tools",
             path: ".github/workflows/codex-forge-loop.yml",
-            rationale: "Codex GitHub Action docs describe openai/codex-action with prompt-file, codex-args, model, effort, sandbox, output-file, and safety controls for programmatic loop runs.",
+            rationale: "Codex GitHub Action docs describe workflow prompt inputs, model/effort controls, output files, and structured evidence; this scheduled workflow applies those controls through local subscription-auth forge-loop execution.",
         },
         LoopComponent {
             id: "codex-output-schema",
             surface: "tools",
             path: ".github/codex/schemas/forge-loop-output.schema.json",
-            rationale: "Codex GitHub Action docs allow --output-schema through codex-args so forge-loop automation can require structured evidence.",
+            rationale: "Codex GitHub Action docs allow structured output schemas; the repo keeps the evidence schema as the parity target for subscription-auth forge-loop output.",
         },
         LoopComponent {
             id: "codex-continuity-schema",
@@ -5692,8 +5696,8 @@ R  docs/old.md -> docs/new.md
         }
         assert!(compact_prompt.contains("active phase"));
         assert!(compact_prompt.contains("next action"));
-        assert!(workflow.contains("features.auto_compaction=true"));
-        assert!(workflow.contains("model_auto_compact_token_limit=3000000"));
+        assert!(workflow.contains("forge-loop run"));
+        assert!(workflow.contains("local ChatGPT auth"));
     }
 
     #[test]
@@ -6005,17 +6009,10 @@ R  docs/old.md -> docs/new.md
 
         for required in [
             "runs-on: [self-hosted, linux, x64, local, flexnetos]",
-            "openai/codex-action@v1",
-            "prompt-file:",
-            "codex-args:",
-            "--output-schema",
-            ".github/codex/schemas/forge-loop-output.schema.json",
+            "prompt_file:",
             "model:",
             "effort:",
-            "sandbox: workspace-write",
-            "safety-strategy: drop-sudo",
-            "allow-bots:",
-            "output-file:",
+            "codex-forge-loop-output.md",
             "CODEX_HOME:",
             "login status",
             "no outer codex exec sandbox",
@@ -6031,8 +6028,6 @@ R  docs/old.md -> docs/new.md
             "actions: write",
             "PROMPT_FILE_INPUT:",
             "invalid prompt_file input",
-            "features.auto_compaction=true",
-            "model_auto_compact_token_limit=3000000",
             "Rehydrate sustain/watch after Codex completion",
             "codex-completion-rehydrate.env",
             "MIN_SUSTAIN_BACKLOG: '4'",
@@ -6046,6 +6041,44 @@ R  docs/old.md -> docs/new.md
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
         }
+    }
+
+    #[test]
+    fn scheduled_codex_growth_uses_subscription_auth_only() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/codex-forge-loop.yml"))
+            .expect("read Codex workflow");
+        let agentic_watch =
+            fs::read_to_string(root.join(".github/workflows/agentic-system-watch.yml"))
+                .expect("read agentic watch workflow");
+        let runner_target =
+            fs::read_to_string(root.join("docs/forge-loop/kclaw0-runner-flow-target.md"))
+                .expect("read runner flow target");
+        let agentic_proof =
+            fs::read_to_string(root.join("docs/forge-loop/agentic-system-proof.md"))
+                .expect("read agentic system proof");
+
+        for (label, text) in [
+            ("codex workflow", workflow.as_str()),
+            ("agentic watch workflow", agentic_watch.as_str()),
+            ("runner flow target", runner_target.as_str()),
+            ("agentic system proof", agentic_proof.as_str()),
+        ] {
+            assert!(
+                !text.contains("OPENAI_API_KEY"),
+                "{label} must not default scheduled Codex growth to OpenAI API-key auth"
+            );
+            assert!(
+                !text.contains("openai-api-key"),
+                "{label} must not wire Codex Action API-key auth"
+            );
+        }
+        assert!(workflow.contains("Run Codex forge-loop prompt with local ChatGPT auth"));
+        assert!(workflow.contains("CODEX_HOME:"));
+        assert!(workflow.contains("FXRUN_CODEX"));
     }
 
     #[test]
