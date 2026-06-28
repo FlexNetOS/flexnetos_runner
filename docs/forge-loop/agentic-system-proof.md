@@ -35,7 +35,7 @@ previous narrower proofs.
 Strict live proof command:
 
 ```bash
-gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > /tmp/flexnetos-runs-live.json
+gh run list --limit 3000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > /tmp/flexnetos-runs-live.json
 gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > /tmp/flexnetos-prs-live.json
 gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > /tmp/flexnetos-prs-history.json
 cargo run -q -p runner-cli -- forge-loop agentic-system-audit --strict --json \

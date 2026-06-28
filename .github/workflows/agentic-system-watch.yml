@@ -30,6 +30,8 @@ jobs:
     name: Prove agentic system and dispatch growth
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      RUN_HISTORY_LIMIT: '3000'
     steps:
       - uses: actions/checkout@v6
       - name: Let Codex completion leave active set
@@ -50,7 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
+          gh run list --limit "${RUN_HISTORY_LIMIT}" --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
           gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > prs-open.json
           gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
       - name: Prove end-to-end agentic system
@@ -69,7 +71,7 @@ jobs:
           fi
           echo "::notice::agentic proof was not ready on first read; refreshing once after black-factor top-up settles"
           sleep 90
-          gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
+          gh run list --limit "${RUN_HISTORY_LIMIT}" --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
           gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > prs-open.json
           gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
           cargo run -q -p runner-cli -- forge-loop agentic-system-audit \
