@@ -27,6 +27,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop run --dry-run --out /tmp/fxrun-forge-loop-gate-dry-run --goal \"scheduled subscription-auth Codex self-improvement\"",
     "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture",
+    "rtk cargo run -q -p runner-cli -- forge-loop eval --metrics /tmp/fxrun-forge-loop-gate-dry-run/cycle/evaluation-input.json --manifest /tmp/fxrun-forge-loop-gate-dry-run/cycle/cycle-manifest.json",
     "rtk cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
     "rtk cargo run -q -p runner-cli -- forge-loop agentic-system-audit --json",
     "rtk cargo test --workspace --all-features",
@@ -691,12 +692,17 @@ fn run(args: RunArgs) -> Result<()> {
         ));
     }
 
-    let cycle_dir = args.out.join(timestamp_label()?);
+    let cycle_dir = if args.dry_run {
+        args.out.join("cycle")
+    } else {
+        args.out.join(timestamp_label()?)
+    };
     fs::create_dir_all(&cycle_dir)
         .with_context(|| format!("create forge-loop artifact dir {}", cycle_dir.display()))?;
+    let manifest = cycle_manifest(&args);
     fs::write(
         cycle_dir.join("cycle-manifest.json"),
-        serde_json::to_string_pretty(&cycle_manifest(&args))?,
+        serde_json::to_string_pretty(&manifest)?,
     )?;
     fs::write(
         cycle_dir.join("research-sources.json"),
@@ -724,6 +730,11 @@ fn run(args: RunArgs) -> Result<()> {
     )?;
 
     if args.dry_run {
+        let eval_input = EvalInput::fixture();
+        fs::write(
+            cycle_dir.join("evaluation-input.json"),
+            serde_json::to_string_pretty(&eval_input)?,
+        )?;
         append_event(
             &log,
             CycleEvent {
@@ -732,7 +743,7 @@ fn run(args: RunArgs) -> Result<()> {
                 detail: "codex invocation planned but not executed",
             },
         )?;
-        let report = evaluate(EvalInput::fixture());
+        let report = evaluate(eval_input);
         fs::write(
             cycle_dir.join("evaluation.json"),
             serde_json::to_string_pretty(&report)?,
@@ -4615,6 +4626,16 @@ R  docs/old.md -> docs/new.md
             REQUIRED_GATE_COMMANDS
                 .contains(&"rtk cargo run -q -p runner-cli -- forge-loop eval --fixture"),
             "scheduled validation must run a deterministic forge-loop evaluation fixture"
+        );
+    }
+
+    #[test]
+    fn scheduled_gate_contract_validates_generated_manifest_pairing() {
+        assert!(
+            REQUIRED_GATE_COMMANDS.contains(
+                &"rtk cargo run -q -p runner-cli -- forge-loop eval --metrics /tmp/fxrun-forge-loop-gate-dry-run/cycle/evaluation-input.json --manifest /tmp/fxrun-forge-loop-gate-dry-run/cycle/cycle-manifest.json"
+            ),
+            "scheduled validation must parse the generated dry-run manifest against evaluation metrics"
         );
     }
 
