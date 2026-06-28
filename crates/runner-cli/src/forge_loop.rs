@@ -2420,6 +2420,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     "auto_compact_continuity",
                 ),
                 (
+                    ".github/codex/schemas/forge-loop-output.schema.json",
+                    "auth_mode",
+                ),
+                (
                     ".github/workflows/codex-forge-loop.yml",
                     "features.auto_compaction=true",
                 ),
@@ -5364,6 +5368,24 @@ R  docs/old.md -> docs/new.md
             assert!(
                 output_schema.contains(required),
                 "output schema component inventory missing {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn action_output_schema_records_codex_auth_mode() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let output_schema =
+            fs::read_to_string(root.join(".github/codex/schemas/forge-loop-output.schema.json"))
+                .expect("read output schema");
+
+        for required in ["auth_mode", "api_key", "local_chatgpt"] {
+            assert!(
+                output_schema.contains(required),
+                "output schema must record Codex auth mode via {required}"
             );
         }
     }

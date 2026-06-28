@@ -4,6 +4,7 @@
   "type": "object",
   "required": [
     "summary",
+    "auth_mode",
     "sources_mined",
     "component_inventory",
     "verification",
@@ -13,6 +14,13 @@
   "properties": {
     "summary": {
       "type": "string"
+    },
+    "auth_mode": {
+      "type": "string",
+      "enum": [
+        "api_key",
+        "local_chatgpt"
+      ]
     },
     "sources_mined": {
       "type": "array",
