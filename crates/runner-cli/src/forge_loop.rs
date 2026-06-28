@@ -373,6 +373,8 @@ struct WorkflowRunEntry {
     conclusion: String,
     #[serde(default)]
     event: String,
+    #[serde(default, rename = "headBranch")]
+    head_branch: String,
     #[serde(default)]
     name: String,
     #[serde(default, rename = "createdAt")]
@@ -900,7 +902,7 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
         .filter(|run| run_in_window(run))
         .filter(|run| is_ops_workflow(&run.name))
         .filter(|run| run.status.eq_ignore_ascii_case("completed"))
-        .filter(|run| is_failed_conclusion(&run.conclusion))
+        .filter(|run| is_failed_ops_run(run, &runs))
         .count();
 
     let mut queued_required_checks = 0;
@@ -914,7 +916,7 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
     let pr_flow_seamless =
         open_prs == 0 || (queued_required_checks == 0 && failed_required_checks == 0);
 
-    let max_idle_gap_minutes_observed = max_runner_sustain_idle_gap_minutes(
+    let max_idle_gap_minutes_observed = max_local_runner_idle_gap_minutes(
         &runs,
         proof_window_start,
         observed_end,
@@ -1086,7 +1088,7 @@ fn runner_sustain_duration_minutes(
     (duration_minutes >= min_duration_minutes).then_some(duration_minutes)
 }
 
-fn max_runner_sustain_idle_gap_minutes(
+fn max_local_runner_idle_gap_minutes(
     runs: &[WorkflowRunEntry],
     window_start: i64,
     window_end: i64,
@@ -1097,8 +1099,7 @@ fn max_runner_sustain_idle_gap_minutes(
     }
     let mut intervals = runs
         .iter()
-        .filter(|run| run.name == "Runner Sustain")
-        .filter_map(|run| runner_sustain_interval(run, min_duration_minutes))
+        .filter_map(|run| local_runner_productive_interval(run, min_duration_minutes))
         .filter_map(|(start, end)| {
             let clipped_start = start.max(window_start);
             let clipped_end = end.min(window_end);
@@ -1149,6 +1150,28 @@ fn runner_sustain_interval(
     None
 }
 
+fn local_runner_productive_interval(
+    run: &WorkflowRunEntry,
+    min_sustain_duration_minutes: u64,
+) -> Option<(i64, i64)> {
+    if run.name == "Runner Sustain" {
+        return runner_sustain_interval(run, min_sustain_duration_minutes);
+    }
+    if !matches!(run.name.as_str(), "CI" | "Semantic PR Title") {
+        return None;
+    }
+    let start = run
+        .created_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc_seconds)?;
+    let end = run
+        .updated_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc_seconds)
+        .unwrap_or(start);
+    Some((start, end.max(start)))
+}
+
 fn is_ops_workflow(name: &str) -> bool {
     matches!(
         name,
@@ -1161,6 +1184,39 @@ fn is_failed_conclusion(conclusion: &str) -> bool {
         conclusion.to_ascii_lowercase().as_str(),
         "failure" | "timed_out" | "cancelled" | "action_required"
     )
+}
+
+fn is_failed_ops_run(run: &WorkflowRunEntry, runs: &[WorkflowRunEntry]) -> bool {
+    if !is_failed_conclusion(&run.conclusion) {
+        return false;
+    }
+    if run.conclusion.eq_ignore_ascii_case("cancelled")
+        && has_nearby_successful_replacement(run, runs)
+    {
+        return false;
+    }
+    true
+}
+
+fn has_nearby_successful_replacement(run: &WorkflowRunEntry, runs: &[WorkflowRunEntry]) -> bool {
+    let Some(cancelled_at) = run
+        .created_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc_seconds)
+    else {
+        return false;
+    };
+    runs.iter().any(|candidate| {
+        candidate.name == run.name
+            && candidate.head_branch == run.head_branch
+            && candidate.status.eq_ignore_ascii_case("completed")
+            && candidate.conclusion.eq_ignore_ascii_case("success")
+            && candidate
+                .created_at
+                .as_deref()
+                .and_then(parse_rfc3339_utc_seconds)
+                .is_some_and(|created| (created - cancelled_at).abs() <= 10 * 60)
+    })
 }
 
 fn parse_rfc3339_utc_seconds(value: &str) -> Option<i64> {
@@ -3186,6 +3242,92 @@ mod tests {
                 report.missing_evidence
             );
         }
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_ops_slo_audit_counts_pr_checks_as_productive_runner_work() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-pr-work-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:05:00Z"},
+              {"name":"CI","status":"completed","conclusion":"success","event":"pull_request","headBranch":"feature","createdAt":"2026-06-27T00:10:00Z","updatedAt":"2026-06-27T00:25:00Z"},
+              {"name":"Semantic PR Title","status":"completed","conclusion":"success","event":"pull_request_target","headBranch":"feature","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:32:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:40:00Z","updatedAt":"2026-06-27T00:46:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:50:00Z","updatedAt":"2026-06-27T00:56:00Z"},
+              {"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_run","headBranch":"main","createdAt":"2026-06-27T00:57:00Z","updatedAt":"2026-06-27T00:58:00Z"},
+              {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 1,
+            max_idle_gap_minutes: 10,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
+        assert!(report.max_idle_gap_minutes_observed <= 10);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_ops_slo_audit_ignores_superseded_cancellations_with_nearby_success() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-cancel-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
+              {"name":"Semantic PR Title","status":"completed","conclusion":"cancelled","event":"pull_request_target","headBranch":"feature","createdAt":"2026-06-27T00:10:00Z","updatedAt":"2026-06-27T00:10:30Z"},
+              {"name":"Semantic PR Title","status":"completed","conclusion":"success","event":"pull_request_target","headBranch":"feature","createdAt":"2026-06-27T00:11:00Z","updatedAt":"2026-06-27T00:12:00Z"},
+              {"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_run","headBranch":"main","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:31:00Z"},
+              {"name":"Runner Sustain","status":"in_progress","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 1,
+            max_idle_gap_minutes: 60,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert_eq!(report.failed_ops_runs, 0);
+        assert!(!report.missing_evidence.contains(&"failed_ops_budget"));
         fs::remove_dir_all(temp).ok();
     }
 
