@@ -479,6 +479,7 @@ pub struct AgenticSystemAuditReport {
     pub evaluation_loop_evidence: bool,
     pub adaptation_loop_evidence: bool,
     pub growth_loop_evidence: bool,
+    pub self_improvement_dispatch_evidence: bool,
     pub end_to_end_ready: bool,
     pub missing_evidence: Vec<&'static str>,
 }
@@ -1077,6 +1078,10 @@ fn agentic_system_audit(args: AgenticSystemAuditArgs) -> Result<()> {
             report.adaptation_loop_evidence
         );
         println!("  always growing       : {}", report.growth_loop_evidence);
+        println!(
+            "  self-improvement    : {}",
+            report.self_improvement_dispatch_evidence
+        );
         println!("  runner flow          : {}", report.runner_flow.is_some());
         println!(
             "  black-factor proof   : {}",
@@ -1384,6 +1389,27 @@ fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticS
         && runner_flow
             .as_ref()
             .is_some_and(|flow| flow.pr_flow_seamless && !flow.idle_without_work);
+    let self_improvement_dispatch_evidence = all_file_terms_present(
+        &args.root,
+        &[
+            (
+                ".github/workflows/agentic-system-watch.yml",
+                "name: Agentic System Watch",
+            ),
+            (
+                ".github/workflows/agentic-system-watch.yml",
+                "agentic-system-audit",
+            ),
+            (
+                ".github/workflows/agentic-system-watch.yml",
+                "gh workflow run codex-forge-loop.yml",
+            ),
+            (
+                ".github/workflows/agentic-system-watch.yml",
+                "OPENAI_API_KEY",
+            ),
+        ],
+    );
 
     let mut missing_evidence = Vec::new();
     if !components.missing_components.is_empty() {
@@ -1434,6 +1460,9 @@ fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticS
     if !growth_loop_evidence {
         missing_evidence.push("always_growing");
     }
+    if !self_improvement_dispatch_evidence {
+        missing_evidence.push("self_improvement_dispatch");
+    }
 
     let end_to_end_ready = missing_evidence.is_empty();
     Ok(AgenticSystemAuditReport {
@@ -1449,6 +1478,7 @@ fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticS
         evaluation_loop_evidence,
         adaptation_loop_evidence,
         growth_loop_evidence,
+        self_improvement_dispatch_evidence,
         end_to_end_ready,
         missing_evidence,
     })
@@ -2405,6 +2435,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     ".github/workflows/runner-black-factor-watch.yml",
                     "name: Runner Black Factor Watch",
                 ),
+                (
+                    ".github/workflows/agentic-system-watch.yml",
+                    "name: Agentic System Watch",
+                ),
             ],
             guard_terms: &[
                 (
@@ -2422,6 +2456,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 (
                     "crates/runner-cli/src/forge_loop.rs",
                     "agentic_system_audit_report",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "agentic_system_watch_dispatches_codex_growth_safely",
                 ),
                 ("crates/runner-cli/src/forge_loop.rs", "kclaw0"),
             ],
@@ -2604,6 +2642,12 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "tools",
             path: ".github/workflows/runner-black-factor-watch.yml",
             rationale: "The black-factor watch workflow audits runner flow, refills Runner Sustain when sustain work disappears, and uploads run/PR evidence artifacts for the 12-hour proof window.",
+        },
+        LoopComponent {
+            id: "agentic-system-watch-workflow",
+            surface: "tools",
+            path: ".github/workflows/agentic-system-watch.yml",
+            rationale: "The agentic system watch proves the composite 24/7 audit and safely dispatches Codex Forge Loop self-improvement when credentials and PR pressure allow.",
         },
         LoopComponent {
             id: "codex-github-action",
@@ -3644,7 +3688,7 @@ mod tests {
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 27);
+        assert_eq!(report.checked_components, 28);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -4312,6 +4356,7 @@ mod tests {
         assert!(report.evaluation_loop_evidence);
         assert!(report.adaptation_loop_evidence);
         assert!(report.growth_loop_evidence);
+        assert!(report.self_improvement_dispatch_evidence);
         fs::remove_dir_all(temp).ok();
     }
 
@@ -4625,6 +4670,51 @@ mod tests {
             "model_auto_compact_token_limit=3000000",
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
+        }
+    }
+
+    #[test]
+    fn agentic_system_watch_dispatches_codex_growth_safely() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/agentic-system-watch.yml"))
+            .expect("read agentic system watch workflow");
+        let proof = fs::read_to_string(root.join("docs/forge-loop/agentic-system-proof.md"))
+            .expect("read agentic system proof doc");
+
+        assert!(
+            !workflow.contains("if: ${{ secrets."),
+            "GitHub Actions does not allow secrets in job-level if expressions"
+        );
+        for required in [
+            "name: Agentic System Watch",
+            "*/30 * * * *",
+            "workflow_run:",
+            "Runner Black Factor Watch",
+            "actions: write",
+            "OPENAI_API_KEY",
+            "agentic-system-audit",
+            "--strict",
+            "gh workflow run codex-forge-loop.yml",
+            "skipped_missing_openai_api_key",
+            "skipped_open_pr",
+            "skipped_pr_pressure",
+            "skipped_active_codex",
+            "agentic-dispatch.env",
+        ] {
+            assert!(workflow.contains(required), "workflow missing {required}");
+        }
+        for required in [
+            "Always researching",
+            "Always evaluating",
+            "Always adapting",
+            "Always growing",
+            "Agentic System Watch",
+            "Codex Forge Loop",
+        ] {
+            assert!(proof.contains(required), "proof doc missing {required}");
         }
     }
 
