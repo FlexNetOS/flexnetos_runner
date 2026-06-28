@@ -3441,19 +3441,27 @@ fn run_command(program: &str, args: &[&str]) -> Result<String> {
 }
 
 fn run_command_owned(program: &str, args: Vec<String>) -> Result<String> {
-    let output = Command::new(program)
-        .args(&args)
+    let (wrapped_program, wrapped_args) = command_invocation(program, args);
+    let output = Command::new(&wrapped_program)
+        .args(&wrapped_args)
         .output()
-        .with_context(|| format!("spawn {program} {}", args.join(" ")))?;
+        .with_context(|| format!("spawn {wrapped_program} {}", wrapped_args.join(" ")))?;
     if !output.status.success() {
         return Err(anyhow!(
-            "{program} {} failed with status {}: {}",
-            args.join(" "),
+            "{wrapped_program} {} failed with status {}: {}",
+            wrapped_args.join(" "),
             output.status,
             String::from_utf8_lossy(&output.stderr)
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn command_invocation(program: &str, args: Vec<String>) -> (String, Vec<String>) {
+    let mut wrapped_args = Vec::with_capacity(args.len() + 1);
+    wrapped_args.push(program.to_string());
+    wrapped_args.extend(args);
+    ("rtk".into(), wrapped_args)
 }
 
 fn compact_continuity_artifact() -> CompactContinuityArtifact {
@@ -4206,6 +4214,17 @@ R  docs/old.md -> docs/new.md
                 &"rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
             ),
             "scheduled validation must include the strict target-mining audit"
+        );
+    }
+
+    #[test]
+    fn publisher_shell_commands_are_routed_through_rtk() {
+        let (program, args) = command_invocation("gh", vec!["pr".into(), "create".into()]);
+
+        assert_eq!(program, "rtk");
+        assert_eq!(
+            args,
+            vec!["gh".to_string(), "pr".to_string(), "create".to_string()]
         );
     }
 
