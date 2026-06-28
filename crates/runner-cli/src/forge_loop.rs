@@ -1845,6 +1845,10 @@ fn is_runner_black_factor_watch_name(name: &str) -> bool {
     name == "Runner Black Factor Watch" || name.starts_with("Runner Black Factor Watch (")
 }
 
+fn is_agentic_system_watch_name(name: &str) -> bool {
+    name == "Agentic System Watch" || name.starts_with("Agentic System Watch (")
+}
+
 fn is_successful_runner_watch_rehydration(run: &WorkflowRunEntry) -> bool {
     if !is_runner_black_factor_watch_name(&run.name)
         || !run.status.eq_ignore_ascii_case("completed")
@@ -1887,7 +1891,7 @@ fn has_nearby_successful_replacement(run: &WorkflowRunEntry, runs: &[WorkflowRun
         return false;
     };
     runs.iter().any(|candidate| {
-        candidate.name == run.name
+        same_ops_replacement_family(&run.name, &candidate.name)
             && candidate.head_branch == run.head_branch
             && candidate.status.eq_ignore_ascii_case("completed")
             && candidate.conclusion.eq_ignore_ascii_case("success")
@@ -1897,6 +1901,13 @@ fn has_nearby_successful_replacement(run: &WorkflowRunEntry, runs: &[WorkflowRun
                 .and_then(parse_rfc3339_utc_seconds)
                 .is_some_and(|created| (created - cancelled_at).abs() <= 10 * 60)
     })
+}
+
+fn same_ops_replacement_family(run_name: &str, candidate_name: &str) -> bool {
+    run_name == candidate_name
+        || (is_runner_black_factor_watch_name(run_name)
+            && is_runner_black_factor_watch_name(candidate_name))
+        || (is_agentic_system_watch_name(run_name) && is_agentic_system_watch_name(candidate_name))
 }
 
 fn parse_rfc3339_utc_seconds(value: &str) -> Option<i64> {
@@ -4163,6 +4174,48 @@ mod tests {
 
         assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
         assert!(report.max_idle_gap_minutes_observed <= 10);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_ops_slo_audit_ignores_superseded_named_watch_cancellations() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-watch-cancel-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
+              {"name":"Runner Black Factor Watch (workflow_run Semantic PR Title)","status":"completed","conclusion":"cancelled","event":"workflow_run","headBranch":"main","createdAt":"2026-06-27T00:10:00Z","updatedAt":"2026-06-27T00:10:30Z"},
+              {"name":"Runner Black Factor Watch (workflow_run CI)","status":"completed","conclusion":"success","event":"workflow_run","headBranch":"main","createdAt":"2026-06-27T00:11:00Z","updatedAt":"2026-06-27T00:12:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:36:00Z"},
+              {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","headBranch":"main","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 1,
+            max_idle_gap_minutes: 60,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert_eq!(report.failed_ops_runs, 0);
+        assert!(!report.missing_evidence.contains(&"failed_ops_budget"));
         fs::remove_dir_all(temp).ok();
     }
 
