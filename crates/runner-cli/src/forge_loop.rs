@@ -433,6 +433,8 @@ struct WorkflowRunEntry {
     conclusion: String,
     #[serde(default)]
     event: String,
+    #[serde(default, rename = "displayTitle")]
+    display_title: String,
     #[serde(default, rename = "headBranch")]
     head_branch: String,
     #[serde(default)]
@@ -1002,10 +1004,7 @@ fn runner_ops_slo_audit_report(args: &RunnerOpsSloAuditArgs) -> Result<RunnerOps
 
     let event_watch_wakeups = runs
         .iter()
-        .filter(|run| run.name == "Runner Black Factor Watch")
-        .filter(|run| run.event.eq_ignore_ascii_case("workflow_run"))
-        .filter(|run| run.status.eq_ignore_ascii_case("completed"))
-        .filter(|run| run.conclusion.eq_ignore_ascii_case("success"))
+        .filter(|run| is_successful_runner_watch_rehydration(run))
         .filter(|run| run_in_window(run))
         .count();
 
@@ -1473,6 +1472,20 @@ fn is_ops_workflow(name: &str) -> bool {
         name,
         "Runner Sustain" | "Runner Black Factor Watch" | "CI" | "Semantic PR Title"
     )
+}
+
+fn is_successful_runner_watch_rehydration(run: &WorkflowRunEntry) -> bool {
+    if run.name != "Runner Black Factor Watch"
+        || !run.status.eq_ignore_ascii_case("completed")
+        || !run.conclusion.eq_ignore_ascii_case("success")
+    {
+        return false;
+    }
+    if run.event.eq_ignore_ascii_case("workflow_run") {
+        return true;
+    }
+    run.event.eq_ignore_ascii_case("workflow_dispatch")
+        && run.display_title.contains("sustain_completion")
 }
 
 fn is_failed_conclusion(conclusion: &str) -> bool {
@@ -3514,6 +3527,48 @@ mod tests {
     }
 
     #[test]
+    fn runner_ops_slo_audit_accepts_explicit_sustain_completion_watch_wakeup() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-ops-slo-explicit-watch-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let runs = temp.join("runs.json");
+        let prs = temp.join("prs.json");
+        fs::write(
+            &runs,
+            r#"[
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:00:00Z","updatedAt":"2026-06-27T00:06:00Z"},
+              {"name":"Runner Black Factor Watch","status":"completed","conclusion":"success","event":"workflow_dispatch","displayTitle":"Runner Black Factor Watch (workflow_dispatch sustain_completion)","createdAt":"2026-06-27T00:30:00Z","updatedAt":"2026-06-27T00:31:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:40:00Z","updatedAt":"2026-06-27T00:46:00Z"},
+              {"name":"Runner Sustain","status":"completed","conclusion":"success","event":"workflow_dispatch","createdAt":"2026-06-27T00:50:00Z","updatedAt":"2026-06-27T00:56:00Z"},
+              {"name":"Runner Sustain","status":"queued","conclusion":"","event":"workflow_dispatch","createdAt":"2026-06-27T01:00:00Z","updatedAt":"2026-06-27T01:00:00Z"}
+            ]"#,
+        )
+        .expect("runs json");
+        fs::write(&prs, r#"[]"#).expect("prs json");
+
+        let report = runner_ops_slo_audit_report(&RunnerOpsSloAuditArgs {
+            runs_json: runs,
+            prs_json: prs,
+            min_window_hours: 1,
+            max_idle_gap_minutes: 40,
+            min_active_or_queued_sustain: 1,
+            min_event_watch_wakeups: 1,
+            max_failed_ops_runs: 0,
+            min_sustain_duration_minutes: 5,
+            json: true,
+            strict: false,
+        })
+        .expect("ops slo report");
+
+        assert!(report.burn_in_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.event_watch_wakeups, 1);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
     fn runner_ops_slo_audit_reports_idle_failure_and_pr_pressure() {
         let temp =
             std::env::temp_dir().join(format!("fxrun-runner-ops-slo-fail-{}", std::process::id()));
@@ -4221,6 +4276,8 @@ mod tests {
 
         for required in [
             "Runner Black Factor Watch",
+            "run-name: Runner Black Factor Watch",
+            "trigger_source",
             "*/5 * * * *",
             "workflow_run:",
             "workflows:",
@@ -4248,7 +4305,7 @@ mod tests {
             "runner-flow-audit",
             "--strict",
             "runner-black-factor-audit",
-            "createdAt,updatedAt",
+            "createdAt,updatedAt,event,displayTitle",
             "--limit 1000",
             "actions/upload-artifact@v7",
         ] {
@@ -4294,6 +4351,8 @@ mod tests {
             "Refill Runner Sustain backlog on completion",
             "MIN_SUSTAIN_BACKLOG: '4'",
             "dispatching Runner Sustain self-refill lane",
+            "dispatching Runner Black Factor Watch sustain-completion wakeup",
+            "gh workflow run runner-black-factor-watch.yml --ref main -f trigger_source=sustain_completion",
             "skipping Runner Sustain self-refill because",
             "gh workflow run runner-sustain.yml --ref main",
         ] {

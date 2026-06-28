@@ -197,4 +197,5 @@ jobs:
           else
             echo "::notice::Runner Sustain self-refill not needed active ${active_sustain}/${target_sustain_backlog}"
           fi
-
+          echo "::notice::dispatching Runner Black Factor Watch sustain-completion wakeup"
+          gh workflow run runner-black-factor-watch.yml --ref main -f trigger_source=sustain_completion

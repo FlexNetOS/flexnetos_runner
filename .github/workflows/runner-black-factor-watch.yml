@@ -1,7 +1,13 @@
 name: Runner Black Factor Watch
+run-name: Runner Black Factor Watch (${{ github.event_name }} ${{ inputs.trigger_source || github.event.workflow_run.name || 'scheduled' }})
 
 on:
   workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: Event source that explicitly requested the watch wakeup
+        required: false
+        default: manual
   schedule:
     - cron: '*/5 * * * *'
   workflow_run:
@@ -36,7 +42,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,url > runs-live.json
+          gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
           gh pr list --state open --limit 100 --json state,mergedAt,statusCheckRollup,url > prs-open.json
           gh pr list --state all --limit 200 --json state,mergedAt,statusCheckRollup,url > prs-history.json
       - name: Top up Runner Sustain backlog
@@ -88,7 +94,7 @@ jobs:
           done
           if [ "$active_sustain" -gt 0 ]; then
             sleep 20
-            gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,url > runs-live.json
+            gh run list --limit 1000 --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
           fi
       - name: Prove instantaneous runner flow
         shell: bash
