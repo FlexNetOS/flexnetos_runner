@@ -21,7 +21,7 @@ The target is not considered complete if there are no active/queued runs and no 
 
 ## Bridge-duration sustain policy
 
-`runner-sustain.yml` is intentionally longer than a smoke check, but it must not hold the local runner pool when required local checks wait. Scheduled runs now fire every 5 minutes, the watch workflow can launch up to four active/queued one-lane `Runner Sustain` workflow runs, and each completed sustain run can dispatch one self-refill replacement when no required local-check pressure exists, with per-run concurrency groups so queued replacement proof runs are not cancelled by duplicate lane labels; the self-hosted runner pool still admits only the available local lanes, and each run performs bounded 5-minute useful forge-loop audits with a 10-minute job cap. Each run checks open-PR local-check pressure and queued/in-progress `CI`/`Semantic PR Title` workflow-run pressure before work starts, every 30 seconds between audit ticks, and again before self-refill, yielding quickly when required local checks need the runner lane; if either GitHub pressure query fails, sustain treats that as pressure and exits successfully instead of letting filler-work network flakes poison the proof lane.
+`runner-sustain.yml` is intentionally longer than a smoke check, but it must not hold the local runner pool when required local checks wait. Scheduled runs now fire every 5 minutes, the watch workflow can launch up to four active/queued one-lane `Runner Sustain` workflow runs, and each completed sustain run can dispatch one self-refill replacement when no required local-check pressure exists, with per-run concurrency groups so queued replacement proof runs are not cancelled by duplicate lane labels; the self-hosted runner pool still admits only the available local lanes, and each run performs bounded 5-minute useful forge-loop audits with a 10-minute job cap. Each run checks open-PR local-check pressure and queued/in-progress `CI`, `Semantic PR Title`, and `Codex Forge Loop` workflow-run pressure before work starts, every 30 seconds between audit ticks, and again before self-refill, yielding quickly when required local checks or scheduled Codex growth need the runner lane; if either GitHub pressure query fails, sustain treats that as pressure and exits successfully instead of letting filler-work network flakes poison the proof lane.
 
 This still does not by itself prove the 12+ hour kclaw0 persistence target; that proof requires an observed window of repeated successful sustain runs and green PR flow over the full target interval. The 5-minute cadence plus a four-slot backlog creates continuous duration-proven workflow-run opportunities to reach the required 72-run proof over 12 hours while preserving seamless PR flow as the higher-priority invariant; the watch skips new top-ups when PR-local checks already need runner capacity.
 
@@ -63,8 +63,10 @@ Factor Watch` completions, so it evaluates growth after the sustain backlog has 
 rehydrate. It captures run/PR history, runs `agentic-system-audit --strict`, refreshes once if the
 proof is momentarily early, and then dispatches `Codex Forge Loop` only when the proof is green,
 no PR is open, no PR-local checks need the pipeline, and no Codex Forge Loop run is already active.
-The dispatched Codex workflow uses `OPENAI_API_KEY` when present, otherwise it runs the local Codex
-CLI on a self-hosted runner with the already-authenticated ChatGPT/Codex subscription stored in
-`CODEX_HOME`. This is the scheduled growth lane that keeps the system researching/adapting after the
-runner black-factor lane is already healthy without stacking a new self-upgrade PR before the previous
-PR has merged.
+The dispatched Codex workflow uses `OPENAI_API_KEY` when present, otherwise it runs the Rust
+`forge-loop run` engine directly on a self-hosted runner with the already-authenticated
+ChatGPT/Codex subscription stored in `CODEX_HOME` and exposed to the engine as `FXRUN_CODEX`. This
+avoids wrapping the engine in an outer Codex sandbox, so the engine-spawned Codex process can reach
+ChatGPT/Codex endpoints. This is the scheduled growth lane that keeps the system researching/adapting
+after the runner black-factor lane is already healthy without stacking a new self-upgrade PR before
+the previous PR has merged.
