@@ -3208,6 +3208,10 @@ mod tests {
             "tick_seconds=30",
             "lane_slot=",
             "skipping Runner Sustain backlog top-up because",
+            "pr_pending_pressure",
+            "pr_failed_pressure",
+            "runner-pressure.env",
+            "pending PR-local checks own the runner lane",
             "dispatching Runner Sustain lane",
             "runner-flow-audit",
             "--strict",
@@ -3223,6 +3227,7 @@ mod tests {
         }
         assert!(target.contains("Runner Black Factor Watch"));
         assert!(target.contains("tops up a small `Runner Sustain` active/queued backlog"));
+        assert!(target.contains("pending PR checks make the watch yield green"));
         assert!(target.contains("clamped to 1-4"));
         assert!(target.contains("defaults to 4"));
         assert!(target.contains("latest 12-hour proof window"));

@@ -43,13 +43,23 @@ jobs:
           case "$target_sustain_backlog" in (*[!0-9]*|'') target_sustain_backlog=4 ;; esac
           if [ "$target_sustain_backlog" -lt 1 ]; then target_sustain_backlog=1; fi
           if [ "$target_sustain_backlog" -gt 4 ]; then target_sustain_backlog=4; fi
-          pr_pressure="$(jq '[
+          pr_pending_pressure="$(jq '[
             .[].statusCheckRollup[]?
             | select((.name == "Local Linux CI" or .name == "Semantic PR Title")
-              and ((.status == "QUEUED") or (.status == "IN_PROGRESS") or (.status == "PENDING")
-                or (.conclusion == "FAILURE") or (.conclusion == "TIMED_OUT") or (.conclusion == "CANCELLED")))
+              and ((.status == "QUEUED") or (.status == "IN_PROGRESS") or (.status == "PENDING")))
           ] | length' prs-open.json)"
-          case "$pr_pressure" in (*[!0-9]*|'') pr_pressure=1 ;; esac
+          pr_failed_pressure="$(jq '[
+            .[].statusCheckRollup[]?
+            | select((.name == "Local Linux CI" or .name == "Semantic PR Title")
+              and ((.conclusion == "FAILURE") or (.conclusion == "TIMED_OUT") or (.conclusion == "CANCELLED")))
+          ] | length' prs-open.json)"
+          case "$pr_pending_pressure" in (*[!0-9]*|'') pr_pending_pressure=1 ;; esac
+          case "$pr_failed_pressure" in (*[!0-9]*|'') pr_failed_pressure=1 ;; esac
+          pr_pressure=$((pr_pending_pressure + pr_failed_pressure))
+          {
+            echo "pr_pending_pressure=${pr_pending_pressure}"
+            echo "pr_failed_pressure=${pr_failed_pressure}"
+          } > runner-pressure.env
           if [ "$pr_pressure" -gt 0 ]; then
             echo "::notice::skipping Runner Sustain backlog top-up because ${pr_pressure} PR-local checks need the runner lane"
             exit 0
@@ -70,6 +80,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          pr_pending_pressure=0
+          pr_failed_pressure=0
+          if [ -f runner-pressure.env ]; then
+            # shellcheck disable=SC1091
+            . ./runner-pressure.env
+          fi
+          if [ "${pr_failed_pressure}" -eq 0 ] && [ "${pr_pending_pressure}" -gt 0 ]; then
+            echo "::notice::recording non-strict runner-flow audit while ${pr_pending_pressure} pending PR-local checks own the runner lane"
+            cargo run -q -p runner-cli -- forge-loop runner-flow-audit \
+              --runs-json runs-live.json \
+              --prs-json prs-open.json \
+              --json | tee runner-flow-audit.json
+            exit 0
+          fi
           cargo run -q -p runner-cli -- forge-loop runner-flow-audit \
             --runs-json runs-live.json \
             --prs-json prs-open.json \
@@ -91,5 +115,6 @@ jobs:
             runs-live.json
             prs-open.json
             prs-history.json
+            runner-pressure.env
             runner-flow-audit.json
             runner-black-factor-audit.json

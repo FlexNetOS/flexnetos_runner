@@ -27,7 +27,7 @@ This still does not by itself prove the 12+ hour kclaw0 persistence target; that
 
 ## Runner Black Factor Watch and refill policy
 
-`runner-black-factor-watch.yml` runs from GitHub-hosted capacity so it does not consume the local self-hosted runner pool. It captures run and PR history, tops up a small `Runner Sustain` active/queued backlog, proves instantaneous `runner-flow-audit --strict`, records non-strict black-factor progress, and uploads the run/PR/audit files as evidence artifacts. The backlog target is clamped to 1-4 runs and defaults to 4, meaning one active plus one queued replacement per local lane when no PR-local checks are waiting.
+`runner-black-factor-watch.yml` runs from GitHub-hosted capacity so it does not consume the local self-hosted runner pool. It captures run and PR history, writes a `runner-pressure.env` witness, tops up a small `Runner Sustain` active/queued backlog, proves instantaneous `runner-flow-audit --strict` when there is no PR-local pressure, records a non-strict runner-flow audit while pending PR checks temporarily own the runner lane, records non-strict black-factor progress, and uploads the run/PR/audit files as evidence artifacts. Failed PR-local checks still make the strict proof fail; pending PR checks make the watch yield green instead of adding red noise while the PR flow is actively draining. The backlog target is clamped to 1-4 runs and defaults to 4, meaning one active plus one queued replacement per local lane when no PR-local checks are waiting.
 
 ## Observed-window black-factor audit
 
