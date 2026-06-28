@@ -616,6 +616,16 @@ pub struct CycleManifest {
     pub phases: Vec<CyclePhase>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactContinuityArtifact {
+    pub enabled: bool,
+    pub compact_prompt: String,
+    pub active_phase: CyclePhase,
+    pub source_coverage: Vec<String>,
+    pub validation_state: Vec<String>,
+    pub next_action: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct CycleEvent<'a> {
     event: &'a str,
@@ -659,6 +669,10 @@ fn run(args: RunArgs) -> Result<()> {
     fs::write(
         cycle_dir.join("research-sources.json"),
         serde_json::to_string_pretty(&research_sources())?,
+    )?;
+    fs::write(
+        cycle_dir.join("compact-continuity.json"),
+        serde_json::to_string_pretty(&compact_continuity_artifact())?,
     )?;
     let log = cycle_dir.join("events.jsonl");
     append_event(
@@ -3171,6 +3185,23 @@ fn research_prompt(focus: &str, sources: &[ResearchSource]) -> String {
     )
 }
 
+fn compact_continuity_artifact() -> CompactContinuityArtifact {
+    CompactContinuityArtifact {
+        enabled: true,
+        compact_prompt: COMPACT_PROMPT_PATH.into(),
+        active_phase: CyclePhase::Red,
+        source_coverage: research_sources()
+            .into_iter()
+            .map(|source| source.url.to_string())
+            .collect(),
+        validation_state: REQUIRED_GATE_COMMANDS
+            .iter()
+            .map(|command| (*command).to_string())
+            .collect(),
+        next_action: "continue with the next required forge-loop phase".into(),
+    }
+}
+
 fn timestamp_label() -> Result<String> {
     timestamp_label_for(SystemTime::now())
 }
@@ -3696,6 +3727,54 @@ mod tests {
 
         assert!(ids.contains(&"openai-codex"));
         assert!(ids.contains(&"kclaw0"));
+
+        fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn dry_run_writes_compact_continuity_artifact() {
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-compact-continuity-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&out).ok();
+
+        run(RunArgs {
+            goal: "scheduled subscription-auth Codex self-improvement".into(),
+            out: out.clone(),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        })
+        .expect("dry run");
+
+        let cycle_dir = fs::read_dir(&out)
+            .expect("artifact root")
+            .next()
+            .expect("one cycle artifact")
+            .expect("cycle dir")
+            .path();
+        let continuity = fs::read_to_string(cycle_dir.join("compact-continuity.json"))
+            .expect("compact continuity artifact");
+        let parsed: CompactContinuityArtifact =
+            serde_json::from_str(&continuity).expect("compact continuity json");
+
+        assert!(parsed.enabled);
+        assert_eq!(parsed.compact_prompt, COMPACT_PROMPT_PATH);
+        assert_eq!(parsed.active_phase, CyclePhase::Red);
+        for source in research_sources() {
+            assert!(
+                parsed.source_coverage.contains(&source.url.to_string()),
+                "compact continuity artifact missing {}",
+                source.url
+            );
+        }
+        assert!(parsed.validation_state.contains(
+            &"cargo clippy --workspace --all-targets --all-features -- -D warnings".to_string()
+        ));
+        assert!(parsed
+            .next_action
+            .contains("next required forge-loop phase"));
 
         fs::remove_dir_all(out).ok();
     }
