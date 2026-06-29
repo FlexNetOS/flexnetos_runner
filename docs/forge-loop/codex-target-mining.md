@@ -28,3 +28,7 @@ The structured output schema now requires `recommended_self_upgrade` and `tests_
 ## 2026-06-29 phase-validation continuity extraction
 
 The structured output schema now requires `auto_compact_continuity.phase_validation_state` for Red, Implement, Gate, Evaluate, Research, and Upgrade, matching the compact continuity artifact's generated phase-state map. This keeps compacted scheduled runs from reconstructing per-phase validation progress from display text when `output-schema-audit --strict` can enforce the handoff directly.
+
+## 2026-06-29 phase validation command extraction
+
+The structured output schema now also requires non-empty `auto_compact_continuity.phase_validation_commands.Gate` and `.Evaluate` arrays. `output-schema-audit --strict` treats those `minItems` constraints as required evidence, so a compacted scheduled run cannot satisfy the phase/source/validation/next-action contract with empty validation command lists.

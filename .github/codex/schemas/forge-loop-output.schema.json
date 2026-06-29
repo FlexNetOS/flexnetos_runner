@@ -243,12 +243,14 @@
           "properties": {
             "Gate": {
               "type": "array",
+              "minItems": 1,
               "items": {
                 "type": "string"
               }
             },
             "Evaluate": {
               "type": "array",
+              "minItems": 1,
               "items": {
                 "type": "string"
               }

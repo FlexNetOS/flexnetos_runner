@@ -3008,6 +3008,8 @@ fn required_output_schema_fields() -> Vec<String> {
         "phase_continuity",
         "phase_next_actions",
         "phase_validation_commands",
+        "phase_validation_commands.Gate.minItems",
+        "phase_validation_commands.Evaluate.minItems",
         "phase_validation_state",
         "next_action",
         "phase_source_validation_next_action",
@@ -3018,6 +3020,17 @@ fn required_output_schema_fields() -> Vec<String> {
 }
 
 fn json_schema_requires_key(value: &serde_json::Value, key: &str) -> bool {
+    if let Some(phase) = key
+        .strip_prefix("phase_validation_commands.")
+        .and_then(|rest| rest.strip_suffix(".minItems"))
+    {
+        return json_schema_array_min_items_for_path(
+            value,
+            &["phase_validation_commands", phase],
+            1,
+        );
+    }
+
     match value {
         serde_json::Value::Object(map) => {
             map.get("required")
@@ -3035,6 +3048,38 @@ fn json_schema_requires_key(value: &serde_json::Value, key: &str) -> bool {
         serde_json::Value::Array(items) => items
             .iter()
             .any(|child| json_schema_requires_key(child, key)),
+        _ => false,
+    }
+}
+
+fn json_schema_array_min_items_for_path(
+    value: &serde_json::Value,
+    path: &[&str],
+    min_items: u64,
+) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            if path.is_empty() {
+                return map
+                    .get("minItems")
+                    .and_then(serde_json::Value::as_u64)
+                    .is_some_and(|actual| actual >= min_items);
+            }
+
+            if let Some(properties) = map.get("properties").and_then(serde_json::Value::as_object) {
+                if let Some(child) = properties.get(path[0]) {
+                    if json_schema_array_min_items_for_path(child, &path[1..], min_items) {
+                        return true;
+                    }
+                }
+            }
+
+            map.values()
+                .any(|child| json_schema_array_min_items_for_path(child, path, min_items))
+        }
+        serde_json::Value::Array(items) => items
+            .iter()
+            .any(|child| json_schema_array_min_items_for_path(child, path, min_items)),
         _ => false,
     }
 }
@@ -7176,6 +7221,112 @@ R  "docs/old note.md" -> "docs/new note.md"
                 .missing_fields
                 .contains(&"structured_output_schemas".to_string()),
             "nested property mentioned outside a required array must still be missing: {:?}",
+            report
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn output_schema_audit_rejects_empty_phase_validation_command_arrays() {
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-schema-empty-phase-commands-{}",
+            std::process::id()
+        ));
+        let schema_dir = root.join(".github/codex/schemas");
+        fs::create_dir_all(&schema_dir).expect("schema dir");
+        fs::write(
+            schema_dir.join("forge-loop-output.schema.json"),
+            r#"{
+              "type": "object",
+              "required": ["summary", "auth_mode", "auth_evidence", "sources_mined", "component_inventory", "recommended_self_upgrade", "tests_required_before_merge", "verification", "auto_compact_continuity"],
+              "properties": {
+                "summary": {"type": "string"},
+                "auth_mode": {"type": "string"},
+                "auth_evidence": {
+                  "type": "object",
+                  "required": ["codex_home", "login_status_checked", "auth_json_present"],
+                  "properties": {
+                    "codex_home": {"type": "string"},
+                    "login_status_checked": {"type": "boolean"},
+                    "auth_json_present": {"type": "boolean"}
+                  }
+                },
+                "sources_mined": {"type": "array"},
+                "component_inventory": {
+                  "type": "object",
+                  "required": ["config", "hooks", "rules", "skills", "agents", "permissions", "github_action", "model_flags", "tool_surfaces", "structured_output_schemas", "auto_compaction_continuity_settings"],
+                  "properties": {
+                    "config": {"type": "string"},
+                    "hooks": {"type": "string"},
+                    "rules": {"type": "string"},
+                    "skills": {"type": "string"},
+                    "agents": {"type": "string"},
+                    "permissions": {"type": "string"},
+                    "github_action": {"type": "string"},
+                    "model_flags": {"type": "string"},
+                    "tool_surfaces": {"type": "string"},
+                    "structured_output_schemas": {"type": "string"},
+                    "auto_compaction_continuity_settings": {"type": "string"}
+                  }
+                },
+                "recommended_self_upgrade": {"type": "string"},
+                "tests_required_before_merge": {"type": "array"},
+                "verification": {"type": "array"},
+                "auto_compact_continuity": {
+                  "type": "object",
+                  "required": ["enabled", "compact_prompt", "preserved_state", "active_phase", "current_phase_index", "source_coverage", "validation_state", "validation_terminal_state", "validation_sources", "phase_continuity", "phase_next_actions", "phase_validation_commands", "phase_validation_state", "next_action", "phase_source_validation_next_action"],
+                  "properties": {
+                    "enabled": {"type": "boolean"},
+                    "compact_prompt": {"type": "string"},
+                    "preserved_state": {"type": "array"},
+                    "active_phase": {"type": "string"},
+                    "current_phase_index": {"type": "integer"},
+                    "source_coverage": {"type": "array"},
+                    "validation_state": {"type": "array"},
+                    "validation_terminal_state": {"type": "array"},
+                    "validation_sources": {"type": "array"},
+                    "phase_continuity": {"type": "array"},
+                    "phase_next_actions": {
+                      "type": "object",
+                      "required": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]
+                    },
+                    "phase_validation_commands": {
+                      "type": "object",
+                      "required": ["Gate", "Evaluate"],
+                      "properties": {
+                        "Gate": {"type": "array", "items": {"type": "string"}},
+                        "Evaluate": {"type": "array", "items": {"type": "string"}}
+                      }
+                    },
+                    "phase_validation_state": {
+                      "type": "object",
+                      "required": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]
+                    },
+                    "next_action": {"type": "string"},
+                    "phase_source_validation_next_action": {"type": "string"}
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("write schema");
+
+        let report = output_schema_audit_report(&root).expect("schema audit");
+
+        assert!(!report.structured_output_ready);
+        assert!(
+            report
+                .missing_fields
+                .contains(&"phase_validation_commands.Gate.minItems".to_string()),
+            "Gate command array must require at least one command: {:?}",
+            report
+        );
+        assert!(
+            report
+                .missing_fields
+                .contains(&"phase_validation_commands.Evaluate.minItems".to_string()),
+            "Evaluate command array must require at least one command: {:?}",
             report
         );
 
