@@ -793,6 +793,7 @@ pub struct CompactContinuityArtifact {
     pub source_coverage: Vec<String>,
     pub research_output_contract: Vec<String>,
     pub validation_state: Vec<String>,
+    pub validation_terminal_state: Vec<String>,
     pub validation_sources: Vec<String>,
     pub phase_continuity: Vec<String>,
     pub next_action: String,
@@ -2983,6 +2984,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "active_phase",
         "source_coverage",
         "validation_state",
+        "validation_terminal_state",
         "validation_sources",
         "phase_continuity",
         "next_action",
@@ -4345,6 +4347,10 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             .iter()
             .map(|command| format!("pending: {command}"))
             .collect(),
+        validation_terminal_state: REQUIRED_GATE_COMMANDS
+            .iter()
+            .map(|command| format!("passed: {command}"))
+            .collect(),
         validation_sources: validation_source_entries(),
         phase_continuity: phase_continuity_entries(),
         next_action: "continue with the next required forge-loop phase".into(),
@@ -5253,6 +5259,23 @@ R  "docs/old note.md" -> "docs/new note.md"
             assert!(
                 artifact.validation_state.contains(&expected),
                 "compact continuity artifact missing pending validation entry {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_terminal_validation_contract() {
+        let artifact = compact_continuity_artifact();
+
+        assert_eq!(
+            artifact.validation_terminal_state.len(),
+            REQUIRED_GATE_COMMANDS.len()
+        );
+        for gate in REQUIRED_GATE_COMMANDS {
+            let expected = format!("passed: {gate}");
+            assert!(
+                artifact.validation_terminal_state.contains(&expected),
+                "compact continuity artifact missing terminal validation entry {expected}"
             );
         }
     }
