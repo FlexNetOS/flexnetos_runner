@@ -22,6 +22,7 @@ const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
 const AUTO_COMPACT_TOKEN_LIMIT: u32 = 3_000_000;
 const TOOL_OUTPUT_TOKEN_LIMIT: u32 = 12_000;
 const COMPACT_PROMPT_PATH: &str = ".codex/prompts/compact-forge-loop.md";
+const CODEX_OUTPUT_SCHEMA_PATH: &str = ".github/codex/schemas/forge-loop-output.schema.json";
 const CODEX_FORGE_LOOP_OUTPUT: &str = "codex-forge-loop-output.md";
 const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo fmt --all -- --check",
@@ -3842,6 +3843,8 @@ pub fn codex_invocation(prompt: String) -> CodexInvocation {
             format!("tool_output_token_limit={TOOL_OUTPUT_TOKEN_LIMIT}"),
             "--config".into(),
             format!("experimental_compact_prompt_file=\"{COMPACT_PROMPT_PATH}\""),
+            "--output-schema".into(),
+            CODEX_OUTPUT_SCHEMA_PATH.into(),
             prompt,
         ],
     }
@@ -4624,6 +4627,17 @@ mod tests {
             .windows(2)
             .any(|w| w == ["--config", "approval_policy=\"never\""]));
         assert_eq!(inv.args.last().unwrap(), "do work");
+    }
+
+    #[test]
+    fn codex_invocation_enforces_structured_output_schema() {
+        let inv = codex_invocation("do work".into());
+
+        assert!(inv.args.windows(2).any(|w| w
+            == [
+                "--output-schema",
+                ".github/codex/schemas/forge-loop-output.schema.json"
+            ]));
     }
 
     #[test]
