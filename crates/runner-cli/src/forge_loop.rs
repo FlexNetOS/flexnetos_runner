@@ -25,6 +25,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json",
     "rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict",
+    "rtk cargo run -q -p runner-cli -- forge-loop output-schema-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop run --dry-run --out /tmp/fxrun-forge-loop-gate-dry-run --goal \"scheduled subscription-auth Codex self-improvement\"",
     "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture",
     "rtk cargo run -q -p runner-cli -- forge-loop eval --metrics /tmp/fxrun-forge-loop-gate-dry-run/cycle/evaluation-input.json --manifest /tmp/fxrun-forge-loop-gate-dry-run/cycle/cycle-manifest.json",
@@ -65,6 +66,8 @@ pub enum ForgeLoopCommand {
     ComponentsAudit(ComponentsAuditArgs),
     /// Verify required Codex target mining sources were extracted, applied, and guarded.
     TargetMiningAudit(TargetMiningAuditArgs),
+    /// Verify the structured Codex output schema still requires critical loop evidence.
+    OutputSchemaAudit(OutputSchemaAuditArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -342,6 +345,19 @@ pub struct TargetMiningAuditArgs {
     pub strict: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct OutputSchemaAuditArgs {
+    /// Workspace root to scan.
+    #[arg(long, default_value = ".")]
+    pub root: PathBuf,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return a non-zero exit when the schema omits required evidence.
+    #[arg(long)]
+    pub strict: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 pub enum CyclePhase {
     Red,
@@ -590,6 +606,16 @@ pub struct TargetMiningAuditReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OutputSchemaAuditReport {
+    pub schema_path: &'static str,
+    pub required_fields: Vec<String>,
+    pub present_fields: Vec<String>,
+    pub missing_fields: Vec<String>,
+    pub schema_valid_json: bool,
+    pub structured_output_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TargetMiningStatus {
     pub id: &'static str,
     pub url: &'static str,
@@ -682,6 +708,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
         ForgeLoopCommand::TargetMiningAudit(args) => target_mining_audit(args),
+        ForgeLoopCommand::OutputSchemaAudit(args) => output_schema_audit(args),
     }
 }
 
@@ -2451,6 +2478,113 @@ fn target_mining_audit(args: TargetMiningAuditArgs) -> Result<()> {
     }
 }
 
+fn output_schema_audit(args: OutputSchemaAuditArgs) -> Result<()> {
+    let report = output_schema_audit_report(&args.root)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else if report.structured_output_ready {
+        println!(
+            "forge-loop output schema audit passed: {} required fields checked",
+            report.required_fields.len()
+        );
+    } else {
+        println!("forge-loop output schema audit failed:");
+        for field in &report.missing_fields {
+            println!("  - missing {field}");
+        }
+    }
+
+    if !args.strict || report.structured_output_ready {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "forge-loop output schema missing required evidence: {}",
+            report.missing_fields.join(", ")
+        ))
+    }
+}
+
+fn output_schema_audit_report(root: &Path) -> Result<OutputSchemaAuditReport> {
+    let schema_path = ".github/codex/schemas/forge-loop-output.schema.json";
+    let path = root.join(schema_path);
+    let text =
+        fs::read_to_string(&path).with_context(|| format!("read schema {}", path.display()))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| format!("parse schema {}", path.display()))?;
+    let required_fields = required_output_schema_fields();
+    let present_fields = required_fields
+        .iter()
+        .filter(|field| json_value_contains_key(&parsed, field))
+        .cloned()
+        .collect::<Vec<_>>();
+    let missing_fields = required_fields
+        .iter()
+        .filter(|field| !present_fields.contains(field))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    Ok(OutputSchemaAuditReport {
+        schema_path,
+        required_fields,
+        present_fields,
+        schema_valid_json: true,
+        structured_output_ready: missing_fields.is_empty(),
+        missing_fields,
+    })
+}
+
+fn required_output_schema_fields() -> Vec<String> {
+    [
+        "summary",
+        "auth_mode",
+        "auth_evidence",
+        "codex_home",
+        "login_status_checked",
+        "auth_json_present",
+        "sources_mined",
+        "component_inventory",
+        "config",
+        "hooks",
+        "rules",
+        "skills",
+        "agents",
+        "permissions",
+        "github_action",
+        "model_flags",
+        "tool_surfaces",
+        "structured_output_schemas",
+        "auto_compaction_continuity_settings",
+        "verification",
+        "auto_compact_continuity",
+        "enabled",
+        "compact_prompt",
+        "preserved_state",
+        "active_phase",
+        "source_coverage",
+        "validation_state",
+        "validation_sources",
+        "next_action",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+fn json_value_contains_key(value: &serde_json::Value, key: &str) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.contains_key(key)
+                || map
+                    .values()
+                    .any(|child| json_value_contains_key(child, key))
+        }
+        serde_json::Value::Array(items) => items
+            .iter()
+            .any(|child| json_value_contains_key(child, key)),
+        _ => false,
+    }
+}
+
 fn target_mining_audit_report(root: &Path) -> TargetMiningAuditReport {
     let targets = expected_target_mining_targets()
         .into_iter()
@@ -2615,6 +2749,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 (
                     "crates/runner-cli/src/forge_loop.rs",
                     "codex_github_action_workflow_uses_documented_controls",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "output_schema_audit_requires_subscription_auth_inventory_and_continuity",
                 ),
                 (
                     "crates/runner-cli/src/forge_loop.rs",
@@ -4663,6 +4801,16 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
+    fn scheduled_gate_contract_audits_structured_output_schema() {
+        assert!(
+            REQUIRED_GATE_COMMANDS.contains(
+                &"rtk cargo run -q -p runner-cli -- forge-loop output-schema-audit --strict"
+            ),
+            "scheduled validation must audit the structured Codex output schema"
+        );
+    }
+
+    #[test]
     fn publisher_shell_commands_are_routed_through_rtk() {
         let (program, args) = command_invocation("gh", vec!["pr".into(), "create".into()]);
 
@@ -5890,6 +6038,41 @@ R  docs/old.md -> docs/new.md
             assert!(
                 output_schema.contains(required),
                 "output schema must require subscription auth evidence via {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn output_schema_audit_requires_subscription_auth_inventory_and_continuity() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+
+        let report = output_schema_audit_report(root).expect("schema audit");
+
+        assert!(report.schema_valid_json);
+        assert!(
+            report.structured_output_ready,
+            "{:?}",
+            report.missing_fields
+        );
+        for required in [
+            "auth_mode",
+            "auth_evidence",
+            "codex_home",
+            "component_inventory",
+            "structured_output_schemas",
+            "auto_compact_continuity",
+            "active_phase",
+            "source_coverage",
+            "validation_state",
+            "validation_sources",
+            "next_action",
+        ] {
+            assert!(
+                report.present_fields.contains(&required.to_string()),
+                "schema audit missing {required}"
             );
         }
     }
