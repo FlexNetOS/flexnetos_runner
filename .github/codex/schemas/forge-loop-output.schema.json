@@ -8,6 +8,8 @@
     "auth_evidence",
     "sources_mined",
     "component_inventory",
+    "recommended_self_upgrade",
+    "tests_required_before_merge",
     "verification",
     "auto_compact_continuity"
   ],
@@ -115,6 +117,15 @@
       }
     },
     "verification": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "recommended_self_upgrade": {
+      "type": "string"
+    },
+    "tests_required_before_merge": {
       "type": "array",
       "items": {
         "type": "string"

@@ -1,6 +1,6 @@
 # Codex target mining ledger
 
-Updated: 2026-06-27
+Updated: 2026-06-29
 
 This ledger records the current additive extraction from the required deep-research targets into the flexnetos_runner `.codex` forge-loop harness.
 
@@ -8,7 +8,7 @@ This ledger records the current additive extraction from the required deep-resea
 | --- | --- | --- |
 | `https://github.com/openai/codex` | The upstream Codex Rust CLI supports local ChatGPT-plan authentication, noninteractive `codex exec`, JSON event output, and explicit sandbox/config flags; scheduled loops should pin those invocation semantics instead of relying on ambient user config. | `codex_invocation()` builds `codex exec --json --sandbox workspace-write --ignore-user-config` with explicit auto-compaction config, and unit tests guard the noninteractive workspace-write contract. |
 | `https://developers.openai.com/codex/config-advanced` | Codex project config covers hooks, rules, custom agents, model flags, sandbox controls, and auto-compaction settings; long-running self-improvement sessions need these continuity settings to survive context churn. | `.codex/config.toml`, `codex_invocation()`, the compact prompt, and the Codex Action all carry explicit auto-compaction, compact-prompt, and tool-output settings with Rust regression guards. |
-| `developers.openai.com/codex/github-action` | Use workflow-dispatch prompt inputs, model/effort controls, output files, `final-message`, artifact capture, and structured output schemas via `--output-schema`. | `.github/workflows/codex-forge-loop.yml` applies those controls to the local subscription-auth forge-loop path; `.github/codex/schemas/forge-loop-output.schema.json` remains the structured evidence parity target; `components-audit` and `output-schema-audit` guard it. |
+| `developers.openai.com/codex/github-action` | Use workflow-dispatch prompt inputs, model/effort controls, output files, `final-message`, artifact capture, and structured output schemas via `--output-schema`. | `.github/workflows/codex-forge-loop.yml` applies those controls to the local subscription-auth forge-loop path; `.github/codex/schemas/forge-loop-output.schema.json` remains the structured evidence parity target, including the recommended self-upgrade and tests-before-merge fields; `components-audit` and `output-schema-audit` guard it. |
 | `developers.openai.com/codex/permissions` | Permission profiles are beta and must not be mixed with active `sandbox_mode`; use them as least-privilege migration contracts with deny rules for secrets and scoped network allowlists. | `.codex/permissions/forge-loop-workspace.toml` is an audited blueprint, not an active config layer while `.codex/config.toml` still uses `sandbox_mode`. |
 | `developers.openai.com/codex/subagents` | Define narrow project-scoped custom agents; cap fan-out with `[agents]`; keep recursive depth shallow; use read-only agents for research/review. | Added `forge-loop-researcher` and `forge-loop-ci-sentinel`; retained `forge-loop-auditor`; added SubagentStart/SubagentStop roster hook. |
 | `RoggeOhta/awesome-codex-cli` | The ecosystem emphasizes composable hooks, MCP/memory/cost tracking, workflow management, CI automation, and specialized subagents/skills. | Added source-mining researcher role, CI sentinel, permission blueprint, structured action output, and component inventory checks for these surfaces. |
@@ -20,3 +20,7 @@ This ledger records the current additive extraction from the required deep-resea
 ## 2026-06-27 auto-compaction continuity extraction
 
 All seven target families now feed the `.codex` continuity contract: local config enables `auto_compaction`, `model_auto_compact_token_limit`, scoped tool-output limits, and `experimental_compact_prompt_file`; `codex exec` invocations and the GitHub Action pass the same settings explicitly; `PreCompact`/`PostCompact` hooks emit target coverage; and the structured output schema requires `auto_compact_continuity` evidence. This applies the OpenAI context-window/compaction guidance, the OMX durable-state pattern, the kclaw0 24/7 dark-factory requirement, and the kclaw0 referenced-resource prior art without adopting an external runtime.
+
+## 2026-06-29 structured research-result extraction
+
+The structured output schema now requires `recommended_self_upgrade` and `tests_required_before_merge`, matching the forge-loop research skill's mandated research result. This makes the research phase's action recommendation and merge-gate evidence machine-checkable by `output-schema-audit --strict` instead of leaving them as prose-only report sections.
