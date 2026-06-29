@@ -2998,6 +2998,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "compact_prompt",
         "preserved_state",
         "active_phase",
+        "current_phase_index",
         "source_coverage",
         "validation_state",
         "validation_terminal_state",
@@ -3006,6 +3007,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "phase_next_actions",
         "phase_validation_commands",
         "next_action",
+        "phase_source_validation_next_action",
     ]
     .into_iter()
     .map(str::to_string)
@@ -7064,11 +7066,13 @@ R  "docs/old note.md" -> "docs/new note.md"
             "tests_required_before_merge",
             "auto_compact_continuity",
             "active_phase",
+            "current_phase_index",
             "source_coverage",
             "validation_state",
             "validation_sources",
             "phase_next_actions",
             "next_action",
+            "phase_source_validation_next_action",
         ] {
             assert!(
                 report.present_fields.contains(&required.to_string()),

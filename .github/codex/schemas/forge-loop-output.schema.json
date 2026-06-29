@@ -138,6 +138,7 @@
         "compact_prompt",
         "preserved_state",
         "active_phase",
+        "current_phase_index",
         "source_coverage",
         "validation_state",
         "validation_terminal_state",
@@ -145,7 +146,8 @@
         "phase_continuity",
         "phase_next_actions",
         "phase_validation_commands",
-        "next_action"
+        "next_action",
+        "phase_source_validation_next_action"
       ],
       "additionalProperties": false,
       "properties": {
@@ -163,6 +165,10 @@
         },
         "active_phase": {
           "type": "string"
+        },
+        "current_phase_index": {
+          "type": "integer",
+          "minimum": 0
         },
         "source_coverage": {
           "type": "array",
@@ -249,6 +255,9 @@
           }
         },
         "next_action": {
+          "type": "string"
+        },
+        "phase_source_validation_next_action": {
           "type": "string"
         }
       }
