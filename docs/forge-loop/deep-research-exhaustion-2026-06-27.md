@@ -29,6 +29,7 @@ The forge-loop now treats auto-compaction as a required session invariant for lo
 
 - `fxrun forge-loop components-audit --strict`
 - `fxrun forge-loop target-mining-audit --strict`
+- `fxrun forge-loop output-schema-audit --strict`
 - `fxrun forge-loop docs-drift --json`
 - `cargo test -p runner-cli --all-features forge_loop::tests`
 - Full workspace fmt/test/clippy/audit gates
