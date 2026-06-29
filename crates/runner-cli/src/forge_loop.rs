@@ -849,6 +849,10 @@ fn run(args: RunArgs) -> Result<()> {
         cycle_dir.join("research-sources.json"),
         serde_json::to_string_pretty(&research_sources())?,
     )?;
+    fs::write(
+        cycle_dir.join("required-gates.json"),
+        serde_json::to_string_pretty(&REQUIRED_GATE_COMMANDS)?,
+    )?;
     let compact_continuity = compact_continuity_artifact();
     fs::write(
         cycle_dir.join("compact-continuity.json"),
@@ -5051,6 +5055,38 @@ R  docs/old.md -> docs/new.md
         assert!(parsed
             .next_action
             .contains("next required forge-loop phase"));
+
+        fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn dry_run_writes_required_gate_artifact() {
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-required-gates-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&out).ok();
+
+        run(RunArgs {
+            goal: "scheduled subscription-auth Codex self-improvement".into(),
+            out: out.clone(),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        })
+        .expect("dry run");
+
+        let gates = fs::read_to_string(out.join("cycle/required-gates.json"))
+            .expect("required gate artifact");
+        let parsed: Vec<String> = serde_json::from_str(&gates).expect("required gates json");
+
+        assert_eq!(parsed, REQUIRED_GATE_COMMANDS);
+        assert!(parsed.iter().all(|command| command.starts_with("rtk ")));
+        assert!(parsed
+            .iter()
+            .any(|command| command == "rtk cargo audit --deny warnings"));
+        assert!(parsed.iter().any(|command| command
+            == "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings"));
 
         fs::remove_dir_all(out).ok();
     }
