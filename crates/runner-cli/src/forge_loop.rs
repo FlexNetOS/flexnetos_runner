@@ -4584,7 +4584,7 @@ fn validation_source_entries() -> Vec<String> {
 }
 
 fn validation_phase_for_command(command: &str) -> CyclePhase {
-    if command.contains("forge-loop eval --fixture") {
+    if command.contains("forge-loop eval ") {
         CyclePhase::Evaluate
     } else {
         CyclePhase::Gate
@@ -5559,6 +5559,25 @@ R  "docs/old note.md" -> "docs/new note.md"
             artifact.validation_sources.iter().any(|entry| entry
                 == "phase=Evaluate source=required_gate_commands validation_state=pending command=rtk cargo run -q -p runner-cli -- forge-loop eval --fixture"),
             "compact continuity artifact must preserve eval phase/source validation continuity"
+        );
+    }
+
+    #[test]
+    fn compact_continuity_artifact_attributes_metrics_evaluation_validation_source() {
+        let artifact = compact_continuity_artifact();
+        let metrics_eval_command = "rtk cargo run -q -p runner-cli -- forge-loop eval --metrics /tmp/fxrun-forge-loop-gate-dry-run/cycle/evaluation-input.json --manifest /tmp/fxrun-forge-loop-gate-dry-run/cycle/cycle-manifest.json";
+
+        assert!(
+            artifact
+                .phase_validation_commands
+                .get("Evaluate")
+                .is_some_and(|commands| commands.contains(&metrics_eval_command.to_string())),
+            "compact continuity artifact must keep metrics/manifest eval validation under Evaluate"
+        );
+        assert!(
+            artifact.validation_sources.iter().any(|entry| entry
+                == &format!("phase=Evaluate source=required_gate_commands validation_state=pending command={metrics_eval_command}")),
+            "compact continuity artifact must preserve metrics/manifest eval phase/source validation continuity"
         );
     }
 
