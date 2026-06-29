@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -13,6 +13,10 @@ const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
 const REQUIRED_CHECK_WORKFLOWS: &[&str] = &["ci.yml", "semantic-pr-title.yml"];
+const LOCAL_FLEXNETOS_RUNNER_LABELS: &[&str] =
+    &["self-hosted", "linux", "x64", "local", "flexnetos"];
+const LOCAL_FLEXNETOS_RUNNER_ROLE: &str = "execute GitHub Actions jobs that request the shared FlexNetOS local self-hosted label set: self-hosted, linux, x64, local, flexnetos";
+const RUNNER_QUEUE_CONTROLLER_ROLE: &str = "collect active/queued job evidence across repos, separate local-runner pressure from GitHub-hosted or vendor queues, and fix/dispatch/yield work so PR checks and repo sessions do not wait blindly";
 const SEMANTIC_PR_TITLE_INPUT: &str = "pr_title";
 const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
 const AUTO_COMPACT_TOKEN_LIMIT: u32 = 3_000_000;
@@ -58,6 +62,8 @@ pub enum ForgeLoopCommand {
     RunnerOpsSloAudit(RunnerOpsSloAuditArgs),
     /// Audit live local self-hosted runner lane ownership, including cross-repo pressure.
     RunnerFleetAudit(RunnerFleetAuditArgs),
+    /// Audit queued/in-progress jobs across repos that are waiting on the shared local runner labels.
+    RunnerQueueAudit(RunnerQueueAuditArgs),
     /// Audit the full 24/7 agentic loop: research, evaluation, adaptation, growth, runners, and PR flow.
     AgenticSystemAudit(AgenticSystemAuditArgs),
     /// Fail when exported forge-loop upgrades are still documented as queued/backlog work.
@@ -225,6 +231,22 @@ pub struct RunnerFleetAuditArgs {
     #[arg(long)]
     pub json: bool,
     /// Return non-zero when external lane pressure exceeds the allowed budget.
+    #[arg(long)]
+    pub strict: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RunnerQueueAuditArgs {
+    /// Combined JSON array of repository run snapshots with each run's GitHub Actions jobs.
+    #[arg(long)]
+    pub repo_jobs_json: PathBuf,
+    /// Maximum queued local-label jobs allowed before strict mode reports local runner pressure.
+    #[arg(long, default_value_t = 0)]
+    pub max_queued_local_jobs: usize,
+    /// Emit JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+    /// Return non-zero when local-label queue pressure exceeds the allowed budget.
     #[arg(long)]
     pub strict: bool,
 }
@@ -510,6 +532,55 @@ pub struct RunnerFleetAuditReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerQueueJobSummary {
+    pub repository: String,
+    pub workflow: String,
+    pub run_id: String,
+    pub run_status: String,
+    pub event: String,
+    pub display_title: String,
+    pub head_branch: String,
+    pub job: String,
+    pub status: String,
+    pub conclusion: String,
+    pub runner_name: String,
+    pub runner_group_name: String,
+    pub labels: Vec<String>,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerQueueRepositorySummary {
+    pub repository: String,
+    pub active_local_runner_jobs: usize,
+    pub queued_local_runner_jobs: usize,
+    pub nonlocal_queued_jobs: usize,
+    pub trigger_events: BTreeMap<String, usize>,
+    pub workflows: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunnerQueueAuditReport {
+    pub kclaw0_target: &'static str,
+    pub local_runner_labels: Vec<String>,
+    pub runner_role: &'static str,
+    pub controller_role: &'static str,
+    pub scanned_repositories: usize,
+    pub scanned_runs: usize,
+    pub scanned_jobs: usize,
+    pub active_local_runner_jobs: Vec<RunnerQueueJobSummary>,
+    pub queued_local_runner_jobs: Vec<RunnerQueueJobSummary>,
+    pub nonlocal_queued_jobs: Vec<RunnerQueueJobSummary>,
+    pub repositories: Vec<RunnerQueueRepositorySummary>,
+    pub local_runner_busy_repositories: BTreeMap<String, usize>,
+    pub local_runner_waiting_repositories: BTreeMap<String, usize>,
+    pub trigger_events: BTreeMap<String, usize>,
+    pub max_queued_local_jobs: usize,
+    pub queue_ready: bool,
+    pub missing_evidence: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AgenticSystemAuditReport {
     pub kclaw0_target: &'static str,
     pub components: ComponentsAuditReport,
@@ -572,6 +643,48 @@ struct WorkflowRunEntry {
     created_at: Option<String>,
     #[serde(default, rename = "updatedAt")]
     updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RunnerQueueRunInput {
+    #[serde(default)]
+    repository: String,
+    #[serde(default, alias = "runId", alias = "databaseId")]
+    #[serde(deserialize_with = "deserialize_stringish")]
+    run_id: String,
+    #[serde(default, alias = "name", alias = "runName", alias = "run_name")]
+    workflow: String,
+    #[serde(default, alias = "runStatus", alias = "run_status")]
+    run_status: String,
+    #[serde(default)]
+    event: String,
+    #[serde(default, alias = "displayTitle", alias = "display_title")]
+    display_title: String,
+    #[serde(default, alias = "headBranch", alias = "head_branch")]
+    head_branch: String,
+    #[serde(default, alias = "html_url", alias = "htmlUrl")]
+    url: String,
+    #[serde(default)]
+    jobs: Vec<RunnerQueueJobInput>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RunnerQueueJobInput {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_stringish")]
+    conclusion: String,
+    #[serde(default, alias = "runnerName", alias = "runner_name")]
+    runner_name: String,
+    #[serde(default, alias = "runnerGroupName", alias = "runner_group_name")]
+    runner_group_name: String,
+    #[serde(default)]
+    labels: Vec<String>,
+    #[serde(default, alias = "html_url", alias = "htmlUrl")]
+    url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -704,6 +817,7 @@ pub fn execute(cmd: ForgeLoopCommand) -> Result<()> {
         ForgeLoopCommand::RunnerBlackFactorAudit(args) => runner_black_factor_audit(args),
         ForgeLoopCommand::RunnerOpsSloAudit(args) => runner_ops_slo_audit(args),
         ForgeLoopCommand::RunnerFleetAudit(args) => runner_fleet_audit(args),
+        ForgeLoopCommand::RunnerQueueAudit(args) => runner_queue_audit(args),
         ForgeLoopCommand::AgenticSystemAudit(args) => agentic_system_audit(args),
         ForgeLoopCommand::DocsDrift(args) => docs_drift(args),
         ForgeLoopCommand::ComponentsAudit(args) => components_audit(args),
@@ -938,6 +1052,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "runner_black_factor_audit": "fxrun forge-loop runner-black-factor-audit --json",
         "runner_ops_slo_audit": "fxrun forge-loop runner-ops-slo-audit --json",
         "runner_fleet_audit": "fxrun forge-loop runner-fleet-audit --json",
+        "runner_queue_audit": "fxrun forge-loop runner-queue-audit --repo-jobs-json <repo-jobs.json> --json",
         "agentic_system_audit": "fxrun forge-loop agentic-system-audit --json"
     });
     if args.json {
@@ -963,6 +1078,7 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         println!("  black-factor proof : use `fxrun forge-loop runner-black-factor-audit --json`");
         println!("  ops SLO burn-in    : use `fxrun forge-loop runner-ops-slo-audit --json`");
         println!("  fleet lane audit   : use `fxrun forge-loop runner-fleet-audit --json`");
+        println!("  queue role audit   : use `fxrun forge-loop runner-queue-audit --repo-jobs-json <repo-jobs.json> --json`");
         println!("  agentic system     : use `fxrun forge-loop agentic-system-audit --json`");
         println!("  component audit    : use `fxrun forge-loop components-audit --json`");
         println!("  target mining      : use `fxrun forge-loop target-mining-audit --json`");
@@ -1194,6 +1310,71 @@ fn runner_fleet_audit(args: RunnerFleetAuditArgs) -> Result<()> {
     if args.strict && !report.fleet_ready {
         Err(anyhow!(
             "runner fleet audit evidence incomplete: {}",
+            report.missing_evidence.join(", ")
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn runner_queue_audit(args: RunnerQueueAuditArgs) -> Result<()> {
+    let report = runner_queue_audit_report(&args)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("fxrun forge-loop runner queue audit");
+        println!("  kclaw0 target        : {}", report.kclaw0_target);
+        println!(
+            "  local labels         : {}",
+            report.local_runner_labels.join(", ")
+        );
+        println!("  runner role          : {}", report.runner_role);
+        println!("  controller role      : {}", report.controller_role);
+        println!("  scanned repositories : {}", report.scanned_repositories);
+        println!("  scanned runs         : {}", report.scanned_runs);
+        println!("  scanned jobs         : {}", report.scanned_jobs);
+        println!(
+            "  active local jobs    : {}",
+            report.active_local_runner_jobs.len()
+        );
+        println!(
+            "  queued local jobs    : {}",
+            report.queued_local_runner_jobs.len()
+        );
+        println!(
+            "  nonlocal queued jobs : {}",
+            report.nonlocal_queued_jobs.len()
+        );
+        if !report.local_runner_busy_repositories.is_empty() {
+            println!("  local lanes busy:");
+            for (repo, count) in &report.local_runner_busy_repositories {
+                println!("    - {repo}: {count}");
+            }
+        }
+        if !report.local_runner_waiting_repositories.is_empty() {
+            println!("  local-label queues:");
+            for (repo, count) in &report.local_runner_waiting_repositories {
+                println!("    - {repo}: {count}");
+            }
+        }
+        if !report.trigger_events.is_empty() {
+            println!("  trigger events:");
+            for (event, count) in &report.trigger_events {
+                println!("    - {event}: {count}");
+            }
+        }
+        println!("  queue ready          : {}", report.queue_ready);
+        if !report.missing_evidence.is_empty() {
+            println!("  missing evidence     :");
+            for item in &report.missing_evidence {
+                println!("    - {item}");
+            }
+        }
+    }
+
+    if args.strict && !report.queue_ready {
+        Err(anyhow!(
+            "runner queue audit evidence incomplete: {}",
             report.missing_evidence.join(", ")
         ))
     } else {
@@ -1442,6 +1623,140 @@ fn runner_fleet_audit_report(args: &RunnerFleetAuditArgs) -> Result<RunnerFleetA
         external_repositories,
         jobs,
         fleet_ready,
+        missing_evidence,
+    })
+}
+
+fn runner_queue_audit_report(args: &RunnerQueueAuditArgs) -> Result<RunnerQueueAuditReport> {
+    let runs =
+        dedupe_runner_queue_runs(parse_json_vec::<RunnerQueueRunInput>(&args.repo_jobs_json)?);
+    let mut jobs = Vec::new();
+    let mut repository_runs: BTreeMap<String, usize> = BTreeMap::new();
+    let mut repository_events: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+    let mut repository_workflows: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+    let mut trigger_events: BTreeMap<String, usize> = BTreeMap::new();
+
+    for run in &runs {
+        let repository = run.repository.clone();
+        *repository_runs.entry(repository.clone()).or_insert(0) += 1;
+        if !run.event.is_empty() {
+            *trigger_events.entry(run.event.clone()).or_insert(0) += 1;
+            *repository_events
+                .entry(repository.clone())
+                .or_default()
+                .entry(run.event.clone())
+                .or_insert(0) += 1;
+        }
+        if !run.workflow.is_empty() {
+            *repository_workflows
+                .entry(repository.clone())
+                .or_default()
+                .entry(run.workflow.clone())
+                .or_insert(0) += 1;
+        }
+        for job in &run.jobs {
+            jobs.push(RunnerQueueJobSummary {
+                repository: repository.clone(),
+                workflow: run.workflow.clone(),
+                run_id: run.run_id.clone(),
+                run_status: run.run_status.clone(),
+                event: run.event.clone(),
+                display_title: run.display_title.clone(),
+                head_branch: run.head_branch.clone(),
+                job: job.name.clone(),
+                status: job.status.clone(),
+                conclusion: job.conclusion.clone(),
+                runner_name: job.runner_name.clone(),
+                runner_group_name: job.runner_group_name.clone(),
+                labels: job.labels.clone(),
+                url: if job.url.is_empty() {
+                    run.url.clone()
+                } else {
+                    job.url.clone()
+                },
+            });
+        }
+    }
+
+    let active_local_runner_jobs = jobs
+        .iter()
+        .filter(|job| job_has_local_flexnetos_labels(&job.labels))
+        .filter(|job| is_active_runner_job_status(&job.status))
+        .cloned()
+        .collect::<Vec<_>>();
+    let queued_local_runner_jobs = jobs
+        .iter()
+        .filter(|job| job_has_local_flexnetos_labels(&job.labels))
+        .filter(|job| is_queued_runner_job_status(&job.status))
+        .cloned()
+        .collect::<Vec<_>>();
+    let nonlocal_queued_jobs = jobs
+        .iter()
+        .filter(|job| !job_has_local_flexnetos_labels(&job.labels))
+        .filter(|job| is_queued_runner_job_status(&job.status))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let local_runner_busy_repositories = count_jobs_by_repository(&active_local_runner_jobs);
+    let local_runner_waiting_repositories = count_jobs_by_repository(&queued_local_runner_jobs);
+
+    let mut repositories = repository_runs
+        .keys()
+        .map(|repository| RunnerQueueRepositorySummary {
+            repository: repository.clone(),
+            active_local_runner_jobs: local_runner_busy_repositories
+                .get(repository)
+                .copied()
+                .unwrap_or(0),
+            queued_local_runner_jobs: local_runner_waiting_repositories
+                .get(repository)
+                .copied()
+                .unwrap_or(0),
+            nonlocal_queued_jobs: nonlocal_queued_jobs
+                .iter()
+                .filter(|job| &job.repository == repository)
+                .count(),
+            trigger_events: repository_events
+                .get(repository)
+                .cloned()
+                .unwrap_or_default(),
+            workflows: repository_workflows
+                .get(repository)
+                .cloned()
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+    repositories.sort_by(|left, right| left.repository.cmp(&right.repository));
+
+    let mut missing_evidence = Vec::new();
+    if runs.is_empty() {
+        missing_evidence.push("repo_job_snapshots");
+    }
+    if queued_local_runner_jobs.len() > args.max_queued_local_jobs {
+        missing_evidence.push("local_runner_queue_pressure");
+    }
+    let queue_ready = missing_evidence.is_empty();
+
+    Ok(RunnerQueueAuditReport {
+        kclaw0_target: "shared local runner queue is explicit: active lanes, waiting local-label jobs, nonlocal vendor queues, repo triggers, and controller responsibility are machine-classified",
+        local_runner_labels: LOCAL_FLEXNETOS_RUNNER_LABELS
+            .iter()
+            .map(|label| (*label).to_string())
+            .collect(),
+        runner_role: LOCAL_FLEXNETOS_RUNNER_ROLE,
+        controller_role: RUNNER_QUEUE_CONTROLLER_ROLE,
+        scanned_repositories: repository_runs.len(),
+        scanned_runs: runs.len(),
+        scanned_jobs: jobs.len(),
+        active_local_runner_jobs,
+        queued_local_runner_jobs,
+        nonlocal_queued_jobs,
+        repositories,
+        local_runner_busy_repositories,
+        local_runner_waiting_repositories,
+        trigger_events,
+        max_queued_local_jobs: args.max_queued_local_jobs,
+        queue_ready,
         missing_evidence,
     })
 }
@@ -1801,6 +2116,54 @@ fn dedupe_runner_fleet_jobs(jobs: Vec<RunnerFleetJob>) -> Vec<RunnerFleetJob> {
             .or_insert(job);
     }
     by_key.into_values().collect()
+}
+
+fn dedupe_runner_queue_runs(runs: Vec<RunnerQueueRunInput>) -> Vec<RunnerQueueRunInput> {
+    let mut by_key: BTreeMap<(String, String), RunnerQueueRunInput> = BTreeMap::new();
+    for run in runs {
+        let key = (run.repository.clone(), run.run_id.clone());
+        by_key
+            .entry(key)
+            .and_modify(|existing| {
+                if existing.workflow.is_empty() {
+                    existing.workflow = run.workflow.clone();
+                }
+                if existing.run_status.is_empty() {
+                    existing.run_status = run.run_status.clone();
+                }
+                if existing.event.is_empty() {
+                    existing.event = run.event.clone();
+                }
+                if existing.display_title.is_empty() {
+                    existing.display_title = run.display_title.clone();
+                }
+                if existing.head_branch.is_empty() {
+                    existing.head_branch = run.head_branch.clone();
+                }
+                if existing.url.is_empty() {
+                    existing.url = run.url.clone();
+                }
+                existing.jobs.extend(run.jobs.clone());
+                dedupe_runner_queue_jobs(&mut existing.jobs);
+            })
+            .or_insert(run);
+    }
+    by_key.into_values().collect()
+}
+
+fn dedupe_runner_queue_jobs(jobs: &mut Vec<RunnerQueueJobInput>) {
+    let mut by_key: BTreeMap<(String, String, String, String), RunnerQueueJobInput> =
+        BTreeMap::new();
+    for job in jobs.drain(..) {
+        let key = (
+            job.name.clone(),
+            job.status.clone(),
+            job.runner_name.clone(),
+            job.url.clone(),
+        );
+        by_key.entry(key).or_insert(job);
+    }
+    jobs.extend(by_key.into_values());
 }
 
 fn runner_black_factor_audit_report(
@@ -2325,6 +2688,50 @@ where
 {
     let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))
+}
+
+fn deserialize_stringish<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(text) => text,
+        serde_json::Value::Number(number) => number.to_string(),
+        serde_json::Value::Bool(flag) => flag.to_string(),
+        other => other.to_string(),
+    })
+}
+
+fn job_has_local_flexnetos_labels(labels: &[String]) -> bool {
+    LOCAL_FLEXNETOS_RUNNER_LABELS.iter().all(|required| {
+        labels
+            .iter()
+            .any(|label| label.eq_ignore_ascii_case(required))
+    })
+}
+
+fn is_active_runner_job_status(status: &str) -> bool {
+    matches!(
+        status.to_ascii_lowercase().as_str(),
+        "in_progress" | "running"
+    )
+}
+
+fn is_queued_runner_job_status(status: &str) -> bool {
+    matches!(
+        status.to_ascii_lowercase().as_str(),
+        "queued" | "pending" | "waiting" | "requested"
+    )
+}
+
+fn count_jobs_by_repository(jobs: &[RunnerQueueJobSummary]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for job in jobs {
+        *counts.entry(job.repository.clone()).or_insert(0) += 1;
+    }
+    counts
 }
 
 fn runner_health_report(path: &Path) -> Result<RunnerHealthReport> {
@@ -2928,6 +3335,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     "runner-fleet-audit --strict",
                 ),
                 (
+                    "docs/forge-loop/kclaw0-runner-flow-target.md",
+                    "runner-queue-audit --repo-jobs-json",
+                ),
+                (
                     "docs/forge-loop/agentic-system-proof.md",
                     "agentic-system-audit --strict",
                 ),
@@ -2956,6 +3367,10 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 (
                     "crates/runner-cli/src/forge_loop.rs",
                     "runner_fleet_audit_flags_external_repo_lane_pressure",
+                ),
+                (
+                    "crates/runner-cli/src/forge_loop.rs",
+                    "runner_queue_audit_classifies_local_waits_and_nonlocal_queues",
                 ),
                 (
                     "crates/runner-cli/src/forge_loop.rs",
@@ -5794,6 +6209,166 @@ R  docs/old.md -> docs/new.md
     }
 
     #[test]
+    fn runner_queue_audit_classifies_local_waits_and_nonlocal_queues() {
+        let temp =
+            std::env::temp_dir().join(format!("fxrun-runner-queue-audit-{}", std::process::id()));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let repo_jobs = temp.join("repo-jobs.json");
+        fs::write(
+            &repo_jobs,
+            r#"[
+              {
+                "repository":"FlexNetOS/envctl",
+                "run_id":"28341300089",
+                "name":"CI",
+                "run_status":"in_progress",
+                "event":"pull_request",
+                "displayTitle":"engine: add catalog diff and render projections",
+                "headBranch":"engine/catalog-diff",
+                "jobs":[
+                  {"name":"test","status":"in_progress","conclusion":null,"runner_name":"fxrun-drdave-TRX50-AI-TOP-flexnetos-01","runner_group_name":"default","labels":["self-hosted","linux","x64","local","flexnetos"]}
+                ]
+              },
+              {
+                "repository":"FlexNetOS/flexnetos_runner",
+                "run_id":"28341367600",
+                "name":"Codex Forge Loop",
+                "run_status":"queued",
+                "event":"workflow_dispatch",
+                "displayTitle":"Codex Forge Loop",
+                "headBranch":"main",
+                "jobs":[
+                  {"name":"forge-loop","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","local","flexnetos"]}
+                ]
+              },
+              {
+                "repository":"FlexNetOS/meta",
+                "run_id":"28341528867",
+                "name":"CI",
+                "run_status":"queued",
+                "event":"pull_request",
+                "displayTitle":"docs(recovery): prove phase 1.5 release infra",
+                "headBranch":"codex/phase1-5-release-infra-proof-20260629",
+                "jobs":[
+                  {"name":"Clippy","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","local","flexnetos"]}
+                ]
+              },
+              {
+                "repository":"FlexNetOS/n8n",
+                "run_id":"28315602550",
+                "name":"Test: E2E VM Expressions Nightly",
+                "run_status":"queued",
+                "event":"schedule",
+                "displayTitle":"Test: E2E VM Expressions Nightly",
+                "headBranch":"master",
+                "jobs":[
+                  {"name":"e2e","status":"queued","conclusion":null,"labels":["blacksmith-4vcpu-ubuntu-2204"]}
+                ]
+              }
+            ]"#,
+        )
+        .expect("repo jobs json");
+
+        let report = runner_queue_audit_report(&RunnerQueueAuditArgs {
+            repo_jobs_json: repo_jobs,
+            max_queued_local_jobs: 0,
+            json: true,
+            strict: false,
+        })
+        .expect("queue audit");
+
+        assert!(!report.queue_ready);
+        assert_eq!(report.scanned_repositories, 4);
+        assert_eq!(report.active_local_runner_jobs.len(), 1);
+        assert_eq!(report.queued_local_runner_jobs.len(), 2);
+        assert_eq!(report.nonlocal_queued_jobs.len(), 1);
+        assert_eq!(
+            report
+                .local_runner_busy_repositories
+                .get("FlexNetOS/envctl"),
+            Some(&1)
+        );
+        assert_eq!(
+            report
+                .local_runner_waiting_repositories
+                .get("FlexNetOS/flexnetos_runner"),
+            Some(&1)
+        );
+        assert_eq!(
+            report
+                .local_runner_waiting_repositories
+                .get("FlexNetOS/meta"),
+            Some(&1)
+        );
+        assert_eq!(report.trigger_events.get("pull_request"), Some(&2));
+        assert_eq!(report.trigger_events.get("workflow_dispatch"), Some(&1));
+        assert_eq!(report.trigger_events.get("schedule"), Some(&1));
+        assert!(report
+            .missing_evidence
+            .contains(&"local_runner_queue_pressure"));
+        let n8n = report
+            .repositories
+            .iter()
+            .find(|repo| repo.repository == "FlexNetOS/n8n")
+            .expect("n8n summary");
+        assert_eq!(n8n.nonlocal_queued_jobs, 1);
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
+    fn runner_queue_audit_accepts_nonlocal_vendor_queue_without_local_pressure() {
+        let temp = std::env::temp_dir().join(format!(
+            "fxrun-runner-queue-audit-pass-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&temp).ok();
+        fs::create_dir_all(&temp).expect("tempdir");
+        let repo_jobs = temp.join("repo-jobs.json");
+        fs::write(
+            &repo_jobs,
+            r#"[
+              {
+                "repository":"FlexNetOS/flexnetos_runner",
+                "run_id":28341315842,
+                "name":"CI",
+                "run_status":"in_progress",
+                "event":"push",
+                "jobs":[
+                  {"name":"Local Linux CI","status":"in_progress","runner_name":"fxrun-drdave-TRX50-AI-TOP-flexnetos-02","runner_group_name":"default","labels":["self-hosted","linux","x64","local","flexnetos"]}
+                ]
+              },
+              {
+                "repository":"drdave-flexnetos/chroma",
+                "run_id":28318892433,
+                "name":"Run (intensive) tests nightly",
+                "run_status":"queued",
+                "event":"schedule",
+                "jobs":[
+                  {"name":"intensive","status":"queued","labels":["blacksmith-8vcpu-ubuntu-2404"]}
+                ]
+              }
+            ]"#,
+        )
+        .expect("repo jobs json");
+
+        let report = runner_queue_audit_report(&RunnerQueueAuditArgs {
+            repo_jobs_json: repo_jobs,
+            max_queued_local_jobs: 0,
+            json: true,
+            strict: false,
+        })
+        .expect("queue audit");
+
+        assert!(report.queue_ready, "{:?}", report.missing_evidence);
+        assert_eq!(report.active_local_runner_jobs.len(), 1);
+        assert!(report.queued_local_runner_jobs.is_empty());
+        assert_eq!(report.nonlocal_queued_jobs.len(), 1);
+        assert!(report.local_runner_waiting_repositories.is_empty());
+        fs::remove_dir_all(temp).ok();
+    }
+
+    #[test]
     fn agentic_system_audit_accepts_composed_live_proof() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -6655,6 +7230,53 @@ R  docs/old.md -> docs/new.md
         assert!(target.contains("Bridge-duration sustain policy"));
         assert!(target.contains("self-refill replacement"));
         assert!(target.contains("12+ hour kclaw0 persistence target"));
+    }
+
+    #[test]
+    fn runner_queue_role_docs_and_collector_are_guarded() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let target = fs::read_to_string(root.join("docs/forge-loop/kclaw0-runner-flow-target.md"))
+            .expect("read kclaw0 runner target");
+        let script = fs::read_to_string(root.join("scripts/collect-runner-queue-evidence.sh"))
+            .expect("read queue collector");
+        let source = fs::read_to_string(root.join("crates/runner-cli/src/forge_loop.rs"))
+            .expect("read forge loop source");
+
+        for required in [
+            "Runner queue role audit",
+            "self-hosted",
+            "linux",
+            "x64",
+            "local",
+            "flexnetos",
+            "controller role",
+            "queued local-label jobs",
+            "queued nonlocal jobs",
+            "runner-queue-audit --repo-jobs-json",
+            "--max-queued-local-jobs",
+        ] {
+            assert!(
+                target.contains(required),
+                "runner target missing {required}"
+            );
+        }
+        for required in [
+            "gh repo list",
+            "gh run list",
+            "--status \"$status\"",
+            "gh api --paginate",
+            "runner-queue-audit",
+        ] {
+            assert!(
+                script.contains(required),
+                "queue collector missing {required}"
+            );
+        }
+        assert!(source.contains("runner_queue_audit"));
+        assert!(source.contains("queue role audit"));
     }
 
     #[test]
