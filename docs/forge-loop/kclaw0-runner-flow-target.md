@@ -51,6 +51,19 @@ The default CLI window is intentionally short enough for rapid regression checks
 
 The local self-hosted runners are a shared fleet resource, so a repo-local GitHub run list can look healthy while another repository is occupying one of the physical lanes. `fxrun forge-loop runner-fleet-audit --strict` closes that blind spot for operator-side proofs by scanning live GitHub Actions job environments that are still attached to a `Runner.Worker` process from procfs, deduplicating child processes into unique workflow jobs, and failing when any job outside the expected repository owns a local runner lane. This does not replace the run-history SLO; it explains delayed sessions and queued checks that are invisible to this repository's Actions history.
 
+## Runner queue role audit
+
+When repo sessions appear delayed, the controller must not guess whether the local runners, GitHub-hosted runners, or a third-party runner vendor are the blocker. The two local FlexNetOS runner services have one mechanical role: execute jobs whose labels request `self-hosted`, `linux`, `x64`, `local`, and `flexnetos`. The controller role is separate: collect cross-repo Actions evidence, identify which repos are actively occupying those local labels, identify which repos are queued behind the same labels, classify nonlocal queues such as Blacksmith separately, then either fix the surfaced repo/job issue, yield filler work, or dispatch rehydration without waiting for an SLO window to age out.
+
+`scripts/collect-runner-queue-evidence.sh --audit` collects queued and in-progress runs across the configured org/repo set, fetches each run's job labels and runner assignment, and feeds the result to `fxrun forge-loop runner-queue-audit --repo-jobs-json <repo-jobs.json> --json`. The audit reports:
+
+- active local-label jobs with runner names, which explains which repo owns each physical lane now;
+- queued local-label jobs, which explains which repo sessions/checks are waiting on the shared local runner pool;
+- queued nonlocal jobs, which prevents blaming the local FlexNetOS runners for GitHub-hosted or vendor-specific queues; and
+- trigger events (`push`, `pull_request`, `workflow_dispatch`, `schedule`, or `workflow_run`) and workflow names by repository, so the owner can see how each wait was triggered.
+
+Strict mode fails when queued local-label jobs exceed the configured budget (`--max-queued-local-jobs`, default `0`). That makes a surfaced wait an immediate upgrade/fix target instead of something the dark-factory loop waits out.
+
 ## End-to-end agentic system audit
 
 `fxrun forge-loop agentic-system-audit --strict` composes the runner-flow, black-factor, operations
