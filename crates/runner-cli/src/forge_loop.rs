@@ -735,9 +735,10 @@ fn run(args: RunArgs) -> Result<()> {
         cycle_dir.join("research-sources.json"),
         serde_json::to_string_pretty(&research_sources())?,
     )?;
+    let compact_continuity = compact_continuity_artifact();
     fs::write(
         cycle_dir.join("compact-continuity.json"),
-        serde_json::to_string_pretty(&compact_continuity_artifact())?,
+        serde_json::to_string_pretty(&compact_continuity)?,
     )?;
     let log = cycle_dir.join("events.jsonl");
     append_event(
@@ -746,6 +747,14 @@ fn run(args: RunArgs) -> Result<()> {
             event: "cycle.started",
             phase: CyclePhase::Red,
             detail: "forge-loop TDD cycle started",
+        },
+    )?;
+    append_event(
+        &log,
+        CycleEvent {
+            event: "continuity.compact_checkpoint",
+            phase: compact_continuity.active_phase,
+            detail: &compact_continuity.phase_source_validation_next_action,
         },
     )?;
 
@@ -4627,6 +4636,45 @@ R  docs/old.md -> docs/new.md
         assert!(parsed
             .next_action
             .contains("next required forge-loop phase"));
+
+        fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn dry_run_event_stream_preserves_compact_continuity_checkpoint() {
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-continuity-events-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&out).ok();
+
+        run(RunArgs {
+            goal: "scheduled subscription-auth Codex self-improvement".into(),
+            out: out.clone(),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        })
+        .expect("dry run");
+
+        let cycle_dir = fs::read_dir(&out)
+            .expect("artifact root")
+            .next()
+            .expect("one cycle artifact")
+            .expect("cycle dir")
+            .path();
+        let events = fs::read_to_string(cycle_dir.join("events.jsonl")).expect("events");
+
+        assert!(
+            events.contains("\"event\":\"continuity.compact_checkpoint\""),
+            "dry-run event stream must include a compact continuity checkpoint"
+        );
+        assert!(
+            events.contains(
+                "phase=Red source_coverage=complete validation_state=pending next_action=continue"
+            ),
+            "compact checkpoint must preserve phase/source/validation/next-action continuity"
+        );
 
         fs::remove_dir_all(out).ok();
     }
