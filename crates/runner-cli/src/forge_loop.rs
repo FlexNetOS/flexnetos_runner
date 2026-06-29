@@ -794,6 +794,7 @@ pub struct CompactContinuityArtifact {
     pub research_output_contract: Vec<String>,
     pub validation_state: Vec<String>,
     pub validation_sources: Vec<String>,
+    pub phase_continuity: Vec<String>,
     pub next_action: String,
     pub phase_source_validation_next_action: String,
 }
@@ -2983,6 +2984,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "source_coverage",
         "validation_state",
         "validation_sources",
+        "phase_continuity",
         "next_action",
     ]
     .into_iter()
@@ -4344,10 +4346,47 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             .map(|command| format!("pending: {command}"))
             .collect(),
         validation_sources: validation_source_entries(),
+        phase_continuity: phase_continuity_entries(),
         next_action: "continue with the next required forge-loop phase".into(),
         phase_source_validation_next_action:
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
+    }
+}
+
+fn phase_continuity_entries() -> Vec<String> {
+    required_phases()
+        .into_iter()
+        .map(|phase| {
+            format!(
+                "phase={} source={} validation_state=pending next_action={}",
+                cycle_phase_label(phase),
+                continuity_source_for_phase(phase),
+                continuity_next_action_for_phase(phase)
+            )
+        })
+        .collect()
+}
+
+fn continuity_source_for_phase(phase: CyclePhase) -> &'static str {
+    match phase {
+        CyclePhase::Red => "red_test_evidence",
+        CyclePhase::Implement => "working_tree_diff",
+        CyclePhase::Gate => "required_gate_commands",
+        CyclePhase::Evaluate => "evaluation_artifacts",
+        CyclePhase::Research => "research_sources",
+        CyclePhase::Upgrade => "strict_upgrade_plan",
+    }
+}
+
+fn continuity_next_action_for_phase(phase: CyclePhase) -> &'static str {
+    match phase {
+        CyclePhase::Red => "implement_smallest_passing_change",
+        CyclePhase::Implement => "run_required_gates",
+        CyclePhase::Gate => "evaluate_run",
+        CyclePhase::Evaluate => "research_reliability_accuracy_speed_improvement",
+        CyclePhase::Research => "decide_smallest_safe_self_upgrade",
+        CyclePhase::Upgrade => "leave_publishable_changes_for_outer_engine",
     }
 }
 
@@ -5184,6 +5223,25 @@ R  "docs/old note.md" -> "docs/new note.md"
         assert!(artifact.phase_source_validation_next_action.contains(
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
         ));
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_per_phase_continuity_timeline() {
+        let artifact = compact_continuity_artifact();
+
+        assert_eq!(artifact.phase_continuity.len(), required_phases().len());
+        for phase in required_phases() {
+            let label = cycle_phase_label(phase);
+            assert!(
+                artifact.phase_continuity.iter().any(|entry| {
+                    entry.contains(&format!("phase={label}"))
+                        && entry.contains("source=")
+                        && entry.contains("validation_state=")
+                        && entry.contains("next_action=")
+                }),
+                "compact continuity artifact missing full continuity entry for {label}"
+            );
+        }
     }
 
     #[test]
@@ -6696,6 +6754,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             "structured_output_schemas",
             "auto_compaction_continuity_settings",
             "validation_sources",
+            "phase_continuity",
         ] {
             assert!(
                 output_schema.contains(required),

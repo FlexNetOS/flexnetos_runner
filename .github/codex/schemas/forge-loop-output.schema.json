@@ -130,6 +130,7 @@
         "source_coverage",
         "validation_state",
         "validation_sources",
+        "phase_continuity",
         "next_action"
       ],
       "additionalProperties": false,
@@ -162,6 +163,12 @@
           }
         },
         "validation_sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "phase_continuity": {
           "type": "array",
           "items": {
             "type": "string"
