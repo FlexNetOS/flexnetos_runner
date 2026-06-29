@@ -4586,6 +4586,8 @@ fn validation_source_entries() -> Vec<String> {
 fn validation_phase_for_command(command: &str) -> CyclePhase {
     if command.contains("forge-loop eval ") {
         CyclePhase::Evaluate
+    } else if command.contains("forge-loop self-upgrade ") {
+        CyclePhase::Upgrade
     } else {
         CyclePhase::Gate
     }
@@ -5578,6 +5580,26 @@ R  "docs/old note.md" -> "docs/new note.md"
             artifact.validation_sources.iter().any(|entry| entry
                 == &format!("phase=Evaluate source=required_gate_commands validation_state=pending command={metrics_eval_command}")),
             "compact continuity artifact must preserve metrics/manifest eval phase/source validation continuity"
+        );
+    }
+
+    #[test]
+    fn compact_continuity_artifact_attributes_self_upgrade_validation_source() {
+        let artifact = compact_continuity_artifact();
+        let self_upgrade_command =
+            "rtk cargo run -q -p runner-cli -- forge-loop self-upgrade --dry-run";
+
+        assert!(
+            artifact
+                .phase_validation_commands
+                .get("Upgrade")
+                .is_some_and(|commands| commands.contains(&self_upgrade_command.to_string())),
+            "compact continuity artifact must keep self-upgrade validation under Upgrade"
+        );
+        assert!(
+            artifact.validation_sources.iter().any(|entry| entry
+                == &format!("phase=Upgrade source=required_gate_commands validation_state=pending command={self_upgrade_command}")),
+            "compact continuity artifact must preserve self-upgrade phase/source validation continuity"
         );
     }
 
