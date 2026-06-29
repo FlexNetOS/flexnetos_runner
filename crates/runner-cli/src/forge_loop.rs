@@ -7435,6 +7435,28 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
+    fn scheduled_forge_loop_shell_commands_use_rtk_wrapper() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+
+        let prompt_path = ".github/codex/prompts/forge-loop.md";
+        let prompt = fs::read_to_string(root.join(prompt_path)).expect("read forge-loop prompt");
+
+        assert!(
+            prompt.contains("rtk fxrun forge-loop run --goal"),
+            "{prompt_path} command must preserve RTK shell discipline"
+        );
+        for command in REQUIRED_GATE_COMMANDS {
+            assert!(
+                command.starts_with("rtk "),
+                "required gate command must start with rtk: {command}"
+            );
+        }
+    }
+
+    #[test]
     fn action_created_pr_required_checks_are_dispatchable() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
