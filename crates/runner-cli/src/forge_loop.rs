@@ -4261,11 +4261,38 @@ fn publishable_paths_from_status(status: &str) -> Vec<String> {
         .filter_map(|line| line.get(3..))
         .map(str::trim)
         .filter_map(|path| path.split(" -> ").last())
+        .map(normalize_git_porcelain_path)
         .filter(|path| *path != CODEX_FORGE_LOOP_OUTPUT)
         .filter(|path| !path.starts_with("_work/"))
         .filter(|path| !path.is_empty())
-        .map(str::to_string)
         .collect()
+}
+
+fn normalize_git_porcelain_path(path: &str) -> String {
+    if !(path.starts_with('"') && path.ends_with('"') && path.len() >= 2) {
+        return path.to_string();
+    }
+
+    let mut normalized = String::new();
+    let mut chars = path[1..path.len() - 1].chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            normalized.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('"') => normalized.push('"'),
+            Some('\\') => normalized.push('\\'),
+            Some('n') => normalized.push('\n'),
+            Some('t') => normalized.push('\t'),
+            Some(other) => {
+                normalized.push('\\');
+                normalized.push(other);
+            }
+            None => normalized.push('\\'),
+        }
+    }
+    normalized
 }
 
 fn run_command(program: &str, args: &[&str]) -> Result<String> {
@@ -4818,6 +4845,23 @@ R  docs/old.md -> docs/new.md
                 "docs/kclaw0-upgrade-ledger.md".to_string(),
                 "docs/forge-loop/new-artifact.md".to_string(),
                 "docs/new.md".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn publishable_paths_unquote_git_porcelain_paths_with_spaces() {
+        let paths = publishable_paths_from_status(
+            r#"?? "docs/forge-loop/research note.md"
+R  "docs/old note.md" -> "docs/new note.md"
+"#,
+        );
+
+        assert_eq!(
+            paths,
+            vec![
+                "docs/forge-loop/research note.md".to_string(),
+                "docs/new note.md".to_string(),
             ]
         );
     }
