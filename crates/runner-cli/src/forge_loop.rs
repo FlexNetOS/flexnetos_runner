@@ -3008,6 +3008,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "phase_continuity",
         "phase_next_actions",
         "phase_validation_commands",
+        "phase_validation_state",
         "next_action",
         "phase_source_validation_next_action",
     ]
@@ -7116,6 +7117,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             "validation_state",
             "validation_sources",
             "phase_next_actions",
+            "phase_validation_state",
             "next_action",
             "phase_source_validation_next_action",
         ] {
