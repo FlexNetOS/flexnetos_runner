@@ -2936,7 +2936,7 @@ fn output_schema_audit_report(root: &Path) -> Result<OutputSchemaAuditReport> {
     let required_fields = required_output_schema_fields();
     let present_fields = required_fields
         .iter()
-        .filter(|field| json_value_contains_key(&parsed, field))
+        .filter(|field| json_schema_requires_key(&parsed, field))
         .cloned()
         .collect::<Vec<_>>();
     let missing_fields = required_fields
@@ -2996,17 +2996,24 @@ fn required_output_schema_fields() -> Vec<String> {
     .collect()
 }
 
-fn json_value_contains_key(value: &serde_json::Value, key: &str) -> bool {
+fn json_schema_requires_key(value: &serde_json::Value, key: &str) -> bool {
     match value {
         serde_json::Value::Object(map) => {
-            map.contains_key(key)
+            map.get("required")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|required| {
+                    required.iter().any(|item| {
+                        item.as_str()
+                            .is_some_and(|required_key| required_key == key)
+                    })
+                })
                 || map
                     .values()
-                    .any(|child| json_value_contains_key(child, key))
+                    .any(|child| json_schema_requires_key(child, key))
         }
         serde_json::Value::Array(items) => items
             .iter()
-            .any(|child| json_value_contains_key(child, key)),
+            .any(|child| json_schema_requires_key(child, key)),
         _ => false,
     }
 }
@@ -6864,6 +6871,60 @@ R  "docs/old note.md" -> "docs/new note.md"
                 "schema audit missing {required}"
             );
         }
+    }
+
+    #[test]
+    fn output_schema_audit_rejects_fields_that_are_only_documented_not_required() {
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-schema-required-audit-{}",
+            std::process::id()
+        ));
+        let schema_dir = root.join(".github/codex/schemas");
+        fs::create_dir_all(&schema_dir).expect("schema dir");
+        fs::write(
+            schema_dir.join("forge-loop-output.schema.json"),
+            r#"{
+              "type": "object",
+              "required": ["summary"],
+              "properties": {
+                "summary": {"type": "string"},
+                "auth_mode": {"type": "string"},
+                "component_inventory": {
+                  "type": "object",
+                  "required": [],
+                  "properties": {
+                    "structured_output_schemas": {"type": "string"}
+                  }
+                },
+                "auto_compact_continuity": {
+                  "type": "object",
+                  "required": [],
+                  "properties": {
+                    "next_action": {"type": "string"}
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("write schema");
+
+        let report = output_schema_audit_report(&root).expect("schema audit");
+
+        assert!(!report.structured_output_ready);
+        assert!(
+            report.missing_fields.contains(&"auth_mode".to_string()),
+            "field mentioned only in properties must still be missing: {:?}",
+            report
+        );
+        assert!(
+            report
+                .missing_fields
+                .contains(&"structured_output_schemas".to_string()),
+            "nested property mentioned outside a required array must still be missing: {:?}",
+            report
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
