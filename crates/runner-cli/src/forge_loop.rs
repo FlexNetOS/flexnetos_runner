@@ -700,6 +700,7 @@ pub struct ComponentsAuditReport {
     pub present_components: Vec<String>,
     pub missing_components: Vec<String>,
     pub components: Vec<LoopComponentStatus>,
+    pub permission_profile_readiness: PermissionProfileReadiness,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -709,6 +710,16 @@ pub struct LoopComponentStatus {
     pub path: &'static str,
     pub present: bool,
     pub rationale: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PermissionProfileReadiness {
+    pub active_default_permissions: Option<String>,
+    pub active_sandbox_mode: Option<String>,
+    pub mirror_default_permissions: Option<String>,
+    pub profile_rules_present: bool,
+    pub migration_ready: bool,
+    pub blockers: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -3473,7 +3484,72 @@ fn components_audit_report(root: &Path) -> ComponentsAuditReport {
         present_components,
         missing_components,
         components,
+        permission_profile_readiness: permission_profile_readiness(root),
     }
+}
+
+fn permission_profile_readiness(root: &Path) -> PermissionProfileReadiness {
+    let config = fs::read_to_string(root.join(".codex/config.toml")).unwrap_or_default();
+    let mirror = fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
+        .unwrap_or_default();
+    let active_default_permissions = extract_quoted_toml_value(&config, "default_permissions");
+    let active_sandbox_mode = extract_quoted_toml_value(&config, "sandbox_mode");
+    let mirror_default_permissions = extract_quoted_toml_value(&mirror, "default_permissions");
+    let profile_rules_present = [
+        "[permissions.forge-loop-workspace.filesystem]",
+        "\":minimal\" = \"read\"",
+        "\":tmpdir\" = \"write\"",
+        "\":slash_tmp\" = \"write\"",
+        "[permissions.forge-loop-workspace.filesystem.\":workspace_roots\"]",
+        "\".\" = \"write\"",
+        "\".git\" = \"read\"",
+        "\"**/*.env\" = \"deny\"",
+        "\"**/*secret*\" = \"deny\"",
+        "\"**/*token*\" = \"deny\"",
+        "[permissions.forge-loop-workspace.network.domains]",
+        "\"developers.openai.com\" = \"allow\"",
+        "\"github.com\" = \"allow\"",
+        "\"crates.io\" = \"allow\"",
+    ]
+    .iter()
+    .all(|required| config.contains(required) || mirror.contains(required));
+
+    let mut blockers = Vec::new();
+    if active_default_permissions.as_deref() != Some("forge-loop-workspace") {
+        blockers
+            .push("active config does not select default_permissions=forge-loop-workspace".into());
+    }
+    if active_sandbox_mode.is_some() {
+        blockers.push("active config still contains sandbox_mode".into());
+    }
+    if mirror_default_permissions.as_deref() != Some("forge-loop-workspace") {
+        blockers.push(
+            "permission profile mirror is missing default_permissions=forge-loop-workspace".into(),
+        );
+    }
+    if !profile_rules_present {
+        blockers.push("permission profile parity rules are incomplete".into());
+    }
+
+    PermissionProfileReadiness {
+        active_default_permissions,
+        active_sandbox_mode,
+        mirror_default_permissions,
+        profile_rules_present,
+        migration_ready: blockers.is_empty(),
+        blockers,
+    }
+}
+
+fn extract_quoted_toml_value(text: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key} = ");
+    text.lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix(&prefix))
+        .and_then(|value| value.trim().strip_prefix('"'))
+        .and_then(|value| value.split('"').next())
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn expected_loop_components() -> Vec<LoopComponent> {
@@ -3506,7 +3582,7 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             id: "permission-request-hook",
             surface: "hooks",
             path: ".codex/hooks/forge_loop_permission_request.py",
-            rationale: "Codex PermissionRequest hooks can witness approval posture and ensure the permission-profile blueprint stays separate from active sandbox settings.",
+            rationale: "Codex PermissionRequest hooks can witness approval posture while components-audit exposes permission-profile migration readiness.",
         },
         LoopComponent {
             id: "post-tool-hook",
@@ -3554,7 +3630,7 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             id: "permission-profile-blueprint",
             surface: "permissions",
             path: ".codex/permissions/forge-loop-workspace.toml",
-            rationale: "Codex permission profiles provide a least-privilege migration target, but must stay separate while sandbox_mode remains active.",
+            rationale: "Codex permission profiles provide a least-privilege migration target and parity source for the active config readiness audit.",
         },
         LoopComponent {
             id: "skill",
@@ -6737,6 +6813,31 @@ R  "docs/old note.md" -> "docs/new note.md"
         assert!(compact_prompt.contains("next action"));
         assert!(workflow.contains("forge-loop run"));
         assert!(workflow.contains("local ChatGPT auth"));
+    }
+
+    #[test]
+    fn components_audit_exposes_permission_profile_migration_readiness() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let readiness = components_audit_report(root).permission_profile_readiness;
+
+        assert_eq!(
+            readiness.mirror_default_permissions.as_deref(),
+            Some("forge-loop-workspace")
+        );
+        assert!(
+            readiness.profile_rules_present,
+            "permission profile mirror must retain least-privilege parity rules"
+        );
+        assert!(
+            readiness
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("sandbox_mode")),
+            "readiness audit must expose the active sandbox_mode migration blocker"
+        );
     }
 
     #[test]
