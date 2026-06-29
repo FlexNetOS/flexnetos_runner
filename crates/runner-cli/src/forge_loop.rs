@@ -3793,7 +3793,7 @@ fn research_output_contract() -> Vec<String> {
     [
         "one-line summary",
         "source-attributed findings",
-        "loop component/config inventory",
+        "loop component/config inventory: config, hooks, rules, skills, custom agents/subagents, permission profiles, model flags, GitHub Action/tool surfaces, structured output schemas, auto-compaction/continuity settings",
         "one recommended smallest safe self-upgrade",
         "tests required before merge",
     ]
@@ -4556,6 +4556,29 @@ R  docs/old.md -> docs/new.md
                     .iter()
                     .any(|entry| entry.contains(required)),
                 "compact continuity artifact missing research output contract item {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn research_output_contract_names_inventory_surfaces() {
+        let contract = research_output_contract().join("\n");
+
+        for required in [
+            "config",
+            "hooks",
+            "rules",
+            "skills",
+            "custom agents/subagents",
+            "permission profiles",
+            "model flags",
+            "GitHub Action/tool surfaces",
+            "structured output schemas",
+            "auto-compaction/continuity settings",
+        ] {
+            assert!(
+                contract.contains(required),
+                "research output contract missing inventory surface {required}"
             );
         }
     }
