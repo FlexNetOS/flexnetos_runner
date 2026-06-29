@@ -808,6 +808,7 @@ pub struct CompactContinuityArtifact {
     pub validation_terminal_state: Vec<String>,
     pub validation_sources: Vec<String>,
     pub phase_continuity: Vec<String>,
+    pub phase_next_actions: BTreeMap<String, String>,
     pub next_action: String,
     pub phase_source_validation_next_action: String,
 }
@@ -3001,6 +3002,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "validation_terminal_state",
         "validation_sources",
         "phase_continuity",
+        "phase_next_actions",
         "next_action",
     ]
     .into_iter()
@@ -4439,11 +4441,24 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             .collect(),
         validation_sources: validation_source_entries(),
         phase_continuity: phase_continuity_entries(),
+        phase_next_actions: phase_next_actions(),
         next_action: "continue with the next required forge-loop phase".into(),
         phase_source_validation_next_action:
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
     }
+}
+
+fn phase_next_actions() -> BTreeMap<String, String> {
+    required_phases()
+        .into_iter()
+        .map(|phase| {
+            (
+                cycle_phase_label(phase).to_string(),
+                continuity_next_action_for_phase(phase).to_string(),
+            )
+        })
+        .collect()
 }
 
 fn phase_continuity_entries() -> Vec<String> {
@@ -5332,6 +5347,28 @@ R  "docs/old note.md" -> "docs/new note.md"
                         && entry.contains("next_action=")
                 }),
                 "compact continuity artifact missing full continuity entry for {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_structured_phase_next_actions() {
+        let artifact = compact_continuity_artifact();
+        let value = serde_json::to_value(&artifact).expect("compact continuity json");
+        let phase_next_actions = value
+            .get("phase_next_actions")
+            .and_then(serde_json::Value::as_object)
+            .expect("compact continuity artifact must expose structured phase next actions");
+
+        assert_eq!(phase_next_actions.len(), required_phases().len());
+        for phase in required_phases() {
+            let label = cycle_phase_label(phase);
+            assert_eq!(
+                phase_next_actions
+                    .get(label)
+                    .and_then(serde_json::Value::as_str),
+                Some(continuity_next_action_for_phase(phase)),
+                "compact continuity artifact missing structured next action for {label}"
             );
         }
     }
@@ -6975,6 +7012,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             "source_coverage",
             "validation_state",
             "validation_sources",
+            "phase_next_actions",
             "next_action",
         ] {
             assert!(
