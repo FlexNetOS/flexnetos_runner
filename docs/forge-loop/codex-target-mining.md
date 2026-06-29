@@ -24,3 +24,7 @@ All seven target families now feed the `.codex` continuity contract: local confi
 ## 2026-06-29 structured research-result extraction
 
 The structured output schema now requires `recommended_self_upgrade` and `tests_required_before_merge`, matching the forge-loop research skill's mandated research result. This makes the research phase's action recommendation and merge-gate evidence machine-checkable by `output-schema-audit --strict` instead of leaving them as prose-only report sections.
+
+## 2026-06-29 phase-validation continuity extraction
+
+The structured output schema now requires `auto_compact_continuity.phase_validation_state` for Red, Implement, Gate, Evaluate, Research, and Upgrade, matching the compact continuity artifact's generated phase-state map. This keeps compacted scheduled runs from reconstructing per-phase validation progress from display text when `output-schema-audit --strict` can enforce the handoff directly.

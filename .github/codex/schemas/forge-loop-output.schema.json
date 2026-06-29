@@ -146,6 +146,7 @@
         "phase_continuity",
         "phase_next_actions",
         "phase_validation_commands",
+        "phase_validation_state",
         "next_action",
         "phase_source_validation_next_action"
       ],
@@ -251,6 +252,38 @@
               "items": {
                 "type": "string"
               }
+            }
+          }
+        },
+        "phase_validation_state": {
+          "type": "object",
+          "required": [
+            "Red",
+            "Implement",
+            "Gate",
+            "Evaluate",
+            "Research",
+            "Upgrade"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "Red": {
+              "type": "string"
+            },
+            "Implement": {
+              "type": "string"
+            },
+            "Gate": {
+              "type": "string"
+            },
+            "Evaluate": {
+              "type": "string"
+            },
+            "Research": {
+              "type": "string"
+            },
+            "Upgrade": {
+              "type": "string"
             }
           }
         },
