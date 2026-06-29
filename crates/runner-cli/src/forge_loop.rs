@@ -810,6 +810,7 @@ pub struct CompactContinuityArtifact {
     pub phase_continuity: Vec<String>,
     pub phase_next_actions: BTreeMap<String, String>,
     pub phase_validation_commands: BTreeMap<String, Vec<String>>,
+    pub phase_validation_state: BTreeMap<String, String>,
     pub next_action: String,
     pub phase_source_validation_next_action: String,
 }
@@ -4447,11 +4448,19 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
         phase_continuity: phase_continuity_entries(),
         phase_next_actions: phase_next_actions(),
         phase_validation_commands: phase_validation_commands(),
+        phase_validation_state: phase_validation_state(),
         next_action: "continue with the next required forge-loop phase".into(),
         phase_source_validation_next_action:
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
     }
+}
+
+fn phase_validation_state() -> BTreeMap<String, String> {
+    required_phases()
+        .into_iter()
+        .map(|phase| (cycle_phase_label(phase).to_string(), "pending".to_string()))
+        .collect()
 }
 
 fn phase_validation_commands() -> BTreeMap<String, Vec<String>> {
@@ -5428,6 +5437,28 @@ R  "docs/old note.md" -> "docs/new note.md"
                     == "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture"),
             "Evaluate phase must retain deterministic eval validation"
         );
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_structured_phase_validation_state() {
+        let artifact = compact_continuity_artifact();
+        let value = serde_json::to_value(&artifact).expect("compact continuity json");
+        let phase_validation_state = value
+            .get("phase_validation_state")
+            .and_then(serde_json::Value::as_object)
+            .expect("compact continuity artifact must expose structured phase validation state");
+
+        assert_eq!(phase_validation_state.len(), required_phases().len());
+        for phase in required_phases() {
+            let label = cycle_phase_label(phase);
+            assert_eq!(
+                phase_validation_state
+                    .get(label)
+                    .and_then(serde_json::Value::as_str),
+                Some("pending"),
+                "compact continuity artifact missing pending status for {label}"
+            );
+        }
     }
 
     #[test]
