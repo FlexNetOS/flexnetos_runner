@@ -144,6 +144,7 @@
         "validation_sources",
         "phase_continuity",
         "phase_next_actions",
+        "phase_validation_commands",
         "next_action"
       ],
       "additionalProperties": false,
@@ -222,6 +223,28 @@
             },
             "Upgrade": {
               "type": "string"
+            }
+          }
+        },
+        "phase_validation_commands": {
+          "type": "object",
+          "required": [
+            "Gate",
+            "Evaluate"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "Gate": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Evaluate": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },

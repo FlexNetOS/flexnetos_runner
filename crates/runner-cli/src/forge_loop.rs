@@ -809,6 +809,7 @@ pub struct CompactContinuityArtifact {
     pub validation_sources: Vec<String>,
     pub phase_continuity: Vec<String>,
     pub phase_next_actions: BTreeMap<String, String>,
+    pub phase_validation_commands: BTreeMap<String, Vec<String>>,
     pub next_action: String,
     pub phase_source_validation_next_action: String,
 }
@@ -3003,6 +3004,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "validation_sources",
         "phase_continuity",
         "phase_next_actions",
+        "phase_validation_commands",
         "next_action",
     ]
     .into_iter()
@@ -4442,11 +4444,23 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
         validation_sources: validation_source_entries(),
         phase_continuity: phase_continuity_entries(),
         phase_next_actions: phase_next_actions(),
+        phase_validation_commands: phase_validation_commands(),
         next_action: "continue with the next required forge-loop phase".into(),
         phase_source_validation_next_action:
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
     }
+}
+
+fn phase_validation_commands() -> BTreeMap<String, Vec<String>> {
+    let mut commands: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for command in REQUIRED_GATE_COMMANDS {
+        commands
+            .entry(cycle_phase_label(validation_phase_for_command(command)).to_string())
+            .or_default()
+            .push((*command).to_string());
+    }
+    commands
 }
 
 fn phase_next_actions() -> BTreeMap<String, String> {
@@ -5371,6 +5385,47 @@ R  "docs/old note.md" -> "docs/new note.md"
                 "compact continuity artifact missing structured next action for {label}"
             );
         }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_phase_validation_commands() {
+        let artifact = compact_continuity_artifact();
+        let value = serde_json::to_value(&artifact).expect("compact continuity json");
+        let phase_validation_commands = value
+            .get("phase_validation_commands")
+            .and_then(serde_json::Value::as_object)
+            .expect("compact continuity artifact must expose structured phase validation commands");
+
+        for phase in ["Gate", "Evaluate"] {
+            let commands = phase_validation_commands
+                .get(phase)
+                .and_then(serde_json::Value::as_array)
+                .expect("phase validation command list");
+            assert!(
+                commands.iter().all(|command| command
+                    .as_str()
+                    .is_some_and(|command| command.starts_with("rtk "))),
+                "{phase} validation commands must preserve rtk shell discipline"
+            );
+        }
+        assert!(
+            phase_validation_commands["Gate"]
+                .as_array()
+                .expect("gate validation commands")
+                .iter()
+                .any(|command| command
+                    == "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"),
+            "Gate phase must retain strict target-mining validation"
+        );
+        assert!(
+            phase_validation_commands["Evaluate"]
+                .as_array()
+                .expect("evaluate validation commands")
+                .iter()
+                .any(|command| command
+                    == "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture"),
+            "Evaluate phase must retain deterministic eval validation"
+        );
     }
 
     #[test]
