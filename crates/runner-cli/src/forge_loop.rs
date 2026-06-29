@@ -33,6 +33,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo run -q -p runner-cli -- forge-loop run --dry-run --out /tmp/fxrun-forge-loop-gate-dry-run --goal \"scheduled subscription-auth Codex self-improvement\"",
     "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture",
     "rtk cargo run -q -p runner-cli -- forge-loop eval --metrics /tmp/fxrun-forge-loop-gate-dry-run/cycle/evaluation-input.json --manifest /tmp/fxrun-forge-loop-gate-dry-run/cycle/cycle-manifest.json",
+    "rtk cargo run -q -p runner-cli -- forge-loop self-upgrade --dry-run",
     "rtk cargo run -q -p runner-cli -- forge-loop runner-flow-audit --json",
     "rtk cargo run -q -p runner-cli -- forge-loop agentic-system-audit --json",
     "rtk cargo test --workspace --all-features",
@@ -5440,6 +5441,15 @@ R  "docs/old note.md" -> "docs/new note.md"
                 &"rtk cargo run -q -p runner-cli -- forge-loop output-schema-audit --strict"
             ),
             "scheduled validation must audit the structured Codex output schema"
+        );
+    }
+
+    #[test]
+    fn scheduled_gate_contract_exercises_self_upgrade_plan_surface() {
+        assert!(
+            REQUIRED_GATE_COMMANDS
+                .contains(&"rtk cargo run -q -p runner-cli -- forge-loop self-upgrade --dry-run"),
+            "scheduled validation must execute the self-upgrade plan surface before the outer publisher consumes it"
         );
     }
 
