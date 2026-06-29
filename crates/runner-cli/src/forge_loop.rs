@@ -7412,6 +7412,29 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
+    fn scheduled_forge_loop_prompt_leaves_pr_publication_to_outer_engine() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+
+        let prompt_path = ".github/codex/prompts/forge-loop.md";
+        let prompt = fs::read_to_string(root.join(prompt_path)).expect("read forge-loop prompt");
+        assert!(
+            prompt.contains("leave the intended repository changes in the working tree"),
+            "{prompt_path} must preserve the inner/outer Codex publication handoff"
+        );
+        assert!(
+            prompt.contains("do not run git commit, git push, or gh pr from inside Codex"),
+            "{prompt_path} must forbid nested Codex from publishing repository changes"
+        );
+        assert!(
+            !prompt.contains("Commit, push, open a PR"),
+            "{prompt_path} must not tell nested Codex to publish its own PR"
+        );
+    }
+
+    #[test]
     fn action_created_pr_required_checks_are_dispatchable() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
