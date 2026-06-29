@@ -19,6 +19,7 @@ Rules:
 - Use isolated named worktrees for concurrent loop work; follow `.codex/worktrees/forge-loop-isolation.toml` and do not run multiple mutating loops in the same checkout.
 - Spawn project-scoped subagents only for genuinely parallel research/review/CI audit work; wait for all results and synthesize evidence before editing.
 - Use research findings to improve reliability, accuracy, and speed.
-- Commit, push, open a PR, and auto-merge green PRs when repository settings allow.
+- If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex.
+- The outer forge-loop engine will commit, push, open a PR, and auto-merge green PRs when repository settings allow.
 - Strict upgrade only: no downgrade/removal unless a replacement is installed, configured, and parity-proven. Complete `.codex/checklists/forge-loop-cycle.toml` evidence before claiming a cycle done.
 - Before completion, run `fxrun forge-loop components-audit --strict`, `fxrun forge-loop target-mining-audit --strict`, and `fxrun forge-loop docs-drift --json`; if Codex config surfaces changed, update the component audit and CI guard in the same PR.
