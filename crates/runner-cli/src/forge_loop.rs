@@ -3003,9 +3003,12 @@ fn required_output_schema_fields() -> Vec<String> {
         "compact_prompt",
         "preserved_state",
         "phases",
+        "phases.minItems",
+        "phases.items.enum",
         "active_phase",
         "active_phase.enum",
         "current_phase_index",
+        "current_phase_index.minimum",
         "source_coverage",
         "validation_state",
         "validation_terminal_state",
@@ -3069,6 +3072,26 @@ fn json_schema_requires_key(value: &serde_json::Value, key: &str) -> bool {
             ],
         );
     }
+    if key == "phases.minItems" {
+        return json_schema_array_min_items_for_path(value, &["phases"], 6);
+    }
+    if key == "phases.items.enum" {
+        return json_schema_array_items_enum_contains_all_for_path(
+            value,
+            &["phases"],
+            &[
+                "Red",
+                "Implement",
+                "Gate",
+                "Evaluate",
+                "Research",
+                "Upgrade",
+            ],
+        );
+    }
+    if key == "current_phase_index.minimum" {
+        return json_schema_integer_minimum_for_path(value, &["current_phase_index"], 0);
+    }
 
     match value {
         serde_json::Value::Object(map) => {
@@ -3127,6 +3150,43 @@ fn json_schema_enum_contains_all_for_path(
     }
 }
 
+fn json_schema_array_items_enum_contains_all_for_path(
+    value: &serde_json::Value,
+    path: &[&str],
+    required_values: &[&str],
+) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            if path.is_empty() {
+                let Some(items) = map.get("items") else {
+                    return false;
+                };
+                return json_schema_enum_contains_all_for_path(items, &[], required_values);
+            }
+
+            if let Some(properties) = map.get("properties").and_then(serde_json::Value::as_object) {
+                if let Some(child) = properties.get(path[0]) {
+                    if json_schema_array_items_enum_contains_all_for_path(
+                        child,
+                        &path[1..],
+                        required_values,
+                    ) {
+                        return true;
+                    }
+                }
+            }
+
+            map.values().any(|child| {
+                json_schema_array_items_enum_contains_all_for_path(child, path, required_values)
+            })
+        }
+        serde_json::Value::Array(items) => items.iter().any(|child| {
+            json_schema_array_items_enum_contains_all_for_path(child, path, required_values)
+        }),
+        _ => false,
+    }
+}
+
 fn json_schema_array_min_items_for_path(
     value: &serde_json::Value,
     path: &[&str],
@@ -3155,6 +3215,38 @@ fn json_schema_array_min_items_for_path(
         serde_json::Value::Array(items) => items
             .iter()
             .any(|child| json_schema_array_min_items_for_path(child, path, min_items)),
+        _ => false,
+    }
+}
+
+fn json_schema_integer_minimum_for_path(
+    value: &serde_json::Value,
+    path: &[&str],
+    minimum: i64,
+) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            if path.is_empty() {
+                return map
+                    .get("minimum")
+                    .and_then(serde_json::Value::as_i64)
+                    .is_some_and(|actual| actual >= minimum);
+            }
+
+            if let Some(properties) = map.get("properties").and_then(serde_json::Value::as_object) {
+                if let Some(child) = properties.get(path[0]) {
+                    if json_schema_integer_minimum_for_path(child, &path[1..], minimum) {
+                        return true;
+                    }
+                }
+            }
+
+            map.values()
+                .any(|child| json_schema_integer_minimum_for_path(child, path, minimum))
+        }
+        serde_json::Value::Array(items) => items
+            .iter()
+            .any(|child| json_schema_integer_minimum_for_path(child, path, minimum)),
         _ => false,
     }
 }
@@ -7885,6 +7977,120 @@ R  "docs/old note.md" -> "docs/new note.md"
             "active_phase must be constrained to the canonical phase names: {:?}",
             report
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn output_schema_audit_rejects_unbounded_phase_order_and_index_continuity() {
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-schema-phase-order-index-{}",
+            std::process::id()
+        ));
+        let schema_dir = root.join(".github/codex/schemas");
+        fs::create_dir_all(&schema_dir).expect("schema dir");
+        fs::write(
+            schema_dir.join("forge-loop-output.schema.json"),
+            r#"{
+              "type": "object",
+              "required": ["summary", "auth_mode", "auth_evidence", "sources_mined", "component_inventory", "recommended_self_upgrade", "tests_required_before_merge", "verification", "auto_compact_continuity"],
+              "properties": {
+                "summary": {"type": "string"},
+                "auth_mode": {"type": "string"},
+                "auth_evidence": {
+                  "type": "object",
+                  "required": ["codex_home", "login_status_checked", "auth_json_present"],
+                  "properties": {
+                    "codex_home": {"type": "string"},
+                    "login_status_checked": {"type": "boolean"},
+                    "auth_json_present": {"type": "boolean"}
+                  }
+                },
+                "sources_mined": {"type": "array"},
+                "component_inventory": {
+                  "type": "object",
+                  "required": ["config", "hooks", "rules", "skills", "agents", "permissions", "github_action", "model_flags", "tool_surfaces", "structured_output_schemas", "auto_compaction_continuity_settings"],
+                  "properties": {
+                    "config": {"type": "string"},
+                    "hooks": {"type": "string"},
+                    "rules": {"type": "string"},
+                    "skills": {"type": "string"},
+                    "agents": {"type": "string"},
+                    "permissions": {"type": "string"},
+                    "github_action": {"type": "string"},
+                    "model_flags": {"type": "string"},
+                    "tool_surfaces": {"type": "string"},
+                    "structured_output_schemas": {"type": "string"},
+                    "auto_compaction_continuity_settings": {"type": "string"}
+                  }
+                },
+                "recommended_self_upgrade": {"type": "string"},
+                "tests_required_before_merge": {"type": "array"},
+                "verification": {"type": "array"},
+                "auto_compact_continuity": {
+                  "type": "object",
+                  "required": ["enabled", "compact_prompt", "preserved_state", "phases", "active_phase", "current_phase_index", "source_coverage", "validation_state", "validation_terminal_state", "validation_sources", "phase_continuity", "phase_next_actions", "phase_validation_commands", "phase_validation_state", "next_action", "phase_source_validation_next_action"],
+                  "properties": {
+                    "enabled": {"type": "boolean"},
+                    "compact_prompt": {"type": "string"},
+                    "preserved_state": {"type": "array"},
+                    "phases": {"type": "array", "items": {"type": "string"}},
+                    "active_phase": {"type": "string", "enum": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]},
+                    "current_phase_index": {"type": "integer"},
+                    "source_coverage": {"type": "array"},
+                    "validation_state": {"type": "array"},
+                    "validation_terminal_state": {"type": "array"},
+                    "validation_sources": {"type": "array"},
+                    "phase_continuity": {"type": "array"},
+                    "phase_next_actions": {
+                      "type": "object",
+                      "required": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]
+                    },
+                    "phase_validation_commands": {
+                      "type": "object",
+                      "required": ["Gate", "Evaluate", "Research", "Upgrade"],
+                      "properties": {
+                        "Gate": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                        "Evaluate": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                        "Research": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                        "Upgrade": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+                      }
+                    },
+                    "phase_validation_state": {
+                      "type": "object",
+                      "required": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"],
+                      "properties": {
+                        "Red": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Implement": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Gate": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Evaluate": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Research": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Upgrade": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]}
+                      }
+                    },
+                    "next_action": {"type": "string"},
+                    "phase_source_validation_next_action": {"type": "string"}
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("write schema");
+
+        let report = output_schema_audit_report(&root).expect("schema audit");
+
+        assert!(!report.structured_output_ready);
+        for missing in [
+            "phases.minItems",
+            "phases.items.enum",
+            "current_phase_index.minimum",
+        ] {
+            assert!(
+                report.missing_fields.contains(&missing.to_string()),
+                "schema audit must reject missing {missing}: {:?}",
+                report
+            );
+        }
 
         let _ = fs::remove_dir_all(root);
     }
