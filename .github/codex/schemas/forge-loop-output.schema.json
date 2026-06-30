@@ -260,6 +260,8 @@
         "phase_validation_commands": {
           "type": "object",
           "required": [
+            "Red",
+            "Implement",
             "Gate",
             "Evaluate",
             "Research",
@@ -267,6 +269,20 @@
           ],
           "additionalProperties": false,
           "properties": {
+            "Red": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "Implement": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
             "Gate": {
               "type": "array",
               "minItems": 1,
