@@ -31,6 +31,7 @@ const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json",
     "rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict",
+    "rtk cargo run -q -p runner-cli -- forge-loop research --dry-run --focus \"reliability, accuracy, and speed\"",
     "rtk cargo run -q -p runner-cli -- forge-loop output-schema-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop run --dry-run --out /tmp/fxrun-forge-loop-gate-dry-run --goal \"scheduled subscription-auth Codex self-improvement\"",
     "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture",
@@ -4643,6 +4644,8 @@ fn validation_source_entries() -> Vec<String> {
 fn validation_phase_for_command(command: &str) -> CyclePhase {
     if command.contains("forge-loop eval ") {
         CyclePhase::Evaluate
+    } else if command.contains("forge-loop research ") {
+        CyclePhase::Research
     } else if command.contains("forge-loop self-upgrade ") {
         CyclePhase::Upgrade
     } else {
@@ -5658,6 +5661,26 @@ R  "docs/old note.md" -> "docs/new note.md"
                 == &format!("phase=Upgrade source=required_gate_commands validation_state=pending command={self_upgrade_command}")),
             "compact continuity artifact must preserve self-upgrade phase/source validation continuity"
         );
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_research_and_upgrade_validation_commands() {
+        let artifact = compact_continuity_artifact();
+
+        for phase in ["Research", "Upgrade"] {
+            let commands = artifact
+                .phase_validation_commands
+                .get(phase)
+                .unwrap_or_else(|| panic!("compact continuity artifact missing {phase} commands"));
+            assert!(
+                !commands.is_empty(),
+                "compact continuity artifact must keep {phase} validation commands non-empty"
+            );
+            assert!(
+                commands.iter().all(|command| command.starts_with("rtk ")),
+                "{phase} validation commands must preserve rtk shell discipline"
+            );
+        }
     }
 
     #[test]
