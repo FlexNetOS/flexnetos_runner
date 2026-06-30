@@ -1051,6 +1051,7 @@ fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
         "target_mining_audit": "rtk fxrun forge-loop target-mining-audit --json",
         "compact_continuity": "compact-continuity.json",
         "phase_next_actions": phase_next_actions(),
+        "phase_validation_commands": phase_validation_commands(),
         "phase_validation_state": phase_validation_state()
     })
 }
@@ -5941,6 +5942,34 @@ R  "docs/old note.md" -> "docs/new note.md"
             assert!(
                 !next_action.is_empty(),
                 "self-upgrade plan phase next action must not be empty for {phase}"
+            );
+        }
+    }
+
+    #[test]
+    fn self_upgrade_plan_exports_phase_validation_commands_continuity() {
+        let plan = self_upgrade_plan(70);
+        let phase_validation_commands = plan["phase_validation_commands"]
+            .as_object()
+            .expect("self-upgrade plan phase validation commands");
+
+        for phase in required_phases() {
+            let phase = cycle_phase_label(phase);
+            let commands = phase_validation_commands
+                .get(phase)
+                .and_then(serde_json::Value::as_array)
+                .unwrap_or_else(|| {
+                    panic!("self-upgrade plan missing phase validation commands for {phase}")
+                });
+            assert!(
+                !commands.is_empty(),
+                "self-upgrade plan phase validation commands must not be empty for {phase}"
+            );
+            assert!(
+                commands.iter().all(|command| command
+                    .as_str()
+                    .is_some_and(|command| command.starts_with("rtk "))),
+                "self-upgrade plan phase validation commands must preserve rtk shell discipline for {phase}"
             );
         }
     }
