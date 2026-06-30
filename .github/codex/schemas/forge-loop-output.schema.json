@@ -270,22 +270,58 @@
           "additionalProperties": false,
           "properties": {
             "Red": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "passed",
+                "failed"
+              ]
             },
             "Implement": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "passed",
+                "failed"
+              ]
             },
             "Gate": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "passed",
+                "failed"
+              ]
             },
             "Evaluate": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "passed",
+                "failed"
+              ]
             },
             "Research": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "passed",
+                "failed"
+              ]
             },
             "Upgrade": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_progress",
+                "passed",
+                "failed"
+              ]
             }
           }
         },
