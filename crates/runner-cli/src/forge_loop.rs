@@ -1048,7 +1048,8 @@ fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
         "required_gate_commands": REQUIRED_GATE_COMMANDS,
         "components_audit": "fxrun forge-loop components-audit --json",
         "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
-        "compact_continuity": "compact-continuity.json"
+        "compact_continuity": "compact-continuity.json",
+        "phase_validation_state": phase_validation_state()
     })
 }
 
@@ -5719,6 +5720,25 @@ R  "docs/old note.md" -> "docs/new note.md"
             "fxrun forge-loop target-mining-audit --json"
         );
         assert_eq!(plan["compact_continuity"], "compact-continuity.json");
+    }
+
+    #[test]
+    fn self_upgrade_plan_exports_phase_validation_state_continuity() {
+        let plan = self_upgrade_plan(70);
+        let phase_validation_state = plan["phase_validation_state"]
+            .as_object()
+            .expect("self-upgrade plan phase validation state");
+
+        for phase in required_phases() {
+            let phase = cycle_phase_label(phase);
+            assert_eq!(
+                phase_validation_state
+                    .get(phase)
+                    .and_then(serde_json::Value::as_str),
+                Some("pending"),
+                "self-upgrade plan missing phase validation state for {phase}"
+            );
+        }
     }
 
     #[test]

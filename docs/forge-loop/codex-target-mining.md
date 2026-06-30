@@ -36,3 +36,7 @@ The structured output schema now also requires non-empty `auto_compact_continuit
 ## 2026-06-29 phase validation state enum extraction
 
 The structured output schema now constrains every `auto_compact_continuity.phase_validation_state` phase value to the known lifecycle states `pending`, `in_progress`, `passed`, or `failed`. `output-schema-audit --strict` rejects schemas that merely require phase keys while leaving status strings unconstrained, so compacted scheduled runs cannot pass continuity evidence with arbitrary phase-state text.
+
+## 2026-06-29 self-upgrade plan phase-state parity
+
+`forge-loop self-upgrade --dry-run` now also emits the structured `phase_validation_state` map that `compact-continuity.json` carries. This lets the outer scheduled publisher verify Red, Implement, Gate, Evaluate, Research, and Upgrade continuity directly from the self-upgrade plan before opening artifacts, preserving phase/source/validation/next-action handoff accuracy across compacted subscription-auth runs.
