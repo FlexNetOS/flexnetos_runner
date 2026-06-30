@@ -27,6 +27,7 @@ const CODEX_FORGE_LOOP_OUTPUT: &str = "codex-forge-loop-output.md";
 const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo fmt --all -- --check",
     "rtk cargo test -p runner-cli --all-features forge_loop::tests",
+    "rtk cargo run -q -p runner-cli -- forge-loop doctor --json",
     "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json",
     "rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict",
     "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict",
@@ -5704,6 +5705,15 @@ R  "docs/old note.md" -> "docs/new note.md"
                 &"rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
             ),
             "scheduled validation must include the strict target-mining audit"
+        );
+    }
+
+    #[test]
+    fn scheduled_gate_contract_exercises_doctor_readiness_surface() {
+        assert!(
+            REQUIRED_GATE_COMMANDS
+                .contains(&"rtk cargo run -q -p runner-cli -- forge-loop doctor --json"),
+            "scheduled validation must exercise the local subscription-auth readiness surface"
         );
     }
 
