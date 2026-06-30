@@ -273,42 +273,48 @@
               "type": "array",
               "minItems": 1,
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^rtk "
               }
             },
             "Implement": {
               "type": "array",
               "minItems": 1,
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^rtk "
               }
             },
             "Gate": {
               "type": "array",
               "minItems": 1,
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^rtk "
               }
             },
             "Evaluate": {
               "type": "array",
               "minItems": 1,
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^rtk "
               }
             },
             "Research": {
               "type": "array",
               "minItems": 1,
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^rtk "
               }
             },
             "Upgrade": {
               "type": "array",
               "minItems": 1,
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^rtk "
               }
             }
           }

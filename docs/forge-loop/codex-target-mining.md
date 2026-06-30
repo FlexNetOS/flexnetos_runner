@@ -48,3 +48,7 @@ The structured output schema now constrains every `auto_compact_continuity.phase
 ## 2026-06-30 phase order/index schema audit extraction
 
 `output-schema-audit --strict` now verifies that `auto_compact_continuity.phases` is a non-empty canonical phase-order array with the known Red, Implement, Gate, Evaluate, Research, and Upgrade values, and that `current_phase_index` carries a non-negative lower bound. This closes a structured-output false-green path where the schema required the phase fields by name but did not prove that compacted scheduled runs had a bounded phase list or resumable phase cursor.
+
+## 2026-06-30 phase validation command shell-discipline extraction
+
+The structured output schema now constrains every `auto_compact_continuity.phase_validation_commands.*` item with the `^rtk ` pattern, and `output-schema-audit --strict` verifies those item patterns for Red, Implement, Gate, Evaluate, Research, and Upgrade. This applies the Codex Action `--output-schema` contract to shell-discipline continuity so compacted scheduled runs cannot hand off bare shell commands that bypass the repo's RTK wrapper rule.
