@@ -8198,6 +8198,21 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
+    fn scheduled_codex_growth_invokes_forge_loop_through_rtk_wrapper() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/codex-forge-loop.yml"))
+            .expect("read Codex workflow");
+
+        assert!(
+            workflow.contains("rtk cargo run -q -p runner-cli -- forge-loop run"),
+            "scheduled Codex growth must route the Rust forge-loop invocation through rtk"
+        );
+    }
+
+    #[test]
     fn action_created_pr_required_checks_are_dispatchable() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()

@@ -78,7 +78,7 @@ jobs:
           fi
           "${CODEX_BIN}" login status
           export FXRUN_CODEX="${CODEX_BIN}"
-          cargo run -q -p runner-cli -- forge-loop run \
+          rtk cargo run -q -p runner-cli -- forge-loop run \
             --goal "scheduled subscription-auth Codex self-improvement" \
             2>&1 | tee codex-forge-loop-output.md
       - name: Rehydrate sustain/watch after Codex completion
