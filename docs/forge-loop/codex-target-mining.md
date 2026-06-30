@@ -32,3 +32,7 @@ The structured output schema now requires `auto_compact_continuity.phase_validat
 ## 2026-06-29 phase validation command extraction
 
 The structured output schema now also requires non-empty `auto_compact_continuity.phase_validation_commands.Gate` and `.Evaluate` arrays. `output-schema-audit --strict` treats those `minItems` constraints as required evidence, so a compacted scheduled run cannot satisfy the phase/source/validation/next-action contract with empty validation command lists.
+
+## 2026-06-29 phase validation state enum extraction
+
+The structured output schema now constrains every `auto_compact_continuity.phase_validation_state` phase value to the known lifecycle states `pending`, `in_progress`, `passed`, or `failed`. `output-schema-audit --strict` rejects schemas that merely require phase keys while leaving status strings unconstrained, so compacted scheduled runs cannot pass continuity evidence with arbitrary phase-state text.
