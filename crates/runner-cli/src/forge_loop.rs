@@ -3012,6 +3012,8 @@ fn required_output_schema_fields() -> Vec<String> {
         "phase_validation_commands",
         "phase_validation_commands.Gate.minItems",
         "phase_validation_commands.Evaluate.minItems",
+        "phase_validation_commands.Research.minItems",
+        "phase_validation_commands.Upgrade.minItems",
         "phase_validation_state",
         "phase_validation_state.Red.enum",
         "phase_validation_state.Implement.enum",
@@ -7467,6 +7469,116 @@ R  "docs/old note.md" -> "docs/new note.md"
             "Evaluate command array must require at least one command: {:?}",
             report
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn output_schema_audit_rejects_missing_research_and_upgrade_phase_validation_commands() {
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-schema-research-upgrade-commands-{}",
+            std::process::id()
+        ));
+        let schema_dir = root.join(".github/codex/schemas");
+        fs::create_dir_all(&schema_dir).expect("schema dir");
+        fs::write(
+            schema_dir.join("forge-loop-output.schema.json"),
+            r#"{
+              "type": "object",
+              "required": ["summary", "auth_mode", "auth_evidence", "sources_mined", "component_inventory", "recommended_self_upgrade", "tests_required_before_merge", "verification", "auto_compact_continuity"],
+              "properties": {
+                "summary": {"type": "string"},
+                "auth_mode": {"type": "string"},
+                "auth_evidence": {
+                  "type": "object",
+                  "required": ["codex_home", "login_status_checked", "auth_json_present"],
+                  "properties": {
+                    "codex_home": {"type": "string"},
+                    "login_status_checked": {"type": "boolean"},
+                    "auth_json_present": {"type": "boolean"}
+                  }
+                },
+                "sources_mined": {"type": "array"},
+                "component_inventory": {
+                  "type": "object",
+                  "required": ["config", "hooks", "rules", "skills", "agents", "permissions", "github_action", "model_flags", "tool_surfaces", "structured_output_schemas", "auto_compaction_continuity_settings"],
+                  "properties": {
+                    "config": {"type": "string"},
+                    "hooks": {"type": "string"},
+                    "rules": {"type": "string"},
+                    "skills": {"type": "string"},
+                    "agents": {"type": "string"},
+                    "permissions": {"type": "string"},
+                    "github_action": {"type": "string"},
+                    "model_flags": {"type": "string"},
+                    "tool_surfaces": {"type": "string"},
+                    "structured_output_schemas": {"type": "string"},
+                    "auto_compaction_continuity_settings": {"type": "string"}
+                  }
+                },
+                "recommended_self_upgrade": {"type": "string"},
+                "tests_required_before_merge": {"type": "array"},
+                "verification": {"type": "array"},
+                "auto_compact_continuity": {
+                  "type": "object",
+                  "required": ["enabled", "compact_prompt", "preserved_state", "active_phase", "current_phase_index", "source_coverage", "validation_state", "validation_terminal_state", "validation_sources", "phase_continuity", "phase_next_actions", "phase_validation_commands", "phase_validation_state", "next_action", "phase_source_validation_next_action"],
+                  "properties": {
+                    "enabled": {"type": "boolean"},
+                    "compact_prompt": {"type": "string"},
+                    "preserved_state": {"type": "array"},
+                    "active_phase": {"type": "string"},
+                    "current_phase_index": {"type": "integer"},
+                    "source_coverage": {"type": "array"},
+                    "validation_state": {"type": "array"},
+                    "validation_terminal_state": {"type": "array"},
+                    "validation_sources": {"type": "array"},
+                    "phase_continuity": {"type": "array"},
+                    "phase_next_actions": {
+                      "type": "object",
+                      "required": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"]
+                    },
+                    "phase_validation_commands": {
+                      "type": "object",
+                      "required": ["Gate", "Evaluate"],
+                      "properties": {
+                        "Gate": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                        "Evaluate": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+                      }
+                    },
+                    "phase_validation_state": {
+                      "type": "object",
+                      "required": ["Red", "Implement", "Gate", "Evaluate", "Research", "Upgrade"],
+                      "properties": {
+                        "Red": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Implement": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Gate": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Evaluate": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Research": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]},
+                        "Upgrade": {"type": "string", "enum": ["pending", "in_progress", "passed", "failed"]}
+                      }
+                    },
+                    "next_action": {"type": "string"},
+                    "phase_source_validation_next_action": {"type": "string"}
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("write schema");
+
+        let report = output_schema_audit_report(&root).expect("schema audit");
+
+        assert!(!report.structured_output_ready);
+        for missing in [
+            "phase_validation_commands.Research.minItems",
+            "phase_validation_commands.Upgrade.minItems",
+        ] {
+            assert!(
+                report.missing_fields.contains(&missing.to_string()),
+                "phase validation commands must require {missing}: {:?}",
+                report
+            );
+        }
 
         let _ = fs::remove_dir_all(root);
     }
