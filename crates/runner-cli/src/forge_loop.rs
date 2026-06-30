@@ -7843,6 +7843,26 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
+    fn scheduled_forge_loop_prompt_binds_single_self_upgrade_cycle() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+
+        let prompt_path = ".github/codex/prompts/forge-loop.md";
+        let prompt = fs::read_to_string(root.join(prompt_path)).expect("read forge-loop prompt");
+
+        assert!(
+            prompt.contains("Do not start another cycle."),
+            "{prompt_path} must prevent recursive scheduled self-improvement cycles"
+        );
+        assert!(
+            prompt.contains("PR title 'chore: forge loop self-upgrade'"),
+            "{prompt_path} must preserve the outer forge-loop PR title contract"
+        );
+    }
+
+    #[test]
     fn scheduled_forge_loop_shell_commands_use_rtk_wrapper() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
