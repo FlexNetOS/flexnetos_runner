@@ -181,7 +181,15 @@
           }
         },
         "active_phase": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "Red",
+            "Implement",
+            "Gate",
+            "Evaluate",
+            "Research",
+            "Upgrade"
+          ]
         },
         "current_phase_index": {
           "type": "integer",
