@@ -1046,8 +1046,8 @@ fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
         "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
         "required_local_checks": REQUIRED_LOCAL_CHECKS,
         "required_gate_commands": REQUIRED_GATE_COMMANDS,
-        "components_audit": "fxrun forge-loop components-audit --json",
-        "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
+        "components_audit": "rtk fxrun forge-loop components-audit --json",
+        "target_mining_audit": "rtk fxrun forge-loop target-mining-audit --json",
         "compact_continuity": "compact-continuity.json",
         "phase_validation_state": phase_validation_state()
     })
@@ -5717,9 +5717,24 @@ R  "docs/old note.md" -> "docs/new note.md"
 
         assert_eq!(
             plan["target_mining_audit"],
-            "fxrun forge-loop target-mining-audit --json"
+            "rtk fxrun forge-loop target-mining-audit --json"
         );
         assert_eq!(plan["compact_continuity"], "compact-continuity.json");
+    }
+
+    #[test]
+    fn self_upgrade_plan_audit_commands_preserve_rtk_shell_discipline() {
+        let plan = self_upgrade_plan(70);
+
+        for field in ["components_audit", "target_mining_audit"] {
+            let command = plan[field]
+                .as_str()
+                .unwrap_or_else(|| panic!("self-upgrade plan missing {field} command"));
+            assert!(
+                command.starts_with("rtk "),
+                "self-upgrade plan {field} command must preserve rtk shell discipline: {command}"
+            );
+        }
     }
 
     #[test]
