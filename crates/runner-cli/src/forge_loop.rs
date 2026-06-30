@@ -1050,6 +1050,7 @@ fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
         "components_audit": "rtk fxrun forge-loop components-audit --json",
         "target_mining_audit": "rtk fxrun forge-loop target-mining-audit --json",
         "compact_continuity": "compact-continuity.json",
+        "phase_next_actions": phase_next_actions(),
         "phase_validation_state": phase_validation_state()
     })
 }
@@ -5918,6 +5919,28 @@ R  "docs/old note.md" -> "docs/new note.md"
                     .and_then(serde_json::Value::as_str),
                 Some("pending"),
                 "self-upgrade plan missing phase validation state for {phase}"
+            );
+        }
+    }
+
+    #[test]
+    fn self_upgrade_plan_exports_phase_next_action_continuity() {
+        let plan = self_upgrade_plan(70);
+        let phase_next_actions = plan["phase_next_actions"]
+            .as_object()
+            .expect("self-upgrade plan phase next actions");
+
+        for phase in required_phases() {
+            let phase = cycle_phase_label(phase);
+            let next_action = phase_next_actions
+                .get(phase)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| {
+                    panic!("self-upgrade plan missing phase next action for {phase}")
+                });
+            assert!(
+                !next_action.is_empty(),
+                "self-upgrade plan phase next action must not be empty for {phase}"
             );
         }
     }

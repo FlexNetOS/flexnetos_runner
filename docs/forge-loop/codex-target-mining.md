@@ -41,6 +41,10 @@ The structured output schema now constrains every `auto_compact_continuity.phase
 
 `forge-loop self-upgrade --dry-run` now also emits the structured `phase_validation_state` map that `compact-continuity.json` carries. This lets the outer scheduled publisher verify Red, Implement, Gate, Evaluate, Research, and Upgrade continuity directly from the self-upgrade plan before opening artifacts, preserving phase/source/validation/next-action handoff accuracy across compacted subscription-auth runs.
 
+## 2026-06-30 self-upgrade plan next-action parity
+
+`forge-loop self-upgrade --dry-run` now also emits the structured `phase_next_actions` map that `compact-continuity.json` carries. This lets the outer scheduled publisher verify per-phase next actions directly from the self-upgrade plan instead of parsing compact summary prose or opening a separate artifact before deciding whether a resumed subscription-auth run is ready to publish.
+
 ## 2026-06-30 phase order/index schema audit extraction
 
 `output-schema-audit --strict` now verifies that `auto_compact_continuity.phases` is a non-empty canonical phase-order array with the known Red, Implement, Gate, Evaluate, Research, and Upgrade values, and that `current_phase_index` carries a non-negative lower bound. This closes a structured-output false-green path where the schema required the phase fields by name but did not prove that compacted scheduled runs had a bounded phase list or resumable phase cursor.
