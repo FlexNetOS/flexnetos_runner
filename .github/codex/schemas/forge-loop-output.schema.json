@@ -237,7 +237,9 @@
           "type": "object",
           "required": [
             "Gate",
-            "Evaluate"
+            "Evaluate",
+            "Research",
+            "Upgrade"
           ],
           "additionalProperties": false,
           "properties": {
@@ -249,6 +251,20 @@
               }
             },
             "Evaluate": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "Research": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "Upgrade": {
               "type": "array",
               "minItems": 1,
               "items": {
