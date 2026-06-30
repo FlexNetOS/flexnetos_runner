@@ -3013,6 +3013,8 @@ fn required_output_schema_fields() -> Vec<String> {
         "phase_continuity",
         "phase_next_actions",
         "phase_validation_commands",
+        "phase_validation_commands.Red.minItems",
+        "phase_validation_commands.Implement.minItems",
         "phase_validation_commands.Gate.minItems",
         "phase_validation_commands.Evaluate.minItems",
         "phase_validation_commands.Research.minItems",
@@ -4587,6 +4589,20 @@ fn phase_validation_state() -> BTreeMap<String, String> {
 
 fn phase_validation_commands() -> BTreeMap<String, Vec<String>> {
     let mut commands: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    commands.insert(
+        cycle_phase_label(CyclePhase::Red).to_string(),
+        vec![
+            "rtk cargo test -p runner-cli --all-features <new_red_test_name> -- --nocapture"
+                .to_string(),
+        ],
+    );
+    commands.insert(
+        cycle_phase_label(CyclePhase::Implement).to_string(),
+        vec![
+            "rtk cargo test -p runner-cli --all-features <new_red_test_name> -- --nocapture"
+                .to_string(),
+        ],
+    );
     for command in REQUIRED_GATE_COMMANDS {
         commands
             .entry(cycle_phase_label(validation_phase_for_command(command)).to_string())
@@ -5574,6 +5590,23 @@ R  "docs/old note.md" -> "docs/new note.md"
                     == "rtk cargo run -q -p runner-cli -- forge-loop eval --fixture"),
             "Evaluate phase must retain deterministic eval validation"
         );
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_all_phase_validation_commands() {
+        let artifact = compact_continuity_artifact();
+
+        for phase in required_phases() {
+            let label = cycle_phase_label(phase);
+            let commands = artifact
+                .phase_validation_commands
+                .get(label)
+                .unwrap_or_else(|| panic!("{label} phase missing validation commands"));
+            assert!(
+                !commands.is_empty(),
+                "{label} phase must preserve at least one validation command"
+            );
+        }
     }
 
     #[test]
