@@ -3001,6 +3001,7 @@ fn required_output_schema_fields() -> Vec<String> {
         "enabled",
         "compact_prompt",
         "preserved_state",
+        "phases",
         "active_phase",
         "current_phase_index",
         "source_coverage",
@@ -7296,6 +7297,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             "recommended_self_upgrade",
             "tests_required_before_merge",
             "auto_compact_continuity",
+            "phases",
             "active_phase",
             "current_phase_index",
             "source_coverage",
@@ -7311,6 +7313,22 @@ R  "docs/old note.md" -> "docs/new note.md"
                 "schema audit missing {required}"
             );
         }
+    }
+
+    #[test]
+    fn output_schema_audit_requires_phase_order_continuity() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+
+        let report = output_schema_audit_report(root).expect("schema audit");
+
+        assert!(
+            report.present_fields.contains(&"phases".to_string()),
+            "schema audit must require canonical phase order continuity: {:?}",
+            report.missing_fields
+        );
     }
 
     #[test]

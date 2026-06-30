@@ -137,6 +137,7 @@
         "enabled",
         "compact_prompt",
         "preserved_state",
+        "phases",
         "active_phase",
         "current_phase_index",
         "source_coverage",
@@ -162,6 +163,21 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "phases": {
+          "type": "array",
+          "minItems": 6,
+          "items": {
+            "type": "string",
+            "enum": [
+              "Red",
+              "Implement",
+              "Gate",
+              "Evaluate",
+              "Research",
+              "Upgrade"
+            ]
           }
         },
         "active_phase": {
