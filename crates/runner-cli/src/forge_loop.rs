@@ -3028,7 +3028,6 @@ fn required_output_schema_fields() -> Vec<String> {
         "phases",
         "phases.minItems",
         "phases.maxItems",
-        "phases.uniqueItems",
         "phases.items.enum",
         "active_phase",
         "active_phase.enum",
@@ -3118,9 +3117,6 @@ fn json_schema_requires_key(value: &serde_json::Value, key: &str) -> bool {
     }
     if key == "phases.maxItems" {
         return json_schema_array_max_items_for_path(value, &["phases"], 6);
-    }
-    if key == "phases.uniqueItems" {
-        return json_schema_array_unique_items_for_path(value, &["phases"]);
     }
     if key == "phases.items.enum" {
         return json_schema_array_items_enum_contains_all_for_path(
@@ -3294,34 +3290,6 @@ fn json_schema_array_max_items_for_path(
         serde_json::Value::Array(items) => items
             .iter()
             .any(|child| json_schema_array_max_items_for_path(child, path, max_items)),
-        _ => false,
-    }
-}
-
-fn json_schema_array_unique_items_for_path(value: &serde_json::Value, path: &[&str]) -> bool {
-    match value {
-        serde_json::Value::Object(map) => {
-            if path.is_empty() {
-                return map
-                    .get("uniqueItems")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
-            }
-
-            if let Some(properties) = map.get("properties").and_then(serde_json::Value::as_object) {
-                if let Some(child) = properties.get(path[0]) {
-                    if json_schema_array_unique_items_for_path(child, &path[1..]) {
-                        return true;
-                    }
-                }
-            }
-
-            map.values()
-                .any(|child| json_schema_array_unique_items_for_path(child, path))
-        }
-        serde_json::Value::Array(items) => items
-            .iter()
-            .any(|child| json_schema_array_unique_items_for_path(child, path)),
         _ => false,
     }
 }
@@ -7964,6 +7932,36 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
+    fn action_output_schema_omits_responses_api_rejected_unique_items_keyword() {
+        fn contains_schema_key(value: &serde_json::Value, key: &str) -> bool {
+            match value {
+                serde_json::Value::Object(map) => map
+                    .iter()
+                    .any(|(candidate, child)| candidate == key || contains_schema_key(child, key)),
+                serde_json::Value::Array(items) => {
+                    items.iter().any(|child| contains_schema_key(child, key))
+                }
+                _ => false,
+            }
+        }
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let output_schema =
+            fs::read_to_string(root.join(".github/codex/schemas/forge-loop-output.schema.json"))
+                .expect("read output schema");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&output_schema).expect("parse output schema");
+
+        assert!(
+            !contains_schema_key(&parsed, "uniqueItems"),
+            "Codex Responses structured output rejects uniqueItems; schema must avoid it"
+        );
+    }
+
+    #[test]
     fn output_schema_audit_rejects_unconstrained_phase_validation_command_items() {
         let root = std::env::temp_dir().join(format!(
             "fxrun-forge-loop-schema-phase-command-pattern-{}",
@@ -8407,7 +8405,7 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
-    fn output_schema_audit_rejects_duplicate_or_extra_phase_order_continuity() {
+    fn output_schema_audit_rejects_extra_phase_order_continuity() {
         let root = std::env::temp_dir().join(format!(
             "fxrun-forge-loop-schema-phase-cardinality-{}",
             std::process::id()
@@ -8507,7 +8505,7 @@ R  "docs/old note.md" -> "docs/new note.md"
         let report = output_schema_audit_report(&root).expect("schema audit");
 
         assert!(!report.structured_output_ready);
-        for missing in ["phases.maxItems", "phases.uniqueItems"] {
+        for missing in ["phases.maxItems"] {
             assert!(
                 report.missing_fields.contains(&missing.to_string()),
                 "schema audit must reject missing {missing}: {:?}",

@@ -47,7 +47,7 @@ The structured output schema now constrains every `auto_compact_continuity.phase
 
 ## 2026-06-30 phase order/index schema audit extraction
 
-`output-schema-audit --strict` now verifies that `auto_compact_continuity.phases` is a non-empty canonical phase-order array with the known Red, Implement, Gate, Evaluate, Research, and Upgrade values, and that `current_phase_index` carries a non-negative lower bound. This closes a structured-output false-green path where the schema required the phase fields by name but did not prove that compacted scheduled runs had a bounded phase list or resumable phase cursor.
+`output-schema-audit --strict` now verifies that `auto_compact_continuity.phases` is a bounded canonical phase-order array with the known Red, Implement, Gate, Evaluate, Research, and Upgrade values, and that `current_phase_index` carries a non-negative lower bound. The schema intentionally avoids the Responses-rejected `uniqueItems` keyword while retaining min/max cardinality and enum constraints, so compacted scheduled runs keep a resumable phase list without breaking Codex structured-output validation.
 
 ## 2026-06-30 phase validation command shell-discipline extraction
 
