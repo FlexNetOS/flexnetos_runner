@@ -88,6 +88,7 @@ Environment=HOME=/srv/flexnetos_runner/_work/runner-home-%i
 Environment=GIT_CONFIG_GLOBAL=/srv/flexnetos_runner/_work/runner-home-%i/.gitconfig
 Environment=CODEX_HOME=...
 Environment=GH_CONFIG_DIR=...
+Environment=RUNNER_WORKSPACE=/srv/flexnetos_runner/_work/actions-runner-%i-work
 User=flexnetos
 ```
 

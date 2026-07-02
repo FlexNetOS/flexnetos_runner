@@ -9262,12 +9262,20 @@ R  "docs/old note.md" -> "docs/new note.md"
 
     #[test]
     fn portable_runner_installer_dry_runs_user_and_system_units_from_prefix() {
+        if cfg!(windows) {
+            return;
+        }
+
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(Path::parent)
             .expect("workspace root");
         let script = root.join("scripts/install-runner-services.sh");
         let prefix = "/tmp/fxrun-portable-prefix";
+        let portable_home = "/tmp/fxrun-portable-home";
+        let portable_codex_home = "/tmp/fxrun-portable-auth/codex";
+        let portable_gh_config_dir = "/tmp/fxrun-portable-auth/gh";
+        let portable_codex_bin_dir = "/tmp/fxrun-portable-auth/bin";
 
         let user_output = std::process::Command::new("bash")
             .arg(&script)
@@ -9276,6 +9284,10 @@ R  "docs/old note.md" -> "docs/new note.md"
             .arg("--mode")
             .arg("user")
             .arg("--dry-run")
+            .env("HOME", portable_home)
+            .env("CODEX_HOME", portable_codex_home)
+            .env("GH_CONFIG_DIR", portable_gh_config_dir)
+            .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
             .output()
             .expect("dry-run user installer");
         assert!(
@@ -9290,6 +9302,17 @@ R  "docs/old note.md" -> "docs/new note.md"
         ));
         assert!(user_stdout
             .contains("WorkingDirectory=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i"));
+        assert!(
+            user_stdout.contains(
+                "Environment=RUNNER_WORKSPACE=/tmp/fxrun-portable-prefix/_work/actions-runner-%i-work"
+            ),
+            "user unit must keep RUNNER_WORKSPACE under the prefix"
+        );
+        assert!(user_stdout.contains("Environment=CODEX_HOME=/tmp/fxrun-portable-auth/codex"));
+        assert!(user_stdout.contains("Environment=GH_CONFIG_DIR=/tmp/fxrun-portable-auth/gh"));
+        assert!(user_stdout.contains(
+            "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
+        ));
         assert!(user_stdout
             .contains("systemctl --user enable --now flexnetos-runner@01 flexnetos-runner@02"));
         assert!(!user_stdout.contains("sudo systemctl"));
@@ -9303,6 +9326,10 @@ R  "docs/old note.md" -> "docs/new note.md"
             .arg("--mode")
             .arg("system")
             .arg("--dry-run")
+            .env("HOME", portable_home)
+            .env("CODEX_HOME", portable_codex_home)
+            .env("GH_CONFIG_DIR", portable_gh_config_dir)
+            .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
             .output()
             .expect("dry-run system installer");
         assert!(
@@ -9315,6 +9342,17 @@ R  "docs/old note.md" -> "docs/new note.md"
         assert!(system_stdout.contains("User=flexnetos"));
         assert!(system_stdout.contains(
             "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/runsvc.sh"
+        ));
+        assert!(
+            system_stdout.contains(
+                "Environment=RUNNER_WORKSPACE=/tmp/fxrun-portable-prefix/_work/actions-runner-%i-work"
+            ),
+            "system unit must keep RUNNER_WORKSPACE under the prefix"
+        );
+        assert!(system_stdout.contains("Environment=CODEX_HOME=/tmp/fxrun-portable-auth/codex"));
+        assert!(system_stdout.contains("Environment=GH_CONFIG_DIR=/tmp/fxrun-portable-auth/gh"));
+        assert!(system_stdout.contains(
+            "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
         ));
         assert!(system_stdout
             .contains("systemctl enable --now flexnetos-runner@01 flexnetos-runner@02"));
@@ -9341,6 +9379,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             "CODEX_HOME",
             "GH_CONFIG_DIR",
             "GIT_CONFIG_GLOBAL",
+            "RUNNER_WORKSPACE",
             "loginctl enable-linger",
             "--enable-linger",
         ] {

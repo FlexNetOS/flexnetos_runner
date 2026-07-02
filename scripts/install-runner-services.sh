@@ -120,7 +120,19 @@ resolve_user_home() {
     printf '%s\n' "${HOME:?HOME is required for user mode}"
     return 0
   fi
-  getent passwd "$user" | awk -F: '{print $6}'
+  local resolved_home=""
+  if command -v getent >/dev/null 2>&1; then
+    resolved_home="$(getent passwd "$user" | awk -F: '{print $6}')"
+  fi
+  if [[ -n "$resolved_home" ]]; then
+    printf '%s\n' "$resolved_home"
+    return 0
+  fi
+  if [[ -n "${HOME:-}" ]]; then
+    printf '%s\n' "$HOME"
+    return 0
+  fi
+  return 1
 }
 
 runner_home_base="$(resolve_user_home "$runner_user")"
@@ -177,6 +189,7 @@ Environment=HOME=${prefix}/_work/runner-home-%i
 Environment=GIT_CONFIG_GLOBAL=${prefix}/_work/runner-home-%i/.gitconfig
 Environment=CODEX_HOME=${codex_home}
 Environment=GH_CONFIG_DIR=${gh_config_dir}
+Environment=RUNNER_WORKSPACE=${prefix}/_work/actions-runner-%i-work
 KillMode=process
 KillSignal=SIGTERM
 TimeoutStopSec=5min
