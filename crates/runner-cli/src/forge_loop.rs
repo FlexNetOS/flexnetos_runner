@@ -720,6 +720,7 @@ pub struct ComponentsAuditReport {
     pub missing_components: Vec<String>,
     pub components: Vec<LoopComponentStatus>,
     pub permission_profile_readiness: PermissionProfileReadiness,
+    pub checklist_shell_discipline: ChecklistShellDisciplineReadiness,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -738,6 +739,15 @@ pub struct PermissionProfileReadiness {
     pub mirror_default_permissions: Option<String>,
     pub profile_rules_present: bool,
     pub migration_ready: bool,
+    pub blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChecklistShellDisciplineReadiness {
+    pub checklist_path: &'static str,
+    pub checked_commands: Vec<String>,
+    pub raw_command_keys: Vec<String>,
+    pub rtk_ready: bool,
     pub blockers: Vec<String>,
 }
 
@@ -3816,7 +3826,56 @@ fn components_audit_report(root: &Path) -> ComponentsAuditReport {
         missing_components,
         components,
         permission_profile_readiness: permission_profile_readiness(root),
+        checklist_shell_discipline: checklist_shell_discipline_readiness(root),
     }
+}
+
+fn checklist_shell_discipline_readiness(root: &Path) -> ChecklistShellDisciplineReadiness {
+    let checklist_path = ".codex/checklists/forge-loop-cycle.toml";
+    let checklist = fs::read_to_string(root.join(checklist_path)).unwrap_or_default();
+    let mut checked_commands = Vec::new();
+    let mut raw_command_keys = Vec::new();
+    for line in checklist.lines().map(str::trim) {
+        let Some((key, value)) = line.split_once(" = ") else {
+            continue;
+        };
+        if !required_checklist_command_keys().contains(&key) {
+            continue;
+        }
+        checked_commands.push(key.to_string());
+        if !value.starts_with("\"rtk ") {
+            raw_command_keys.push(key.to_string());
+        }
+    }
+
+    let mut blockers = Vec::new();
+    if checked_commands.len() != required_checklist_command_keys().len() {
+        blockers
+            .push("forge-loop checklist is missing one or more required command entries".into());
+    }
+    for key in &raw_command_keys {
+        blockers.push(format!("checklist command {key} is not rtk-prefixed"));
+    }
+
+    ChecklistShellDisciplineReadiness {
+        checklist_path,
+        checked_commands,
+        raw_command_keys,
+        rtk_ready: blockers.is_empty(),
+        blockers,
+    }
+}
+
+fn required_checklist_command_keys() -> &'static [&'static str] {
+    &[
+        "component_audit",
+        "target_mining_audit",
+        "docs_drift",
+        "forge_loop_tests",
+        "workspace_tests",
+        "clippy",
+        "audit",
+    ]
 }
 
 fn permission_profile_readiness(root: &Path) -> PermissionProfileReadiness {
@@ -6274,6 +6333,41 @@ R  "docs/old note.md" -> "docs/new note.md"
         assert!(report.missing_components.contains(&"hooks".to_string()));
 
         fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn components_audit_exposes_checklist_shell_discipline_drift() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let readiness = components_audit_report(root).checklist_shell_discipline;
+
+        assert_eq!(
+            readiness.checklist_path,
+            ".codex/checklists/forge-loop-cycle.toml"
+        );
+        assert_eq!(
+            readiness.checked_commands.len(),
+            required_checklist_command_keys().len()
+        );
+        assert!(
+            readiness
+                .raw_command_keys
+                .contains(&"component_audit".to_string()),
+            "components-audit must expose raw checklist command drift: {readiness:?}"
+        );
+        assert!(
+            !readiness.rtk_ready,
+            "current checklist drift must not be reported as rtk-ready"
+        );
+        assert!(
+            readiness
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("not rtk-prefixed")),
+            "readiness blockers must explain shell-discipline drift: {readiness:?}"
+        );
     }
 
     #[test]
