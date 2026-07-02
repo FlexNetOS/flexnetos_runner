@@ -13,23 +13,39 @@ The first supported target is intentionally narrow:
 - architecture: x86_64
 - build host: this local workstation
 
-The release lane builds from source and stages a single archive with provenance:
+The release lane reads the component catalog at
+[`release/catalog.tsv`](../release/catalog.tsv), then stages a single archive
+with provenance:
 
 ```bash
 FXRUN_CARGO=/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-02/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo \
   scripts/build-local-ubuntu-release.sh
 ```
 
-The default component set is:
+The catalog is the source of truth. It currently includes:
 
 - `flexnetos_runner`
 - `meta`
+- `meta-agent`
+- `gitkb`
+- `codex`
+- `envctl`
+- `beads_rust`
+- `rtk-tokenkill`
 - `yazelix`
+- `yazelix-helix`
+- `nu_plugin`
+- `loop_lib`
+- `meta_plugin_protocol`
+- `bun`
 
-Yazelix is included by building `src/yazelix/rust_core` and staging the runtime
-assets needed by the generated package surface. The bundle does not use a Nix
-store path as its payload source; it copies locally built binaries and local
-repository assets into the release stage.
+Cargo catalog rows build from local source. `copy-bin` rows stage existing
+workspace-owned binary payloads such as GitKB, Codex, and Bun until their source
+repos are promoted into the peer catalog. Yazelix is included by building
+`src/yazelix/rust_core` and staging the runtime assets needed by the generated
+package surface. The bundle does not use a Nix store path as its payload source;
+it copies locally built binaries and local repository assets into the release
+stage.
 
 Outputs:
 
@@ -43,6 +59,5 @@ Use `--check-only` to validate host and toolchain wiring without compiling:
 scripts/build-local-ubuntu-release.sh --check-only
 ```
 
-The script accepts `FXRUN_RELEASE_COMPONENTS` for explicit component selection,
-but the checked-in default stays narrow until each additional peer has release
-contracts and proof.
+The script accepts `FXRUN_RELEASE_COMPONENTS` for explicit component selection;
+unset means every non-comment row in `release/catalog.tsv`.

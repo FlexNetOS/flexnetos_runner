@@ -174,8 +174,10 @@ FXRUN_CARGO=/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-02/
   scripts/build-local-ubuntu-release.sh
 ```
 
-The default release builds `flexnetos_runner`, `meta`, and `yazelix` from local source and stages
-Yazelix runtime assets alongside provenance and SHA-256 manifests. See
+The release reads [`release/catalog.tsv`](release/catalog.tsv) as the component source of truth.
+That catalog includes the Rust workspaces, GitKB/Codex binary payloads, Yazelix, envctl,
+`flexnetos_runner`, meta peers, and workspace tool frontdoors needed for the portable local state.
+See
 [`docs/local-ubuntu-release.md`](docs/local-ubuntu-release.md).
 
 
