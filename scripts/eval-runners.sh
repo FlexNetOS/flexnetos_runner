@@ -57,8 +57,24 @@ need journalctl
 need sed
 need awk
 
-if [[ -z "${GH_TOKEN:-}" && -x /home/flexnetos/FlexNetOS/src/envctl/target/debug/secretctl ]]; then
-  export GH_TOKEN="$(/home/flexnetos/FlexNetOS/src/envctl/target/debug/secretctl mint-github --installation-id "${FXRUN_EVAL_GH_INSTALLATION_ID:-140063898}" --permissions organization_self_hosted_runners:write,metadata:read,actions:write --ttl-secs 3600 --output json | jq -r '.token')"
+SECRETCTL="${FXRUN_EVAL_SECRETCTL:-}"
+if [[ -z "$SECRETCTL" ]]; then
+  for candidate in \
+    "$ROOT/../envctl/target/debug/secretctl" \
+    "$ROOT/../../envctl/target/debug/secretctl"
+  do
+    if [[ -x "$candidate" ]]; then
+      SECRETCTL="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$SECRETCTL" ]] && command -v secretctl >/dev/null 2>&1; then
+  SECRETCTL="$(command -v secretctl)"
+fi
+
+if [[ -z "${GH_TOKEN:-}" && -n "$SECRETCTL" && -x "$SECRETCTL" ]]; then
+  export GH_TOKEN="$($SECRETCTL mint-github --installation-id "${FXRUN_EVAL_GH_INSTALLATION_ID:-140063898}" --permissions organization_self_hosted_runners:write,metadata:read,actions:write --ttl-secs 3600 --output json | jq -r '.token')"
 fi
 
 iso_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }

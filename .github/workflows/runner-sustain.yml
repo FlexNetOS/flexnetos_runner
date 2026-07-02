@@ -34,14 +34,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - name: Prefer meta-owned Rust toolchain
+      - name: Prefer runner-provided Rust toolchain
         shell: bash
         run: |
           set -euo pipefail
-          echo "/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-01/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
           echo "SCCACHE_WRAPPER=" >> "$GITHUB_ENV"
+          command -v cargo
+          cargo --version
       - name: Yield to pull-request local checks
         shell: bash
         env:
