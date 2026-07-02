@@ -219,22 +219,30 @@ pub struct RunnerOpsSloAuditArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct RunnerFleetAuditArgs {
-    /// Expected repository that should own local dark-factory lanes for this proof.
-    #[arg(long, default_value = "FlexNetOS/flexnetos_runner")]
-    pub expected_repository: String,
+    /// Expected repository or repository-prefix scope that may own local dark-factory lanes. A value ending in `/` matches every repo in that owner/org.
+    #[arg(
+        long = "expected-scope",
+        alias = "expected-repository",
+        default_value = "FlexNetOS/"
+    )]
+    pub expected_scope: String,
     /// Optional JSON fixture/input of observed GitHub Actions jobs; when omitted, scan /proc.
     #[arg(long)]
     pub jobs_json: Option<PathBuf>,
     /// procfs root to scan for live GitHub Actions job environments.
     #[arg(long, default_value = "/proc")]
     pub proc_root: PathBuf,
-    /// Maximum external-repository jobs allowed to occupy local runner lanes.
-    #[arg(long, default_value_t = 0)]
-    pub max_external_jobs: usize,
+    /// Maximum out-of-scope repository jobs allowed to occupy local runner lanes.
+    #[arg(
+        long = "max-out-of-scope-jobs",
+        alias = "max-external-jobs",
+        default_value_t = 0
+    )]
+    pub max_out_of_scope_jobs: usize,
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
-    /// Return non-zero when external lane pressure exceeds the allowed budget.
+    /// Return non-zero when out-of-scope lane pressure exceeds the allowed budget.
     #[arg(long)]
     pub strict: bool,
 }
@@ -269,9 +277,13 @@ pub struct AgenticSystemAuditArgs {
     /// JSON from `gh pr list --state all --json number,title,state,mergedAt,statusCheckRollup,url`.
     #[arg(long)]
     pub prs_history_json: Option<PathBuf>,
-    /// Expected repository that should own local dark-factory lanes for this proof.
-    #[arg(long, default_value = "FlexNetOS/flexnetos_runner")]
-    pub expected_repository: String,
+    /// Expected repository or repository-prefix scope that may own local dark-factory lanes. A value ending in `/` matches every repo in that owner/org.
+    #[arg(
+        long = "expected-scope",
+        alias = "expected-repository",
+        default_value = "FlexNetOS/"
+    )]
+    pub expected_scope: String,
     /// Optional JSON fixture/input of observed GitHub Actions jobs; when omitted, scan /proc.
     #[arg(long)]
     pub fleet_jobs_json: Option<PathBuf>,
@@ -305,9 +317,13 @@ pub struct AgenticSystemAuditArgs {
     /// Minimum merged PRs with clean required checks in the black-factor window.
     #[arg(long, default_value_t = 1)]
     pub min_clean_merged_prs: usize,
-    /// Maximum external-repository jobs allowed to occupy local runner lanes.
-    #[arg(long, default_value_t = 0)]
-    pub max_external_jobs: usize,
+    /// Maximum out-of-scope repository jobs allowed to occupy local runner lanes.
+    #[arg(
+        long = "max-out-of-scope-jobs",
+        alias = "max-external-jobs",
+        default_value_t = 0
+    )]
+    pub max_out_of_scope_jobs: usize,
     /// Emit JSON instead of text.
     #[arg(long)]
     pub json: bool,
@@ -524,12 +540,12 @@ pub struct RunnerFleetJob {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RunnerFleetAuditReport {
     pub kclaw0_target: &'static str,
-    pub expected_repository: String,
+    pub expected_scope: String,
     pub total_jobs: usize,
-    pub expected_repository_jobs: usize,
-    pub external_repository_jobs: usize,
-    pub max_external_jobs: usize,
-    pub external_repositories: BTreeMap<String, usize>,
+    pub in_scope_repository_jobs: usize,
+    pub out_of_scope_repository_jobs: usize,
+    pub max_out_of_scope_jobs: usize,
+    pub out_of_scope_repositories: BTreeMap<String, usize>,
     pub jobs: Vec<RunnerFleetJob>,
     pub fleet_ready: bool,
     pub missing_evidence: Vec<&'static str>,
@@ -1308,20 +1324,17 @@ fn runner_fleet_audit(args: RunnerFleetAuditArgs) -> Result<()> {
     } else {
         println!("fxrun forge-loop runner fleet audit");
         println!("  kclaw0 target       : {}", report.kclaw0_target);
-        println!("  expected repository : {}", report.expected_repository);
+        println!("  expected scope      : {}", report.expected_scope);
         println!("  total jobs          : {}", report.total_jobs);
+        println!("  in-scope repo jobs : {}", report.in_scope_repository_jobs);
         println!(
-            "  expected repo jobs  : {}",
-            report.expected_repository_jobs
+            "  out-of-scope jobs  : {}",
+            report.out_of_scope_repository_jobs
         );
-        println!(
-            "  external repo jobs  : {}",
-            report.external_repository_jobs
-        );
-        println!("  max external jobs   : {}", report.max_external_jobs);
-        if !report.external_repositories.is_empty() {
-            println!("  external repositories:");
-            for (repo, count) in &report.external_repositories {
+        println!("  max out-of-scope   : {}", report.max_out_of_scope_jobs);
+        if !report.out_of_scope_repositories.is_empty() {
+            println!("  out-of-scope repos:");
+            for (repo, count) in &report.out_of_scope_repositories {
                 println!("    - {repo}: {count}");
             }
         }
@@ -1620,34 +1633,34 @@ fn runner_fleet_audit_report(args: &RunnerFleetAuditArgs) -> Result<RunnerFleetA
         scan_proc_for_runner_jobs(&args.proc_root)?
     };
     let jobs = dedupe_runner_fleet_jobs(jobs);
-    let expected_repository_jobs = jobs
+    let in_scope_repository_jobs = jobs
         .iter()
-        .filter(|job| job.repository == args.expected_repository)
+        .filter(|job| repository_matches_expected_scope(&job.repository, &args.expected_scope))
         .count();
-    let mut external_repositories = BTreeMap::new();
+    let mut out_of_scope_repositories = BTreeMap::new();
     for job in jobs
         .iter()
-        .filter(|job| job.repository != args.expected_repository)
+        .filter(|job| !repository_matches_expected_scope(&job.repository, &args.expected_scope))
     {
-        *external_repositories
+        *out_of_scope_repositories
             .entry(job.repository.clone())
             .or_insert(0) += 1;
     }
-    let external_repository_jobs = jobs.len().saturating_sub(expected_repository_jobs);
+    let out_of_scope_repository_jobs = jobs.len().saturating_sub(in_scope_repository_jobs);
     let mut missing_evidence = Vec::new();
-    if external_repository_jobs > args.max_external_jobs {
-        missing_evidence.push("external_runner_lane_pressure");
+    if out_of_scope_repository_jobs > args.max_out_of_scope_jobs {
+        missing_evidence.push("out_of_scope_runner_lane_pressure");
     }
     let fleet_ready = missing_evidence.is_empty();
 
     Ok(RunnerFleetAuditReport {
-        kclaw0_target: "local self-hosted runner lanes are attributable and not invisibly occupied by cross-repo work during dark-factory proof",
-        expected_repository: args.expected_repository.clone(),
+        kclaw0_target: "local self-hosted runner lanes are attributable across the full FlexNetOS org by default; out-of-scope ownership is explicit instead of hiding behind a single-repo proof",
+        expected_scope: args.expected_scope.clone(),
         total_jobs: jobs.len(),
-        expected_repository_jobs,
-        external_repository_jobs,
-        max_external_jobs: args.max_external_jobs,
-        external_repositories,
+        in_scope_repository_jobs,
+        out_of_scope_repository_jobs,
+        max_out_of_scope_jobs: args.max_out_of_scope_jobs,
+        out_of_scope_repositories,
         jobs,
         fleet_ready,
         missing_evidence,
@@ -1839,10 +1852,10 @@ fn agentic_system_audit_report(args: &AgenticSystemAuditArgs) -> Result<AgenticS
         _ => None,
     };
     let runner_fleet = runner_fleet_audit_report(&RunnerFleetAuditArgs {
-        expected_repository: args.expected_repository.clone(),
+        expected_scope: args.expected_scope.clone(),
         jobs_json: args.fleet_jobs_json.clone(),
         proc_root: args.proc_root.clone(),
-        max_external_jobs: args.max_external_jobs,
+        max_out_of_scope_jobs: args.max_out_of_scope_jobs,
         json: true,
         strict: false,
     })?;
@@ -2759,6 +2772,14 @@ fn count_jobs_by_repository(jobs: &[RunnerQueueJobSummary]) -> BTreeMap<String, 
         *counts.entry(job.repository.clone()).or_insert(0) += 1;
     }
     counts
+}
+
+fn repository_matches_expected_scope(repository: &str, expected_scope: &str) -> bool {
+    if expected_scope.ends_with('/') {
+        repository.starts_with(expected_scope)
+    } else {
+        repository == expected_scope
+    }
 }
 
 fn runner_health_report(path: &Path) -> Result<RunnerHealthReport> {
@@ -3737,7 +3758,7 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                 ),
                 (
                     "crates/runner-cli/src/forge_loop.rs",
-                    "runner_fleet_audit_flags_external_repo_lane_pressure",
+                    "runner_fleet_audit_default_scope_accepts_all_flexnetos_org_repos",
                 ),
                 (
                     "crates/runner-cli/src/forge_loop.rs",
@@ -7043,7 +7064,7 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
-    fn runner_fleet_audit_flags_external_repo_lane_pressure() {
+    fn runner_fleet_audit_flags_out_of_scope_repo_lane_pressure() {
         let temp =
             std::env::temp_dir().join(format!("fxrun-runner-fleet-audit-{}", std::process::id()));
         fs::remove_dir_all(&temp).ok();
@@ -7054,44 +7075,48 @@ R  "docs/old note.md" -> "docs/new note.md"
             r#"[
               {"repository":"FlexNetOS/flexnetos_runner","workflow":"Runner Sustain","run_id":"1","job":"local-runner-sustain","workspace":"/runner/_work/flexnetos_runner","pids":[10,11]},
               {"repository":"FlexNetOS/meta","workflow":"CI","run_id":"2","job":"integration","workspace":"/runner/_work/meta","head_ref":"chore/remove-empty-repos","pids":[20,21]},
-              {"repository":"FlexNetOS/meta","workflow":"CI","run_id":"2","job":"integration","workspace":"/runner/_work/meta","head_ref":"chore/remove-empty-repos","pids":[22]}
+              {"repository":"ExternalOrg/meta","workflow":"CI","run_id":"3","job":"integration","workspace":"/runner/_work/external","head_ref":"chore/remove-empty-repos","pids":[30,31]},
+              {"repository":"ExternalOrg/meta","workflow":"CI","run_id":"3","job":"integration","workspace":"/runner/_work/external","head_ref":"chore/remove-empty-repos","pids":[32]}
             ]"#,
         )
         .expect("jobs json");
 
         let report = runner_fleet_audit_report(&RunnerFleetAuditArgs {
-            expected_repository: "FlexNetOS/flexnetos_runner".to_string(),
+            expected_scope: "FlexNetOS/".to_string(),
             jobs_json: Some(jobs),
             proc_root: PathBuf::from("/proc"),
-            max_external_jobs: 0,
+            max_out_of_scope_jobs: 0,
             json: true,
             strict: false,
         })
         .expect("fleet audit");
 
         assert!(!report.fleet_ready);
-        assert_eq!(report.total_jobs, 2);
-        assert_eq!(report.expected_repository_jobs, 1);
-        assert_eq!(report.external_repository_jobs, 1);
-        assert_eq!(report.external_repositories.get("FlexNetOS/meta"), Some(&1));
+        assert_eq!(report.total_jobs, 3);
+        assert_eq!(report.in_scope_repository_jobs, 2);
+        assert_eq!(report.out_of_scope_repository_jobs, 1);
+        assert_eq!(
+            report.out_of_scope_repositories.get("ExternalOrg/meta"),
+            Some(&1)
+        );
         assert!(
             report
                 .missing_evidence
-                .contains(&"external_runner_lane_pressure"),
+                .contains(&"out_of_scope_runner_lane_pressure"),
             "{:?}",
             report.missing_evidence
         );
-        let meta_job = report
+        let external_job = report
             .jobs
             .iter()
-            .find(|job| job.repository == "FlexNetOS/meta")
-            .expect("meta job");
-        assert_eq!(meta_job.pids, vec![20, 21, 22]);
+            .find(|job| job.repository == "ExternalOrg/meta")
+            .expect("external job");
+        assert_eq!(external_job.pids, vec![30, 31, 32]);
         fs::remove_dir_all(temp).ok();
     }
 
     #[test]
-    fn runner_fleet_audit_passes_when_only_expected_repo_owns_lanes() {
+    fn runner_fleet_audit_default_scope_accepts_all_flexnetos_org_repos() {
         let temp = std::env::temp_dir().join(format!(
             "fxrun-runner-fleet-audit-pass-{}",
             std::process::id()
@@ -7102,25 +7127,28 @@ R  "docs/old note.md" -> "docs/new note.md"
         fs::write(
             &jobs,
             r#"[
-              {"repository":"FlexNetOS/flexnetos_runner","workflow":"Runner Sustain","run_id":"1","job":"local-runner-sustain","workspace":"/runner/_work/flexnetos_runner","pids":[10]}
+              {"repository":"FlexNetOS/flexnetos_runner","workflow":"Runner Sustain","run_id":"1","job":"local-runner-sustain","workspace":"/runner/_work/flexnetos_runner","pids":[10]},
+              {"repository":"FlexNetOS/meta","workflow":"CI","run_id":"2","job":"integration","workspace":"/runner/_work/meta","pids":[20]},
+              {"repository":"FlexNetOS/envctl","workflow":"CI","run_id":"3","job":"test","workspace":"/runner/_work/envctl","pids":[30]}
             ]"#,
         )
         .expect("jobs json");
 
         let report = runner_fleet_audit_report(&RunnerFleetAuditArgs {
-            expected_repository: "FlexNetOS/flexnetos_runner".to_string(),
+            expected_scope: "FlexNetOS/".to_string(),
             jobs_json: Some(jobs),
             proc_root: PathBuf::from("/proc"),
-            max_external_jobs: 0,
+            max_out_of_scope_jobs: 0,
             json: true,
             strict: false,
         })
         .expect("fleet audit");
 
         assert!(report.fleet_ready, "{:?}", report.missing_evidence);
-        assert_eq!(report.total_jobs, 1);
-        assert_eq!(report.external_repository_jobs, 0);
-        assert!(report.external_repositories.is_empty());
+        assert_eq!(report.total_jobs, 3);
+        assert_eq!(report.in_scope_repository_jobs, 3);
+        assert_eq!(report.out_of_scope_repository_jobs, 0);
+        assert!(report.out_of_scope_repositories.is_empty());
         fs::remove_dir_all(temp).ok();
     }
 
@@ -7329,7 +7357,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             runs_json: Some(runs),
             open_prs_json: Some(open_prs),
             prs_history_json: Some(history_prs),
-            expected_repository: "FlexNetOS/flexnetos_runner".to_string(),
+            expected_scope: "FlexNetOS/flexnetos_runner".to_string(),
             fleet_jobs_json: Some(jobs),
             proc_root: PathBuf::from("/proc"),
             min_window_hours: 1,
@@ -7341,7 +7369,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             min_sustain_runs: 1,
             min_sustain_duration_minutes: 5,
             min_clean_merged_prs: 1,
-            max_external_jobs: 0,
+            max_out_of_scope_jobs: 0,
             json: true,
             strict: false,
         })
@@ -9125,6 +9153,8 @@ R  "docs/old note.md" -> "docs/new note.md"
             "controller role",
             "queued local-label jobs",
             "queued nonlocal jobs",
+            "every non-archived `FlexNetOS/*` repo by default",
+            "reducing the default FlexNetOS org scope is not completion evidence",
             "runner-queue-audit --repo-jobs-json",
             "--max-queued-local-jobs",
         ] {
@@ -9139,6 +9169,8 @@ R  "docs/old note.md" -> "docs/new note.md"
             "--status \"$status\"",
             "gh api --paginate",
             "runner-queue-audit",
+            "ORGS=(\"FlexNetOS\")",
+            "REPO_LIMIT=\"${FXRUN_QUEUE_REPO_LIMIT:-1000}\"",
         ] {
             assert!(
                 script.contains(required),

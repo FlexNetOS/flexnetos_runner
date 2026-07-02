@@ -2,9 +2,9 @@
 # Collect active GitHub Actions job evidence across repos for runner-queue-audit.
 set -euo pipefail
 
-ORGS=("FlexNetOS" "drdave-flexnetos")
+ORGS=("FlexNetOS")
 REPOS=()
-REPO_LIMIT="${FXRUN_QUEUE_REPO_LIMIT:-100}"
+REPO_LIMIT="${FXRUN_QUEUE_REPO_LIMIT:-1000}"
 RUN_LIMIT="${FXRUN_QUEUE_RUN_LIMIT:-20}"
 OUT="${FXRUN_QUEUE_OUT:-_work/runner-queue/repo-jobs.json}"
 RUN_AUDIT=0
@@ -13,13 +13,14 @@ usage() {
   cat <<USAGE
 Usage: $0 [--org ORG]... [--repo OWNER/REPO]... [--repo-limit N] [--run-limit N] [--out FILE] [--audit]
 
-Collects queued and in-progress workflow runs, fetches their job labels/runner assignment, and writes
-the combined JSON accepted by:
+Collects queued and in-progress workflow runs across every non-archived FlexNetOS org repo by
+default, fetches their job labels/runner assignment, and writes the combined JSON accepted by:
 
   fxrun forge-loop runner-queue-audit --repo-jobs-json <FILE> --json
 
 The audit separates shared local FlexNetOS runner-label pressure
-(self-hosted, linux, x64, local, flexnetos) from GitHub-hosted or vendor queues such as Blacksmith.
+(self-hosted, linux, x64, local, flexnetos) from GitHub-hosted or vendor queues. Extra orgs/repos
+can be added for triage with --org/--repo, but the default scope is the whole FlexNetOS org.
 USAGE
 }
 
