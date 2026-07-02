@@ -9222,22 +9222,42 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
-    fn runner_retarget_workflow_uses_unique_temp_script() {
+    fn runner_retarget_workflow_installs_tracked_script_without_tmp_lock() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(Path::parent)
             .expect("workspace root");
         let workflow = fs::read_to_string(root.join(".github/workflows/runner-retarget.yml"))
             .expect("read runner retarget workflow");
+        let script = fs::read_to_string(root.join("scripts/retarget-local-runner-services.sh"))
+            .expect("read tracked runner retarget script");
 
         assert!(
-            workflow.contains(r#"mktemp "${RUNNER_TEMP:-/tmp}/flexnetos-runner-retarget.XXXXXX""#),
-            "retarget workflow must not fail on a stale root-owned /tmp script"
+            workflow.contains("actions/checkout"),
+            "retarget workflow must checkout the tracked retarget script"
+        );
+        assert!(
+            workflow.contains(
+                "sudo -n install -m 0755 scripts/retarget-local-runner-services.sh /usr/local/sbin/flexnetos-runner-retarget.sh"
+            ),
+            "retarget workflow must install the tracked retarget script"
         );
         assert!(
             !workflow.contains("cat > /tmp/flexnetos-runner-retarget.sh"),
             "retarget workflow must not write a fixed /tmp path"
         );
+        for required in [
+            "repo=/home/flexnetos/FlexNetOS/src/flexnetos_runner",
+            "User=flexnetos",
+            "CODEX_HOME=/home/flexnetos/.codex",
+            "GH_CONFIG_DIR=/home/flexnetos/.config/gh",
+            "systemctl restart",
+        ] {
+            assert!(
+                script.contains(required),
+                "retarget script missing {required}"
+            );
+        }
     }
 
     #[test]
