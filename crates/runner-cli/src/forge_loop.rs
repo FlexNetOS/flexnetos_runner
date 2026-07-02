@@ -9,6 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_CODEX: &str = "/home/flexnetos/.local/bin/codex";
+const DEFAULT_CODEX_HOME: &str = "/home/flexnetos/.codex";
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
@@ -4199,12 +4200,13 @@ fn codex_auth_readiness() -> CodexAuthReadiness {
     let codex_home = std::env::var("CODEX_HOME")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| ".codex".into());
+        .unwrap_or_else(|| DEFAULT_CODEX_HOME.into());
     let auth_json = Path::new(&codex_home).join("auth.json");
+    let auth_json_display = auth_json.to_string_lossy().replace('\\', "/");
     CodexAuthReadiness {
         auth_mode: "local_chatgpt",
         codex_home,
-        auth_json: auth_json.display().to_string(),
+        auth_json: auth_json_display,
         auth_json_present: auth_json.exists(),
         login_status_command: "rtk codex login status",
     }
@@ -5003,6 +5005,9 @@ fn append_event(path: &Path, event: CycleEvent<'_>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn codex_invocation_forces_auto_compaction_continuity() {
@@ -5054,6 +5059,22 @@ mod tests {
         assert!(!auth.codex_home.is_empty());
         assert!(auth.auth_json.ends_with("auth.json"));
         assert_eq!(auth.login_status_command, "rtk codex login status");
+    }
+
+    #[test]
+    fn subscription_auth_readiness_defaults_to_scheduled_codex_home() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let previous = std::env::var("CODEX_HOME").ok();
+        std::env::remove_var("CODEX_HOME");
+
+        let auth = codex_auth_readiness();
+
+        if let Some(previous) = previous {
+            std::env::set_var("CODEX_HOME", previous);
+        }
+
+        assert_eq!(auth.codex_home, "/home/flexnetos/.codex");
+        assert_eq!(auth.auth_json, "/home/flexnetos/.codex/auth.json");
     }
 
     #[test]
