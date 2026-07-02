@@ -1,0 +1,22 @@
+
+running 1 test
+test forge_loop::tests::scheduled_gate_contract_exercises_doctor_readiness_surface ... FAILED
+
+failures:
+
+---- forge_loop::tests::scheduled_gate_contract_exercises_doctor_readiness_surface stdout ----
+
+thread 'forge_loop::tests::scheduled_gate_contract_exercises_doctor_readiness_surface' (1192874) panicked at crates/runner-cli/src/forge_loop.rs:5712:9:
+scheduled validation must exercise the local subscription-auth readiness surface
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    forge_loop::tests::scheduled_gate_contract_exercises_doctor_readiness_surface
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 118 filtered out; finished in 0.00s
+
+   Compiling runner-cli v0.1.0 (/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-01-work/flexnetos_runner/flexnetos_runner/crates/runner-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.29s
+     Running unittests src/main.rs (target/debug/deps/fxrun-1981483c9c2698a3)
+error: test failed, to rerun pass `-p runner-cli --bin fxrun`

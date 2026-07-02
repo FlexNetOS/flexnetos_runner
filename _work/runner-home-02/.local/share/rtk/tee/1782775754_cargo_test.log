@@ -1,0 +1,22 @@
+
+running 1 test
+test forge_loop::tests::compact_continuity_artifact_attributes_metrics_evaluation_validation_source ... FAILED
+
+failures:
+
+---- forge_loop::tests::compact_continuity_artifact_attributes_metrics_evaluation_validation_source stdout ----
+
+thread 'forge_loop::tests::compact_continuity_artifact_attributes_metrics_evaluation_validation_source' (1140813) panicked at crates/runner-cli/src/forge_loop.rs:5570:9:
+compact continuity artifact must keep metrics/manifest eval validation under Evaluate
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    forge_loop::tests::compact_continuity_artifact_attributes_metrics_evaluation_validation_source
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 116 filtered out; finished in 0.00s
+
+   Compiling runner-cli v0.1.0 (/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-02-work/flexnetos_runner/flexnetos_runner/crates/runner-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.32s
+     Running unittests src/main.rs (target/debug/deps/fxrun-1981483c9c2698a3)
+error: test failed, to rerun pass `-p runner-cli --bin fxrun`

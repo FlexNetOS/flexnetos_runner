@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "goal": "fix all issues and PRs across FlexNetOS repos; keep flexnetos_runner clean; ensure committed work is pushed, PRs are merged when green, stale branches/remotes/worktrees are cleaned, and no PR-fix sessions are left running",
+  "pr_title": "chore: forge loop self-upgrade",
+  "prompt_sha256": "4b28f8a12dad8f655c307155bece2f56afcb7c3a5b53d0ada88acfdadcd0aacd",
+  "once": true,
+  "auto_merge": true,
+  "strict_upgrade_only": true,
+  "phases": [
+    "Red",
+    "Implement",
+    "Gate",
+    "Evaluate",
+    "Research",
+    "Upgrade"
+  ]
+}

@@ -1,0 +1,2 @@
+{"event":"cycle.started","phase":"Red","detail":"forge-loop TDD cycle started"}
+{"event":"cycle.codex_complete","phase":"Gate","detail":"codex implementation completed; run repository gates next"}

@@ -1,0 +1,13 @@
+{
+  "program": "codex",
+  "args": [
+    "exec",
+    "--json",
+    "--sandbox",
+    "workspace-write",
+    "--ignore-user-config",
+    "--config",
+    "approval_policy=\"never\"",
+    "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: isolated batch 20260627T085328Z cycle 03: run a TDD self-evaluating forge-loop cycle; prefer exactly one small safe reliability/accuracy/speed self-upgrade; if changes are made, leave them in this branch for the harness to publish; strict upgrade only. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, research one reliability/accuracy/speed improvement, and if a self-upgrade is warranted commit, push, open a PR, and auto-merge once green when repository settings allow. Strict upgrade only: no downgrades or removals without installed replacement and parity proof."
+  ]
+}

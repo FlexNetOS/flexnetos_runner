@@ -1,0 +1,42 @@
+[
+  {
+    "id": "openai-codex",
+    "url": "https://github.com/openai/codex",
+    "purpose": "Codex Rust CLI behavior, noninteractive execution, JSONL, and upstream issues"
+  },
+  {
+    "id": "codex-github-action-docs",
+    "url": "https://developers.openai.com/codex/github-action",
+    "purpose": "Codex Action prompt-file, codex-args, sandbox, safety-strategy, output, and structured schema controls"
+  },
+  {
+    "id": "codex-permissions-docs",
+    "url": "https://developers.openai.com/codex/permissions",
+    "purpose": "Permission-profile migration, filesystem/network least privilege, and sandbox/profile non-composition rules"
+  },
+  {
+    "id": "codex-subagents-docs",
+    "url": "https://developers.openai.com/codex/subagents",
+    "purpose": "Project custom agents, explicit fan-out, inherited sandbox behavior, and max thread/depth controls"
+  },
+  {
+    "id": "awesome-codex-cli",
+    "url": "https://github.com/RoggeOhta/awesome-codex-cli",
+    "purpose": "Codex ecosystem tools, skills, plugins, MCP servers, and orchestration patterns"
+  },
+  {
+    "id": "oh-my-codex",
+    "url": "https://github.com/Yeachan-Heo/oh-my-codex",
+    "purpose": "multi-agent teams, hooks, HUDs, and Codex orchestration UX"
+  },
+  {
+    "id": "crates-io",
+    "url": "https://crates.io",
+    "purpose": "Rust crates that improve loop reliability, accuracy, speed, tracing, and scheduling"
+  },
+  {
+    "id": "kclaw0",
+    "url": "https://github.com/drdave-flexnetos/kclaw0",
+    "purpose": "local dark-factory/self-upgrade prior art and governance patterns"
+  }
+]

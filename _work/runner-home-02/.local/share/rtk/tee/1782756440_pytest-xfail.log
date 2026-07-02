@@ -1,0 +1,15 @@
+XFAIL test_x.py::test_case_0 - known issue #0
+XFAIL test_x.py::test_case_1 - known issue #1
+XFAIL test_x.py::test_case_2 - known issue #2
+XFAIL test_x.py::test_case_3 - known issue #3
+XFAIL test_x.py::test_case_4 - known issue #4
+XFAIL test_x.py::test_case_5 - known issue #5
+XFAIL test_x.py::test_case_6 - known issue #6
+XFAIL test_x.py::test_case_7 - known issue #7
+XFAIL test_x.py::test_case_8 - known issue #8
+XFAIL test_x.py::test_case_9 - known issue #9
+XFAIL test_x.py::test_case_10 - known issue #10
+XFAIL test_x.py::test_case_11 - known issue #11
+XFAIL test_x.py::test_case_12 - known issue #12
+XFAIL test_x.py::test_case_13 - known issue #13
+XFAIL test_x.py::test_case_14 - known issue #14

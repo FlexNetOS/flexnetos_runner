@@ -1,0 +1,505 @@
+--- /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/Runner_20260626-224433-utc.log
+[2026-06-26 22:46:27Z INFO Terminal] WRITE LINE: 2026-06-26 22:46:27Z: Running job: Runner smoke
+[2026-06-26 22:46:27Z INFO JobDispatcher] Start renew job request 0 for job 141b41fe-37da-5c6d-8096-dee3658b41a2.
+[2026-06-26 22:46:27Z INFO JobDispatcher] Successfully renew job 141b41fe-37da-5c6d-8096-dee3658b41a2, job is valid till 6/26/2026 10:56:27 PM
+[2026-06-26 22:46:27Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper] Starting process:
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   File name: '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin/Runner.Worker'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Arguments: 'spawnclient 147 150'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Working directory: '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Require exit code zero: 'False'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Encoding web name:  ; code page: ''
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Force kill process on cancellation: 'True'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Redirected STDIN: 'False'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Persist current code page: 'False'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   Keep redirected STDIN open: 'False'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper]   High priority process: 'True'
+[2026-06-26 22:46:27Z INFO ProcessInvokerWrapper] Process started with process id 2851170, waiting for process exit.
+[2026-06-26 22:46:27Z INFO JobDispatcher] Send job request message to worker for job 141b41fe-37da-5c6d-8096-dee3658b41a2.
+[2026-06-26 22:46:27Z INFO ProcessChannel] Sending message of length 21803, with hash '6a3cf30589a66946cd0ee6a037a8ba880956d5248254cd41803c6071e2b6a266'
+[2026-06-26 22:46:27Z INFO JobNotification] Entering JobStarted Notification
+[2026-06-26 22:46:27Z INFO JobNotification] Entering StartMonitor
+[2026-06-26 22:46:30Z INFO ProcessInvokerWrapper] STDOUT/STDERR stream read finished.
+[2026-06-26 22:46:30Z INFO ProcessInvokerWrapper] STDOUT/STDERR stream read finished.
+[2026-06-26 22:46:30Z INFO ProcessInvokerWrapper] Finished process 2851170 with exit code 100, and elapsed time 00:00:02.6271996.
+[2026-06-26 22:46:30Z INFO JobDispatcher] Worker finished for job 141b41fe-37da-5c6d-8096-dee3658b41a2. Code: 100
+[2026-06-26 22:46:30Z INFO JobDispatcher] finish job request for job 141b41fe-37da-5c6d-8096-dee3658b41a2 with result: Succeeded
+[2026-06-26 22:46:30Z INFO Terminal] WRITE LINE: 2026-06-26 22:46:30Z: Job Runner smoke completed with result: Succeeded
+[2026-06-26 22:46:30Z INFO JobDispatcher] Stop renew job request for job 141b41fe-37da-5c6d-8096-dee3658b41a2.
+[2026-06-26 22:46:30Z INFO JobDispatcher] job renew has been cancelled, stop renew job 141b41fe-37da-5c6d-8096-dee3658b41a2.
+[2026-06-26 22:46:30Z INFO JobNotification] Entering JobCompleted Notification
+[2026-06-26 22:46:30Z INFO JobNotification] Entering EndMonitor
+[2026-06-26 22:46:30Z INFO BrokerMessageListener] Received job status event. JobState: Online
+[2026-06-26 22:46:30Z WARN GitHubActionsService] GET request to https://broker.actions.githubusercontent.com/message?sessionId=4fbbf337-d4d0-4abd-b9da-125e3c1ead95&status=Busy&runnerVersion=2.335.1&os=Linux&architecture=X64&disableUpdate=false has been cancelled.
+[2026-06-26 22:46:30Z ERR  BrokerServer] Catch exception during request
+[2026-06-26 22:46:30Z ERR  BrokerServer] System.Threading.Tasks.TaskCanceledException: The operation was canceled.
+ ---> System.Threading.Tasks.TaskCanceledException: The operation was canceled.
+ ---> System.IO.IOException: Unable to read data from the transport connection: Operation canceled.
+ ---> System.Net.Sockets.SocketException (125): Operation canceled
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReadAsyncInternal[TIOAdapter](Memory`1 buffer, CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithNtAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean isProxyAuth, HttpConnection connection, HttpConnectionPool connectionPool, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean preAuthenticate, Boolean isProxyAuth, Boolean doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at GitHub.Services.Common.RawHttpMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at GitHub.Services.Common.VssHttpRetryMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+   --- End of inner exception stack trace ---
+   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+   at Sdk.WebApi.WebApi.RawHttpClientBase.SendAsync(HttpRequestMessage message, HttpCompletionOption completionOption, Object userState, CancellationToken cancellationToken)
+   at Sdk.WebApi.WebApi.RawHttpClientBase.SendAsync[T](HttpRequestMessage message, Boolean readErrorBody, Object userState, CancellationToken cancellationToken)
+   at Sdk.WebApi.WebApi.RawHttpClientBase.SendAsync[T](HttpMethod method, IEnumerable`1 additionalHeaders, Uri requestUri, HttpContent content, IEnumerable`1 queryParameters, Boolean readErrorBody, Object userState, CancellationToken cancellationToken)
+   at GitHub.Actions.RunService.WebApi.BrokerHttpClient.GetRunnerMessageAsync(Nullable`1 sessionId, String runnerVersion, Nullable`1 status, String os, String architecture, Nullable`1 disableUpdate, CancellationToken cancellationToken)
+   at GitHub.Runner.Common.BrokerServer.<>c__DisplayClass7_0.<<GetRunnerMessageAsync>b__0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at GitHub.Runner.Common.RunnerService.RetryRequest[T](Func`1 func, CancellationToken cancellationToken, Int32 maxAttempts, Func`2 shouldRetry)
+[2026-06-26 22:46:30Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:46:30Z ERR  BrokerServer] System.Threading.Tasks.TaskCanceledException: The operation was canceled.
+ ---> System.IO.IOException: Unable to read data from the transport connection: Operation canceled.
+ ---> System.Net.Sockets.SocketException (125): Operation canceled
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReadAsyncInternal[TIOAdapter](Memory`1 buffer, CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithNtAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean isProxyAuth, HttpConnection connection, HttpConnectionPool connectionPool, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean preAuthenticate, Boolean isProxyAuth, Boolean doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at GitHub.Services.Common.RawHttpMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at GitHub.Services.Common.VssHttpRetryMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+[2026-06-26 22:46:30Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:46:30Z ERR  BrokerServer] System.IO.IOException: Unable to read data from the transport connection: Operation canceled.
+ ---> System.Net.Sockets.SocketException (125): Operation canceled
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReadAsyncInternal[TIOAdapter](Memory`1 buffer, CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[2026-06-26 22:46:30Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:46:30Z ERR  BrokerServer] System.Net.Sockets.SocketException (125): Operation canceled
+[2026-06-26 22:46:30Z WARN BrokerServer] Back off 8.02 seconds before next retry. 4 attempt left.
+[2026-06-26 22:46:30Z INFO BrokerMessageListener] Get messages has been cancelled using local token source. Continue to get messages with new status.
+--- /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/Worker_20260626-224627-utc.log
+  "type": "run",
+  "stage": "Main",
+  "stepId": "eb0969e2-58a4-41b2-a1bf-693d56b09698",
+  "stepContextName": "__run",
+  "result": "succeeded",
+  "errorMessages": [],
+  "executionTimeInSeconds": 1,
+  "startTime": "2026-06-26T22:46:28.2368376Z",
+  "finishTime": "2026-06-26T22:46:28.2841693Z"
+}.
+[2026-06-26 22:46:28Z INFO StepsRunner] No need for updating job result with current step result 'Succeeded'.
+[2026-06-26 22:46:28Z INFO StepsRunner] Current state: job state = ''
+[2026-06-26 22:46:28Z INFO JobRunner] Finalize job.
+[2026-06-26 22:46:28Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:46:28Z INFO HostContext] Well known directory 'Root': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01'
+[2026-06-26 22:46:28Z INFO HostContext] Well known directory 'Diag': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag'
+[2026-06-26 22:46:28Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:46:28Z INFO HostContext] Well known directory 'Root': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01'
+[2026-06-26 22:46:28Z INFO HostContext] Well known directory 'Diag': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag'
+[2026-06-26 22:46:28Z INFO JobExtension] Initialize Env context
+[2026-06-26 22:46:28Z INFO JobExtension] Initialize steps context
+[2026-06-26 22:46:28Z INFO JobServerQueue] Try to append 1 batches web console lines for record 'f3f35fab-fcbe-48ae-bc12-c4e12bd057d1', success rate: 1/1.
+[2026-06-26 22:46:28Z INFO JobServerQueue] Try to append 1 batches web console lines for record 'eb0969e2-58a4-41b2-a1bf-693d56b09698', success rate: 1/1.
+[2026-06-26 22:46:28Z INFO JobServerQueue] Try to append 1 batches web console lines for record 'daa3b56c-5a34-40e7-bc5e-c990cdd354dd', success rate: 1/1.
+[2026-06-26 22:46:28Z INFO JobExtension] Total accessible running process: 946.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 141949 (kworker/2:0-events)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/141949/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/141949/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 564696 (kworker/15:1-events)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/564696/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/564696/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 961545 (kworker/17:0-events)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/961545/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/961545/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 1358474 (kworker/43:0-events)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/1358474/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/1358474/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 1899692 (kworker/19:2-events_freezable)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/1899692/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/1899692/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 2069886 (kworker/35:2-events)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/2069886/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/2069886/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 2136514 (kworker/13:1-events)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/2136514/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/2136514/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 2468043 (kworker/28:0-events)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/2468043/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/2468043/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Inspecting process environment variables. PID: 2773143 (kworker/u196:3-events_unbound)
+[2026-06-26 22:46:28Z INFO LinuxProcessExtensions] Read env from /proc/2773143/environ
+[2026-06-26 22:46:28Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/2773143/environ' is denied.
+[2026-06-26 22:46:28Z INFO JobExtension] Wait for all connectivity checks to finish.
+[2026-06-26 22:46:28Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:46:28Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:46:28Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:46:28Z INFO ExecutionContext] Publish step telemetry for current step {
+  "action": "complete_job",
+  "type": "runner",
+  "stage": "Post",
+  "stepId": "daa3b56c-5a34-40e7-bc5e-c990cdd354dd",
+  "result": "succeeded",
+  "errorMessages": [],
+  "executionTimeInSeconds": 1,
+  "startTime": "2026-06-26T22:46:28.2896358Z",
+  "finishTime": "2026-06-26T22:46:28.4453458Z"
+}.
+[2026-06-26 22:46:28Z INFO JobRunner] Job result after all job steps finish: Succeeded
+[2026-06-26 22:46:28Z INFO JobRunner] Completing the job execution context.
+[2026-06-26 22:46:28Z INFO JobRunner] Shutting down the job server queue.
+[2026-06-26 22:46:28Z INFO JobServerQueue] Fire signal to shutdown all queues.
+[2026-06-26 22:46:29Z INFO JobServerQueue] All queue process task stopped.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Web console line queue drained.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Uploading 4 files in one shot.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Try to upload 4 log files or attachments, success rate: 4/4.
+[2026-06-26 22:46:29Z INFO JobServerQueue] File upload queue drained.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Starting results-based upload queue...
+[2026-06-26 22:46:29Z INFO JobServerQueue] Uploading 4 file(s) in one shot through results service.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/673bd899-cc7e-4ef8-93b9-ab239624b552_f3f35fab-fcbe-48ae-bc12-c4e12bd057d1.1
+[2026-06-26 22:46:29Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/673bd899-cc7e-4ef8-93b9-ab239624b552_eb0969e2-58a4-41b2-a1bf-693d56b09698.1
+[2026-06-26 22:46:29Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/673bd899-cc7e-4ef8-93b9-ab239624b552_daa3b56c-5a34-40e7-bc5e-c990cdd354dd.1
+[2026-06-26 22:46:29Z INFO JobServerQueue] Got a job log file to send to results service.
+[2026-06-26 22:46:29Z INFO JobServerQueue] Starting upload of job log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/673bd899-cc7e-4ef8-93b9-ab239624b552_141b41fe-37da-5c6d-8096-dee3658b41a2.1
+[2026-06-26 22:46:30Z INFO JobServerQueue] Tried to upload 4 file(s) to results, success rate: 4/4.
+[2026-06-26 22:46:30Z INFO JobServerQueue] Results upload queue drained.
+[2026-06-26 22:46:30Z INFO JobServerQueue] Job timeline record has been updated for the first time.
+[2026-06-26 22:46:30Z INFO JobServerQueue] Timeline update queue drained.
+[2026-06-26 22:46:30Z INFO JobServerQueue] Disposing job server ...
+[2026-06-26 22:46:30Z INFO JobServerQueue] Disposing results server ...
+[2026-06-26 22:46:30Z INFO JobServerQueue] All queue process tasks have been stopped, and all queues are drained.
+[2026-06-26 22:46:30Z INFO TempDirectoryManager] Cleaning runner temp folder: /home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-01-work/_temp
+[2026-06-26 22:46:30Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:46:30Z INFO HostContext] Well known directory 'Root': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01'
+[2026-06-26 22:46:30Z INFO HostContext] Well known directory 'Diag': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag'
+[2026-06-26 22:46:30Z INFO HostContext] Well known config file 'Telemetry': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/.telemetry'
+[2026-06-26 22:46:30Z INFO JobRunner] Raising job completed against run service
+[2026-06-26 22:46:30Z INFO Worker] Job completed.
+--- /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/Runner_20260626-224027-utc.log
+   at System.Net.Http.AuthenticationHelper.SendWithNtAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean isProxyAuth, HttpConnection connection, HttpConnectionPool connectionPool, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean preAuthenticate, Boolean isProxyAuth, Boolean doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at GitHub.Services.Common.RawHttpMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at GitHub.Services.Common.VssHttpRetryMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+[2026-06-26 22:43:05Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:43:05Z ERR  BrokerServer] System.IO.IOException: Unable to read data from the transport connection: Operation canceled.
+ ---> System.Net.Sockets.SocketException (125): Operation canceled
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReadAsyncInternal[TIOAdapter](Memory`1 buffer, CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[2026-06-26 22:43:05Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:43:05Z ERR  BrokerServer] System.Net.Sockets.SocketException (125): Operation canceled
+[2026-06-26 22:43:05Z WARN BrokerServer] Back off 11.976 seconds before next retry. 4 attempt left.
+[2026-06-26 22:43:05Z INFO BrokerMessageListener] Get messages has been cancelled using local token source. Continue to get messages with new status.
+[2026-06-26 22:43:12Z INFO Terminal] WRITE LINE: Exiting...
+[2026-06-26 22:43:12Z INFO ConfigurationStore] IsServiceConfigured()
+[2026-06-26 22:43:12Z INFO ConfigurationStore] IsServiceConfigured: True
+[2026-06-26 22:43:12Z INFO Runner] Received Ctrl-C signal, stop Runner.Listener and Runner.Worker.
+[2026-06-26 22:43:12Z INFO HostContext] Runner will be shutdown for UserCancelled
+[2026-06-26 22:43:12Z WARN GitHubActionsService] GET request to https://broker.actions.githubusercontent.com/message?sessionId=2473c725-cfdf-49c6-9057-04fc7d414890&status=Online&runnerVersion=2.335.1&os=Linux&architecture=X64&disableUpdate=false has been cancelled.
+[2026-06-26 22:43:12Z ERR  BrokerServer] Catch exception during request
+[2026-06-26 22:43:12Z ERR  BrokerServer] System.Threading.Tasks.TaskCanceledException: The operation was canceled.
+ ---> System.Threading.Tasks.TaskCanceledException: The operation was canceled.
+ ---> System.IO.IOException: Unable to read data from the transport connection: Operation canceled.
+ ---> System.Net.Sockets.SocketException (125): Operation canceled
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReadAsyncInternal[TIOAdapter](Memory`1 buffer, CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.InitialFillAsync(Boolean async)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithNtAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean isProxyAuth, HttpConnection connection, HttpConnectionPool connectionPool, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean preAuthenticate, Boolean isProxyAuth, Boolean doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at GitHub.Services.Common.RawHttpMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at GitHub.Services.Common.VssHttpRetryMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+   --- End of inner exception stack trace ---
+   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+   at Sdk.WebApi.WebApi.RawHttpClientBase.SendAsync(HttpRequestMessage message, HttpCompletionOption completionOption, Object userState, CancellationToken cancellationToken)
+   at Sdk.WebApi.WebApi.RawHttpClientBase.SendAsync[T](HttpRequestMessage message, Boolean readErrorBody, Object userState, CancellationToken cancellationToken)
+   at Sdk.WebApi.WebApi.RawHttpClientBase.SendAsync[T](HttpMethod method, IEnumerable`1 additionalHeaders, Uri requestUri, HttpContent content, IEnumerable`1 queryParameters, Boolean readErrorBody, Object userState, CancellationToken cancellationToken)
+   at GitHub.Actions.RunService.WebApi.BrokerHttpClient.GetRunnerMessageAsync(Nullable`1 sessionId, String runnerVersion, Nullable`1 status, String os, String architecture, Nullable`1 disableUpdate, CancellationToken cancellationToken)
+   at GitHub.Runner.Common.BrokerServer.<>c__DisplayClass7_0.<<GetRunnerMessageAsync>b__0>d.MoveNext()
+--- End of stack trace from previous location ---
+   at GitHub.Runner.Common.RunnerService.RetryRequest[T](Func`1 func, CancellationToken cancellationToken, Int32 maxAttempts, Func`2 shouldRetry)
+[2026-06-26 22:43:12Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:43:12Z ERR  BrokerServer] System.Threading.Tasks.TaskCanceledException: The operation was canceled.
+ ---> System.IO.IOException: Unable to read data from the transport connection: Operation canceled.
+ ---> System.Net.Sockets.SocketException (125): Operation canceled
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReadAsyncInternal[TIOAdapter](Memory`1 buffer, CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.InitialFillAsync(Boolean async)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithNtAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean isProxyAuth, HttpConnection connection, HttpConnectionPool connectionPool, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.AuthenticationHelper.SendWithAuthAsync(HttpRequestMessage request, Uri authUri, Boolean async, ICredentials credentials, Boolean preAuthenticate, Boolean isProxyAuth, Boolean doRequestAuth, HttpConnectionPool pool, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at GitHub.Services.Common.RawHttpMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at GitHub.Services.Common.VssHttpRetryMessageHandler.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+[2026-06-26 22:43:12Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:43:12Z ERR  BrokerServer] System.IO.IOException: Unable to read data from the transport connection: Operation canceled.
+ ---> System.Net.Sockets.SocketException (125): Operation canceled
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReadAsyncInternal[TIOAdapter](Memory`1 buffer, CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.InitialFillAsync(Boolean async)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[2026-06-26 22:43:12Z ERR  BrokerServer] #####################################################
+[2026-06-26 22:43:12Z ERR  BrokerServer] System.Net.Sockets.SocketException (125): Operation canceled
+[2026-06-26 22:43:12Z WARN BrokerServer] Back off 11.026 seconds before next retry. 4 attempt left.
+[2026-06-26 22:43:12Z INFO BrokerMessageListener] Get next message has been cancelled.
+[2026-06-26 22:43:12Z INFO JobDispatcher] Shutting down JobDispatcher. Make sure all WorkerDispatcher has finished.
+[2026-06-26 22:43:12Z INFO JobDispatcher] Ensure WorkerDispatcher for job 5212f7ea-2114-5e3e-a317-cf72263d9f83 run to finish, cancel any running job.
+[2026-06-26 22:43:12Z INFO JobDispatcher] Job request 5212f7ea-2114-5e3e-a317-cf72263d9f83 processed succeed.
+[2026-06-26 22:43:12Z INFO Runner] Deleting Runner Session...
+[2026-06-26 22:43:12Z INFO Listener] Runner execution been cancelled.
+--- /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/Worker_20260626-224302-utc.log
+[2026-06-26 22:43:02Z INFO StepsRunner] Step result: 
+[2026-06-26 22:43:02Z INFO ExecutionContext] Publish step telemetry for current step {
+  "action": "bash",
+  "type": "run",
+  "stage": "Main",
+  "stepId": "7c171d9b-cc59-4fec-aa39-075fb132828b",
+  "stepContextName": "__run",
+  "result": "succeeded",
+  "errorMessages": [],
+  "executionTimeInSeconds": 1,
+  "startTime": "2026-06-26T22:43:02.4753411Z",
+  "finishTime": "2026-06-26T22:43:02.5238815Z"
+}.
+[2026-06-26 22:43:02Z INFO StepsRunner] No need for updating job result with current step result 'Succeeded'.
+[2026-06-26 22:43:02Z INFO StepsRunner] Current state: job state = ''
+[2026-06-26 22:43:02Z INFO JobServerQueue] Try to append 1 batches web console lines for record 'f0d2a785-a077-456c-a7c9-dae4527cb6bc', success rate: 1/1.
+[2026-06-26 22:43:02Z INFO JobServerQueue] Try to append 1 batches web console lines for record '7c171d9b-cc59-4fec-aa39-075fb132828b', success rate: 1/1.
+[2026-06-26 22:43:02Z INFO JobRunner] Finalize job.
+[2026-06-26 22:43:02Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:43:02Z INFO HostContext] Well known directory 'Root': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01'
+[2026-06-26 22:43:02Z INFO HostContext] Well known directory 'Diag': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag'
+[2026-06-26 22:43:02Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:43:02Z INFO HostContext] Well known directory 'Root': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01'
+[2026-06-26 22:43:02Z INFO HostContext] Well known directory 'Diag': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag'
+[2026-06-26 22:43:02Z INFO JobExtension] Initialize Env context
+[2026-06-26 22:43:02Z INFO JobExtension] Initialize steps context
+[2026-06-26 22:43:02Z INFO JobExtension] Total accessible running process: 948.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 1045519 (kworker/7:2-events)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/1045519/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/1045519/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 1454094 (kworker/43:2-mm_percpu_wq)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/1454094/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/1454094/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 1467181 (kworker/42:2-mm_percpu_wq)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/1467181/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/1467181/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 1711888 (kworker/u195:0-ext4-rsv-conversion)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/1711888/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/1711888/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 2567313 (kworker/u196:4-events_unbound)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/2567313/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/2567313/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 3743821 (kworker/22:1-mm_percpu_wq)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/3743821/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/3743821/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 3942574 (kworker/40:1-events)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/3942574/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/3942574/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Inspecting process environment variables. PID: 3960653 (kworker/26:2-mm_percpu_wq)
+[2026-06-26 22:43:02Z INFO LinuxProcessExtensions] Read env from /proc/3960653/environ
+[2026-06-26 22:43:02Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/3960653/environ' is denied.
+[2026-06-26 22:43:02Z INFO JobExtension] Wait for all connectivity checks to finish.
+[2026-06-26 22:43:02Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:43:02Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:43:02Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:43:02Z INFO ExecutionContext] Publish step telemetry for current step {
+  "action": "complete_job",
+  "type": "runner",
+  "stage": "Post",
+  "stepId": "82a4359d-24af-479c-9928-0f2d5e192bbf",
+  "result": "succeeded",
+  "errorMessages": [],
+  "executionTimeInSeconds": 1,
+  "startTime": "2026-06-26T22:43:02.5290227Z",
+  "finishTime": "2026-06-26T22:43:02.6792626Z"
+}.
+[2026-06-26 22:43:02Z INFO JobRunner] Job result after all job steps finish: Succeeded
+[2026-06-26 22:43:02Z INFO JobRunner] Completing the job execution context.
+[2026-06-26 22:43:02Z INFO JobRunner] Shutting down the job server queue.
+[2026-06-26 22:43:02Z INFO JobServerQueue] Fire signal to shutdown all queues.
+[2026-06-26 22:43:03Z INFO JobServerQueue] All queue process task stopped.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Try to append 1 batches web console lines for record '82a4359d-24af-479c-9928-0f2d5e192bbf', success rate: 1/1.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Web console line queue drained.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Uploading 4 files in one shot.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Try to upload 4 log files or attachments, success rate: 4/4.
+[2026-06-26 22:43:03Z INFO JobServerQueue] File upload queue drained.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Starting results-based upload queue...
+[2026-06-26 22:43:03Z INFO JobServerQueue] Uploading 4 file(s) in one shot through results service.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/4435246d-3b1e-4d21-93ea-c0991ef9e63a_f0d2a785-a077-456c-a7c9-dae4527cb6bc.1
+[2026-06-26 22:43:03Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:43:03Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/4435246d-3b1e-4d21-93ea-c0991ef9e63a_7c171d9b-cc59-4fec-aa39-075fb132828b.1
+[2026-06-26 22:43:04Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:43:04Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/4435246d-3b1e-4d21-93ea-c0991ef9e63a_82a4359d-24af-479c-9928-0f2d5e192bbf.1
+[2026-06-26 22:43:04Z INFO JobServerQueue] Got a job log file to send to results service.
+[2026-06-26 22:43:04Z INFO JobServerQueue] Starting upload of job log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/4435246d-3b1e-4d21-93ea-c0991ef9e63a_5212f7ea-2114-5e3e-a317-cf72263d9f83.1
+[2026-06-26 22:43:04Z INFO JobServerQueue] Tried to upload 4 file(s) to results, success rate: 4/4.
+[2026-06-26 22:43:04Z INFO JobServerQueue] Results upload queue drained.
+[2026-06-26 22:43:04Z INFO JobServerQueue] Job timeline record has been updated for the first time.
+[2026-06-26 22:43:04Z INFO JobServerQueue] Timeline update queue drained.
+[2026-06-26 22:43:04Z INFO JobServerQueue] Disposing job server ...
+[2026-06-26 22:43:04Z INFO JobServerQueue] Disposing results server ...
+[2026-06-26 22:43:04Z INFO JobServerQueue] All queue process tasks have been stopped, and all queues are drained.
+[2026-06-26 22:43:04Z INFO TempDirectoryManager] Cleaning runner temp folder: /home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-01-work/_temp
+[2026-06-26 22:43:04Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:43:04Z INFO HostContext] Well known directory 'Root': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01'
+[2026-06-26 22:43:04Z INFO HostContext] Well known directory 'Diag': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag'
+[2026-06-26 22:43:04Z INFO HostContext] Well known config file 'Telemetry': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/.telemetry'
+[2026-06-26 22:43:04Z INFO JobRunner] Raising job completed against run service
+[2026-06-26 22:43:05Z INFO Worker] Job completed.
+--- /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/Worker_20260626-224228-utc.log
+[2026-06-26 22:42:58Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/2783131/environ' is denied.
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2788452 (cargo)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2788452/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2788539 (chrome --type=renderer --crashpad-handler-pid=3874326 --enable-crash-reporter=, --extension-process --change-stack-guard-on-fork=enable --ozone-platform=wayland --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2191 --time-ticks-at-unix-epoch=-1782396576029708 --launch-time-ticks=117198515251 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,2989694896404188911,1274257247998770141,2097152 --field-trial-handle=3,i,1980031090374243238,640360621732860400,262144 --disable-features=EyeDropper --variations-seed-version=20260624-090053.323000-production --pseudonymization-salt-handle=7,i,15174217360238761372,12187572923531212555,4 --trace-process-track-uuid=3190711039370562653)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2788539/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2788550 (chrome --type=renderer --crashpad-handler-pid=3874326 --enable-crash-reporter=, --change-stack-guard-on-fork=enable --ozone-platform=wayland --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2192 --time-ticks-at-unix-epoch=-1782396576029708 --launch-time-ticks=117198539486 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,9643954881627207268,12858341519003463731,2097152 --field-trial-handle=3,i,1980031090374243238,640360621732860400,262144 --disable-features=EyeDropper --variations-seed-version=20260624-090053.323000-production --pseudonymization-salt-handle=7,i,15174217360238761372,12187572923531212555,4 --trace-process-track-uuid=3190711040307604502)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2788550/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2788903 (sleep)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2788903/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789291 (rtk)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789291/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789303 (chrome --type=renderer --crashpad-handler-pid=3874326 --enable-crash-reporter=, --change-stack-guard-on-fork=enable --ozone-platform=wayland --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2193 --time-ticks-at-unix-epoch=-1782396576029708 --launch-time-ticks=117200575505 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,11089074816509583823,17859468423824008012,2097152 --field-trial-handle=3,i,1980031090374243238,640360621732860400,262144 --disable-features=EyeDropper --variations-seed-version=20260624-090053.323000-production --pseudonymization-salt-handle=7,i,15174217360238761372,12187572923531212555,4 --trace-process-track-uuid=3190711041244646351)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789303/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789566 (kache)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789566/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789567 (kache)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789567/environ
+[2026-06-26 22:42:58Z WARN JobExtension] Ignore exception during read process environment variables: Could not find a part of the path '/proc/2789567/environ'.
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789568 (kache)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789568/environ
+[2026-06-26 22:42:58Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:42:58Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/8f87b268-ecaa-4422-9517-164dd7ea50e8_95733424-65f7-43ac-95e3-07d84211747e.1
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789569 (kache)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789569/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789570 (kache)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789570/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789572 (rustc)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789572/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789573 (rustc)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789573/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789574 (rustc)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789574/environ
+[2026-06-26 22:42:58Z WARN JobExtension] Ignore exception during read process environment variables: Could not find a part of the path '/proc/2789574/environ'.
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789575 (rustc)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789575/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789577 (rustc)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789577/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789754 (clang)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789754/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789755 (wild)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789755/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 2789756 (wild)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/2789756/environ
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 3127031 (kworker/33:2-mm_percpu_wq)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/3127031/environ
+[2026-06-26 22:42:58Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/3127031/environ' is denied.
+[2026-06-26 22:42:58Z INFO JobExtension] Inspecting process environment variables. PID: 3380393 (kworker/38:2-mm_percpu_wq)
+[2026-06-26 22:42:58Z INFO LinuxProcessExtensions] Read env from /proc/3380393/environ
+[2026-06-26 22:42:58Z WARN JobExtension] Ignore exception during read process environment variables: Access to the path '/proc/3380393/environ' is denied.
+[2026-06-26 22:42:58Z INFO JobExtension] Wait for all connectivity checks to finish.
+[2026-06-26 22:42:58Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:42:58Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:42:58Z INFO JobExtension] Connectivity check result: GitHub.Runner.Worker.JobExtension+CheckResult
+[2026-06-26 22:42:58Z INFO ExecutionContext] Publish step telemetry for current step {
+  "action": "complete_job",
+  "type": "runner",
+  "stage": "Post",
+  "stepId": "22c1ab96-9955-418c-88eb-5b9d9c79d247",
+  "result": "succeeded",
+  "errorMessages": [
+    "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/"
+  ],
+  "executionTimeInSeconds": 1,
+  "startTime": "2026-06-26T22:42:57.904997Z",
+  "finishTime": "2026-06-26T22:42:58.0827212Z"
+}.
+[2026-06-26 22:42:58Z INFO JobRunner] Job result after all job steps finish: Succeeded
+[2026-06-26 22:42:58Z INFO JobRunner] Completing the job execution context.
+[2026-06-26 22:42:58Z INFO JobRunner] Shutting down the job server queue.
+[2026-06-26 22:42:58Z INFO JobServerQueue] Fire signal to shutdown all queues.
+[2026-06-26 22:42:58Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:42:58Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/8f87b268-ecaa-4422-9517-164dd7ea50e8_ffcf3ebc-3ce1-469b-8bcd-2b3bcf14edd7.1
+[2026-06-26 22:42:58Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:42:58Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/8f87b268-ecaa-4422-9517-164dd7ea50e8_a8a1b63d-b29f-4b19-b19f-f0fef32c9fee.1
+[2026-06-26 22:42:58Z INFO JobServerQueue] Tried to upload 3 file(s) to results, success rate: 3/3.
+[2026-06-26 22:42:59Z INFO JobServerQueue] All queue process task stopped.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Try to append 1 batches web console lines for record '22c1ab96-9955-418c-88eb-5b9d9c79d247', success rate: 1/1.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Web console line queue drained.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Uploading 3 files in one shot.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Try to upload 3 log files or attachments, success rate: 3/3.
+[2026-06-26 22:42:59Z INFO JobServerQueue] File upload queue drained.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Starting results-based upload queue...
+[2026-06-26 22:42:59Z INFO JobServerQueue] Uploading 2 file(s) in one shot through results service.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Got a step log file to send to results service.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Starting upload of step log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/8f87b268-ecaa-4422-9517-164dd7ea50e8_22c1ab96-9955-418c-88eb-5b9d9c79d247.1
+[2026-06-26 22:42:59Z INFO JobServerQueue] Got a job log file to send to results service.
+[2026-06-26 22:42:59Z INFO JobServerQueue] Starting upload of job log file to results service ResultsLog, /home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/blocks/8f87b268-ecaa-4422-9517-164dd7ea50e8_a6e918cc-7718-5481-a5c2-0a0d2fbf81a4.1
+[2026-06-26 22:43:00Z INFO JobServerQueue] Tried to upload 2 file(s) to results, success rate: 2/2.
+[2026-06-26 22:43:00Z INFO JobServerQueue] Results upload queue drained.
+[2026-06-26 22:43:00Z INFO JobServerQueue] Timeline update queue drained.
+[2026-06-26 22:43:00Z INFO JobServerQueue] Disposing job server ...
+[2026-06-26 22:43:00Z INFO JobServerQueue] Disposing results server ...
+[2026-06-26 22:43:00Z INFO JobServerQueue] All queue process tasks have been stopped, and all queues are drained.
+[2026-06-26 22:43:00Z INFO TempDirectoryManager] Cleaning runner temp folder: /home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-01-work/_temp
+[2026-06-26 22:43:00Z INFO HostContext] Well known directory 'Bin': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/bin'
+[2026-06-26 22:43:00Z INFO HostContext] Well known directory 'Root': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01'
+[2026-06-26 22:43:00Z INFO HostContext] Well known directory 'Diag': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag'
+[2026-06-26 22:43:00Z INFO HostContext] Well known config file 'Telemetry': '/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/_diag/.telemetry'
+[2026-06-26 22:43:00Z INFO JobRunner] Raising job completed against run service
+[2026-06-26 22:43:00Z INFO Worker] Job completed.

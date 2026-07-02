@@ -1,0 +1,22 @@
+
+running 1 test
+test forge_loop::tests::self_upgrade_plan_exports_phase_next_action_continuity ... FAILED
+
+failures:
+
+---- forge_loop::tests::self_upgrade_plan_exports_phase_next_action_continuity stdout ----
+
+thread 'forge_loop::tests::self_upgrade_plan_exports_phase_next_action_continuity' (1510376) panicked at crates/runner-cli/src/forge_loop.rs:5930:14:
+self-upgrade plan phase next actions
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    forge_loop::tests::self_upgrade_plan_exports_phase_next_action_continuity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 130 filtered out; finished in 0.00s
+
+   Compiling runner-cli v0.1.0 (/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-02-work/flexnetos_runner/flexnetos_runner/crates/runner-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.35s
+     Running unittests src/main.rs (target/debug/deps/fxrun-1981483c9c2698a3)
+error: test failed, to rerun pass `-p runner-cli --bin fxrun`

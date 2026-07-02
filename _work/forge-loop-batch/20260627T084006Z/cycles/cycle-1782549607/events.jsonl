@@ -1,0 +1,8 @@
+{"event":"cycle.started","phase":"Red","detail":"forge-loop TDD cycle started"}
+{"event":"codex.failed","phase":"Implement","detail":"codex exec returned non-zero; inspect transcript/stdout in Codex session logs"}
+{"event":"cycle.started","phase":"Red","detail":"forge-loop TDD cycle started"}
+{"event":"codex.failed","phase":"Implement","detail":"codex exec returned non-zero; inspect transcript/stdout in Codex session logs"}
+{"event":"cycle.started","phase":"Red","detail":"forge-loop TDD cycle started"}
+{"event":"codex.failed","phase":"Implement","detail":"codex exec returned non-zero; inspect transcript/stdout in Codex session logs"}
+{"event":"cycle.started","phase":"Red","detail":"forge-loop TDD cycle started"}
+{"event":"codex.failed","phase":"Implement","detail":"codex exec returned non-zero; inspect transcript/stdout in Codex session logs"}

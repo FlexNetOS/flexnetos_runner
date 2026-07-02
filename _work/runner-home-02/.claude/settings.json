@@ -1,0 +1,10 @@
+{
+  "extraKnownMarketplaces": {
+    "gitkb": {
+      "source": {
+        "source": "github",
+        "repo": "FlexNetOS/claude-plugins"
+      }
+    }
+  }
+}

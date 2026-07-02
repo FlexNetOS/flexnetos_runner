@@ -1,0 +1,137 @@
+
+running 110 tests
+test forge_loop::tests::action_created_pr_required_checks_are_dispatchable ... ok
+test forge_loop::tests::action_output_schema_records_codex_auth_mode ... ok
+test forge_loop::tests::action_output_schema_requires_subscription_auth_evidence ... ok
+test forge_loop::tests::action_output_schema_requires_full_loop_component_inventory ... ok
+test forge_loop::tests::ci_runs_components_audit_guard ... ok
+test forge_loop::tests::ci_runs_docs_drift_guard ... ok
+test forge_loop::tests::codex_invocation_forces_auto_compaction_continuity ... ok
+test forge_loop::tests::codex_invocation_uses_noninteractive_json_workspace_write ... ok
+test forge_loop::tests::codex_deep_target_mining_surfaces_are_guarded ... ok
+test forge_loop::tests::agentic_system_watch_dispatches_codex_growth_safely ... ok
+test forge_loop::tests::compact_continuity_artifact_exports_compact_summary_hook_events ... ok
+test forge_loop::tests::compact_continuity_artifact_attributes_evaluation_validation_source ... ok
+test forge_loop::tests::codex_github_action_workflow_uses_documented_controls ... ok
+test forge_loop::tests::compact_continuity_artifact_exports_per_phase_continuity_timeline ... ok
+test forge_loop::tests::compact_continuity_artifact_covers_full_research_source_matrix ... ok
+test forge_loop::tests::compact_continuity_artifact_exports_structured_required_phase_contract ... ok
+test forge_loop::tests::compact_continuity_artifact_exports_terminal_validation_contract ... ok
+test forge_loop::tests::compact_continuity_artifact_labels_validation_entries_as_pending ... ok
+test forge_loop::tests::compact_continuity_artifact_exports_structured_phase_next_actions ... FAILED
+test forge_loop::tests::compact_continuity_artifact_preserves_research_output_contract ... ok
+test forge_loop::tests::cycle_manifest_records_deterministic_pr_title ... ok
+test forge_loop::tests::components_audit_exposes_permission_profile_migration_readiness ... ok
+test forge_loop::tests::cycle_manifest_records_once_strict_phase_contract ... ok
+test forge_loop::tests::cycle_manifest_records_prompt_hash_witness ... ok
+test forge_loop::tests::cycle_prompt_binds_nested_codex_to_single_cycle_and_pr_title ... ok
+test forge_loop::tests::cycle_manifest_records_schema_version ... ok
+test forge_loop::tests::doctor_exports_subscription_auth_readiness_contract ... ok
+test forge_loop::tests::components_audit_reports_present_and_missing_loop_surfaces ... ok
+test forge_loop::tests::doctor_json_exports_required_gate_contract ... ok
+test forge_loop::tests::docs_drift_guard_flags_exported_feature_still_in_backlog_tier ... ok
+test forge_loop::tests::docs_drift_guard_flags_exported_feature_still_queued ... ok
+test forge_loop::tests::eval_manifest_rejects_metrics_from_different_cycle_prompt ... ok
+test forge_loop::tests::eval_manifest_rejects_missing_schema_version ... ok
+test forge_loop::tests::eval_manifest_rejects_schema_version_mismatch ... ok
+test forge_loop::tests::eval_manifest_rejects_prompt_hash_mismatch ... ok
+test forge_loop::tests::evaluation_quarantines_missing_red_or_gates ... ok
+test forge_loop::tests::evaluation_promotes_green_tdd_runs ... ok
+test forge_loop::tests::expected_loop_components_cover_requested_upgrade_surfaces ... ok
+test forge_loop::tests::evaluation_rejects_no_change_self_upgrades ... ok
+test forge_loop::tests::find_shell_commands_use_rtk_proxy_for_compound_predicates ... ok
+test forge_loop::tests::forge_loop_cycle_evidence_checklist_requires_merge_proof ... ok
+test forge_loop::tests::forge_loop_config_enables_auto_compaction ... ok
+test forge_loop::tests::forge_loop_skill_references_codex_config_and_action_docs ... ok
+test forge_loop::tests::forge_loop_worktree_isolation_contract_is_present ... ok
+test forge_loop::tests::forge_loop_hook_manifest_covers_registered_events ... ok
+test forge_loop::tests::metrics_parser_rejects_impossible_retry_count ... ok
+test forge_loop::tests::dry_run_event_stream_preserves_compact_continuity_checkpoint ... ok
+test forge_loop::tests::dry_run_writes_required_gate_artifact ... ok
+test forge_loop::tests::parse_nul_env_extracts_github_action_context ... ok
+test forge_loop::tests::pr_create_reference_parser_accepts_plain_url_or_number ... ok
+test forge_loop::tests::pr_create_reference_parser_accepts_rtk_prefixed_success_output ... ok
+test forge_loop::tests::publishable_paths_ignore_runtime_artifacts ... ok
+test forge_loop::tests::dry_run_writes_research_sources_artifact ... ok
+test forge_loop::tests::dry_run_writes_compact_continuity_artifact ... ok
+test forge_loop::tests::publishable_paths_unquote_git_porcelain_paths_with_spaces ... ok
+test forge_loop::tests::publisher_shell_commands_are_routed_through_rtk ... ok
+test forge_loop::tests::research_output_contract_names_inventory_surfaces ... ok
+test forge_loop::tests::output_schema_audit_rejects_fields_that_are_only_documented_not_required ... ok
+test forge_loop::tests::research_prompt_names_sources_and_focus ... ok
+test forge_loop::tests::output_schema_audit_requires_subscription_auth_inventory_and_continuity ... FAILED
+test forge_loop::tests::research_sources_include_required_refs ... ok
+test forge_loop::tests::rfc3339_parser_counts_minutes_between_github_timestamps ... ok
+test forge_loop::tests::research_prompt_requires_complete_source_attributed_output_shape ... ok
+test forge_loop::tests::run_rejects_multi_cycle_requests_before_planning ... ok
+test forge_loop::tests::runner_black_factor_audit_requires_observed_window_sustain_and_pr_flow ... ok
+test forge_loop::tests::runner_fleet_proc_helpers_require_runner_worker_ancestry ... ok
+test forge_loop::tests::runner_fleet_audit_flags_external_repo_lane_pressure ... ok
+test forge_loop::tests::runner_fleet_audit_passes_when_only_expected_repo_owns_lanes ... ok
+test forge_loop::tests::runner_health_accepts_gh_pr_view_status_check_rollup_json ... ok
+test forge_loop::tests::runner_health_flags_missing_required_local_checks ... ok
+test forge_loop::tests::runner_flow_audit_reports_idle_and_sustain_evidence ... ok
+test forge_loop::tests::runner_health_flags_pending_local_runner_checks ... ok
+test forge_loop::tests::runner_health_prefers_pending_replacement_over_cancelled_duplicate ... ok
+test forge_loop::tests::runner_health_prefers_success_replacement_over_cancelled_duplicate ... ok
+test forge_loop::tests::runner_health_reports_required_local_check_contract ... ok
+test forge_loop::tests::runner_black_factor_watch_refills_and_artifacts_evidence ... ok
+test forge_loop::tests::runner_flow_audit_accepts_active_work_and_clean_pr_flow ... ok
+test forge_loop::tests::runner_black_factor_audit_accepts_kclaw0_window_fixture ... ok
+test forge_loop::tests::runner_black_factor_audit_rejects_short_yielded_sustain_runs ... ok
+test forge_loop::tests::runner_black_factor_audit_counts_only_latest_proof_window ... ok
+test forge_loop::tests::runner_ops_slo_audit_accepts_explicit_completion_watch_wakeups ... ok
+test forge_loop::tests::runner_ops_slo_audit_accepts_event_rehydrated_burn_in ... ok
+test forge_loop::tests::runner_ops_slo_audit_accepts_recovered_idle_gap_after_clean_rehydrate_pr ... ok
+test forge_loop::tests::runner_ops_slo_audit_counts_codex_growth_as_productive_runner_work ... ok
+test forge_loop::tests::runner_ops_slo_audit_counts_codex_failure_recovered_by_clean_pr ... ok
+test forge_loop::tests::runner_ops_slo_audit_counts_failed_ops_recovered_by_successful_replacement ... ok
+test forge_loop::tests::runner_ops_slo_audit_treats_watch_run_names_as_ops_workflow ... ok
+test forge_loop::tests::runner_ops_slo_audit_ignores_superseded_cancellations_with_nearby_success ... ok
+test forge_loop::tests::runner_ops_slo_audit_counts_pr_checks_as_productive_runner_work ... ok
+test forge_loop::tests::runner_ops_slo_audit_ignores_superseded_named_watch_cancellations ... ok
+test forge_loop::tests::runner_ops_slo_audit_reports_idle_failure_and_pr_pressure ... ok
+test forge_loop::tests::runner_queue_audit_accepts_nonlocal_vendor_queue_without_local_pressure ... ok
+test forge_loop::tests::scheduled_gate_contract_audits_structured_output_schema ... ok
+test forge_loop::tests::runner_queue_audit_classifies_local_waits_and_nonlocal_queues ... ok
+test forge_loop::tests::scheduled_gate_contract_enforces_strict_component_and_target_audits ... ok
+test forge_loop::tests::scheduled_gate_contract_exercises_evaluation_surface ... ok
+test forge_loop::tests::runner_sustain_workflow_bridges_schedule_interval ... ok
+test forge_loop::tests::scheduled_gate_contract_exercises_self_upgrade_plan_surface ... ok
+test forge_loop::tests::runner_sustain_workflow_keeps_local_slots_useful ... ok
+test forge_loop::tests::scheduled_gate_contract_proves_compact_continuity_artifact_generation ... ok
+test forge_loop::tests::scheduled_gate_contract_validates_generated_manifest_pairing ... ok
+test forge_loop::tests::self_upgrade_prompt_leaves_publish_to_outer_engine ... ok
+test forge_loop::tests::scheduled_codex_growth_uses_subscription_auth_only ... ok
+test forge_loop::tests::self_upgrade_plan_exports_continuity_and_target_mining_contracts ... ok
+test forge_loop::tests::timestamp_labels_include_subsecond_entropy ... ok
+test forge_loop::tests::target_mining_audit_covers_full_research_source_matrix ... ok
+test forge_loop::tests::stop_and_compact_hooks_preserve_phase_source_validation_next_action ... ok
+test forge_loop::tests::runner_queue_role_docs_and_collector_are_guarded ... ok
+test forge_loop::tests::target_mining_audit_proves_sources_applications_and_guards ... ok
+test forge_loop::tests::agentic_system_audit_accepts_composed_live_proof ... ok
+
+failures:
+
+---- forge_loop::tests::compact_continuity_artifact_exports_structured_phase_next_actions stdout ----
+
+thread 'forge_loop::tests::compact_continuity_artifact_exports_structured_phase_next_actions' (917686) panicked at crates/runner-cli/src/forge_loop.rs:5346:14:
+compact continuity artifact must expose structured phase next actions
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- forge_loop::tests::output_schema_audit_requires_subscription_auth_inventory_and_continuity stdout ----
+
+thread 'forge_loop::tests::output_schema_audit_requires_subscription_auth_inventory_and_continuity' (917722) panicked at crates/runner-cli/src/forge_loop.rs:7001:13:
+schema audit missing phase_next_actions
+
+
+failures:
+    forge_loop::tests::compact_continuity_artifact_exports_structured_phase_next_actions
+    forge_loop::tests::output_schema_audit_requires_subscription_auth_inventory_and_continuity
+
+test result: FAILED. 108 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Compiling runner-cli v0.1.0 (/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-02-work/flexnetos_runner/flexnetos_runner/crates/runner-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.22s
+     Running unittests src/main.rs (target/debug/deps/fxrun-1981483c9c2698a3)
+error: test failed, to rerun pass `-p runner-cli --bin fxrun`

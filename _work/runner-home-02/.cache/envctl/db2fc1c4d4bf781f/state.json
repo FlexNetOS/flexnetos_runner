@@ -1,0 +1,11 @@
+{
+  "last_run": {
+    "verb": "reset",
+    "at": "2026-07-02T03:26:35.429352149+00:00",
+    "ok": false,
+    "failed": 0,
+    "refused": 1,
+    "incomplete": 0,
+    "total": 1
+  }
+}

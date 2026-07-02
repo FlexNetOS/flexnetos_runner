@@ -1,0 +1,22 @@
+
+running 1 test
+test forge_loop::tests::scheduled_forge_loop_prompt_binds_single_self_upgrade_cycle ... FAILED
+
+failures:
+
+---- forge_loop::tests::scheduled_forge_loop_prompt_binds_single_self_upgrade_cycle stdout ----
+
+thread 'forge_loop::tests::scheduled_forge_loop_prompt_binds_single_self_upgrade_cycle' (1244167) panicked at crates/runner-cli/src/forge_loop.rs:7855:9:
+.github/codex/prompts/forge-loop.md must prevent recursive scheduled self-improvement cycles
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    forge_loop::tests::scheduled_forge_loop_prompt_binds_single_self_upgrade_cycle
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.00s
+
+   Compiling runner-cli v0.1.0 (/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-02-work/flexnetos_runner/flexnetos_runner/crates/runner-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.30s
+     Running unittests src/main.rs (target/debug/deps/fxrun-1981483c9c2698a3)
+error: test failed, to rerun pass `-p runner-cli --bin fxrun`

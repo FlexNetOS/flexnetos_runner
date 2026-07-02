@@ -1,0 +1,47 @@
+Runner smoke	Set up job	﻿2026-06-27T04:37:31.7624707Z Current runner version: '2.335.1'
+Runner smoke	Set up job	2026-06-27T04:37:31.7630525Z Runner name: 'fxrun-drdave-TRX50-AI-TOP-flexnetos-02'
+Runner smoke	Set up job	2026-06-27T04:37:31.7631178Z Runner group name: 'default'
+Runner smoke	Set up job	2026-06-27T04:37:31.7631843Z Machine name: 'drdave-TRX50-AI-TOP'
+Runner smoke	Set up job	2026-06-27T04:37:31.7634337Z ##[group]GITHUB_TOKEN Permissions
+Runner smoke	Set up job	2026-06-27T04:37:31.7636118Z Contents: read
+Runner smoke	Set up job	2026-06-27T04:37:31.7636557Z Metadata: read
+Runner smoke	Set up job	2026-06-27T04:37:31.7637008Z ##[endgroup]
+Runner smoke	Set up job	2026-06-27T04:37:31.7638765Z Secret source: Actions
+Runner smoke	Set up job	2026-06-27T04:37:31.7639442Z Prepare workflow directory
+Runner smoke	Set up job	2026-06-27T04:37:31.7989420Z Prepare all required actions
+Runner smoke	Set up job	2026-06-27T04:37:31.8049178Z Complete job name: Runner smoke
+Runner smoke	Verify runner identity and repo-local paths	﻿2026-06-27T04:37:32.0169904Z ##[group]Run set -euo pipefail
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0170426Z ^[[36;1mset -euo pipefail^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0170901Z ^[[36;1mecho "expected_runner=fxrun-drdave-TRX50-AI-TOP-flexnetos-02"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0171412Z ^[[36;1mecho "actual_runner=${RUNNER_NAME}"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0171804Z ^[[36;1mecho "expected_slot=02"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0172195Z ^[[36;1mecho "runner_os=${RUNNER_OS}"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0172575Z ^[[36;1mecho "runner_arch=${RUNNER_ARCH}"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0173015Z ^[[36;1mecho "runner_tracking_id=${RUNNER_TRACKING_ID:-unset}"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0173502Z ^[[36;1mecho "runner_workspace=${RUNNER_WORKSPACE}"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0174012Z ^[[36;1mecho "***"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0174345Z ^[[36;1mecho "hostname=$(hostname)"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0174713Z ^[[36;1mecho "whoami=$(whoami)"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0175093Z ^[[36;1mecho "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0175603Z ^[[36;1mtest "${RUNNER_NAME}" = "fxrun-drdave-TRX50-AI-TOP-flexnetos-02"^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0176209Z ^[[36;1mcase "${RUNNER_WORKSPACE}" in^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0176743Z ^[[36;1m  /home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-02-work/*) ;;^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0177337Z ^[[36;1m  *)^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0177752Z ^[[36;1m    echo "RUNNER_WORKSPACE is not under the expected repo-local slot" >&2^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0178227Z ^[[36;1m    exit 1^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0178524Z ^[[36;1m    ;;^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0178809Z ^[[36;1mesac^[[0m
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0190623Z shell: /nix/store/xyzvhlm5d0k8iybsfqq8brw5bkrlpq61-yazelix/toolbin/bash --noprofile --norc -e -o pipefail {0}
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0191442Z ##[endgroup]
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0300486Z expected_runner=fxrun-drdave-TRX50-AI-TOP-flexnetos-02
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0301223Z actual_runner=fxrun-drdave-TRX50-AI-TOP-flexnetos-02
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0301662Z expected_slot=02
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0301971Z runner_os=Linux
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0302291Z runner_arch=X64
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0302683Z runner_tracking_id=github_f28cd0aa-d453-40c5-9eac-b92cb99a2bba
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0303419Z runner_workspace=/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-02-work/flexnetos_runner
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0304440Z ***
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0304785Z hostname=drdave-TRX50-AI-TOP
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0327558Z whoami=drdave
+Runner smoke	Verify runner identity and repo-local paths	2026-06-27T04:37:32.0357360Z date_utc=2026-06-27T04:37:32Z
+Runner smoke	Complete job	﻿2026-06-27T04:37:32.0451645Z Cleaning up orphan processes

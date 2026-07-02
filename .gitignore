@@ -1,9 +1,5 @@
 /target
 **/*.rs.bk
-*.pem
-*.key
-.env
-_work/
 .DS_Store
 
 # === handoff continuity kernel — canonical .handoff durability policy (ADR-0016 / ADR-0018 D1) ===
@@ -24,3 +20,37 @@ _work/
 .handoff/**/*.redb.tmp
 /.handoff/workspaces/
 /.handoff/locks/
+
+# === repo-local runner operations root ===
+# Preserve _work topology/evidence; ignore only proven heavyweight/generated payloads.
+_work/**/*.tar
+_work/**/*.tar.*
+_work/**/*.tgz
+_work/**/*.zip
+!_work/**/*.sha256
+_work/**/target/
+_work/**/externals/
+_work/**/_actions/
+_work/**/_temp/
+_work/**/_tool/
+_work/**/.cargo/registry/
+_work/**/.cargo/git/
+_work/**/.cargo/advisory-db/
+_work/**/.rustup/toolchains/
+_work/**/.rustup/downloads/
+_work/**/.rustup/tmp/
+_work/**/.cache/icm/models/
+_work/**/.cache/gh/
+_work/**/.cache/kache/store/
+_work/**/.git/
+# Nested checkout roots inside runner workspaces would become useless gitlinks
+# without .gitmodules; preserve their pipeline mapping/state, not embedded repos.
+_work/actions-runner-*-work/envctl/envctl/
+_work/actions-runner-*-work/envctl/loop_lib/
+_work/actions-runner-*-work/envctl/meta_plugin_protocol/
+_work/actions-runner-*-work/flexnetos_runner/flexnetos_runner/
+_work/actions-runner-*-work/meta/meta/
+_work/**/.claude/plugins/marketplaces/*/
+_work/**/_diag/
+_work/**/bin/
+_work/**/actions-runner-linux-*.tar.gz

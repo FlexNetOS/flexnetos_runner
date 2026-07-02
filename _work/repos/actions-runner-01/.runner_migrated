@@ -1,0 +1,11 @@
+﻿{
+  "agentId": 4730,
+  "agentName": "fxrun-drdave-TRX50-AI-TOP-flexnetos-01",
+  "poolId": 1,
+  "poolName": "Default",
+  "serverUrl": "https://pipelinesghubeus7.actions.githubusercontent.com/b19yLvnpU7GeYPBYHhIbYWK4Y6OxWvnc5SjVK2PFnNlnvPEEfG/",
+  "gitHubUrl": "https://github.com/FlexNetOS",
+  "workFolder": "/home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-01-work",
+  "useV2Flow": true,
+  "serverUrlV2": "https://broker.actions.githubusercontent.com/"
+}

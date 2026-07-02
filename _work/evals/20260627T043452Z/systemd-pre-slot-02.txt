@@ -1,0 +1,14 @@
+--- actions.runner.FlexNetOS.fxrun-drdave-TRX50-AI-TOP-flexnetos-01.service
+ActiveState=inactive
+SubState=dead
+DropInPaths=/etc/systemd/system/actions.runner.FlexNetOS.fxrun-drdave-TRX50-AI-TOP-flexnetos-01.service.d/10-runner-home.conf
+MainPID=0
+ExecStart={ path=/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/runsvc.sh ; argv[]=/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01/runsvc.sh ; ignore_errors=no ; start_time=[Fri 2026-06-26 17:48:00 CDT] ; stop_time=[Fri 2026-06-26 23:36:17 CDT] ; pid=2865160 ; code=exited ; status=0 }
+WorkingDirectory=/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-01
+--- actions.runner.FlexNetOS.fxrun-drdave-TRX50-AI-TOP-flexnetos-02.service
+ActiveState=active
+SubState=running
+DropInPaths=/etc/systemd/system/actions.runner.FlexNetOS.fxrun-drdave-TRX50-AI-TOP-flexnetos-02.service.d/10-runner-home.conf
+MainPID=183747
+ExecStart={ path=/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-02/runsvc.sh ; argv[]=/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-02/runsvc.sh ; ignore_errors=no ; start_time=[Fri 2026-06-26 23:36:13 CDT] ; stop_time=[n/a] ; pid=183747 ; code=(null) ; status=0/0 }
+WorkingDirectory=/home/drdave/Desktop/meta/flexnetos_runner/_work/repos/actions-runner-02

@@ -131,10 +131,11 @@ up the org-scoped runner in a clean `RUNNER_HOME`, verify the shared labels serv
 meta peers, then retire the old repo-scoped service/config. Do not mutate a live repo-scoped runner
 home in place, and do not create a repo-scoped `envctl`/`meta` runner as a special-case fix.
 
-On this workstation the persistent FlexNetOS org runners live inside this repo's ignored runtime
-root, `_work/`. The default `fxrun-actions` paths target slot `actions-runner-01`; the second
-parallel slot uses the same layout with suffix `-02`. Do not place active runner state back under
-`/home/drdave/_work`.
+On this workstation the persistent FlexNetOS org runners live inside this repo-local committed
+operations root, `_work/`. The default `fxrun-actions` paths target slot `actions-runner-01`; the
+second parallel slot uses the same layout with suffix `-02`. Historical `/home/drdave/_work` runner
+state is retired into `_work/archives/retired/`; do not move active runner state back outside this
+repo-local `_work` tree.
 
 ### Org runner-group dispatch repair
 
