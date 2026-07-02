@@ -37,7 +37,7 @@ jobs:
           echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           test "${RUNNER_NAME}" = "${{ inputs.expected_runner }}"
           case "${RUNNER_WORKSPACE}" in
-            /home/drdave/Desktop/meta/flexnetos_runner/_work/actions-runner-${{ inputs.expected_slot }}-work/*) ;;
+            /home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/actions-runner-${{ inputs.expected_slot }}-work/*) ;;
             *)
               echo "RUNNER_WORKSPACE is not under the expected repo-local slot" >&2
               exit 1
