@@ -5,6 +5,7 @@ important state and must not be blanket-ignored.
 
 Track durable, low-volume operational state directly in Git, including:
 
+- runner fleet identity records under `_work/identity/`
 - runner slot topology and registration metadata needed for recovery (`_work/repos/actions-runner-*` selected dotfiles)
 - service-name markers and runner environment files
 - eval, queue, repair, and forge-loop evidence artifacts
