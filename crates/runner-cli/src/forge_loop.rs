@@ -8505,13 +8505,12 @@ R  "docs/old note.md" -> "docs/new note.md"
         let report = output_schema_audit_report(&root).expect("schema audit");
 
         assert!(!report.structured_output_ready);
-        for missing in ["phases.maxItems"] {
-            assert!(
-                report.missing_fields.contains(&missing.to_string()),
-                "schema audit must reject missing {missing}: {:?}",
-                report
-            );
-        }
+        let missing = "phases.maxItems";
+        assert!(
+            report.missing_fields.contains(&missing.to_string()),
+            "schema audit must reject missing {missing}: {:?}",
+            report
+        );
 
         let _ = fs::remove_dir_all(root);
     }
