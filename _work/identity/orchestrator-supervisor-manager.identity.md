@@ -10,10 +10,12 @@
 | scope | FlexNetOS runner fleet governance for the two local self-hosted runner slots and their durable `_work/` state. |
 | owner | `TBD`: FlexNetOS runner operators. |
 | primary paths | `crates/runner-actions/src/main.rs`, `scripts/install-runner-services.sh`, `scripts/retarget-local-runner-services.sh`, `scripts/eval-runners.sh`, `_work/README.md`, `_work/identity/` |
-| current known labels / names | `fxrun-actions`; portable runner installer; legacy retarget script; runner evaluation script; supervisor-manager role. |
+| current known labels / names | `fxrun-actions`; portable runner installer; portable user units `flexnetos-runner@01.service` / `flexnetos-runner@02.service`; legacy retarget script and legacy `actions.runner.*` units; runner evaluation script; `_work` preservation policy; supervisor-manager role. |
 | last reviewed | 2026-07-02 |
 
 ## Purpose
+
+This file records the current supervisor-manager concept from repository evidence: `crates/runner-actions/src/main.rs`, `scripts/install-runner-services.sh`, `scripts/retarget-local-runner-services.sh`, `scripts/eval-runners.sh`, and `_work/README.md`.
 
 The supervisor-manager identity names the fleet-level authority that keeps the runner system understandable and recoverable. It is a role composed from repository code, scripts, policy, and evidence: it supervises runner lifecycle, enforces registration boundaries, installs or retargets services, collects health evidence, preserves recovery memory, and protects `_work/` as durable operational state.
 
@@ -30,7 +32,7 @@ The supervisor-manager identity names the fleet-level authority that keeps the r
   - Printing, committing, or copying tokens, registration secrets, private keys, auth configs, or transient credentials.
   - Inventing runner status, labels, or lane semantics not supported by evidence.
   - Deleting durable operational memory or blanket-ignoring `_work/`.
-  - Converting org-scoped runners to repo-scoped runners without an explicit exception process.
+  - Converting org-scoped runners to repo-scoped runners without an explicit exception process. The supervisor-manager must not convert org-scoped runners to repo-scoped runners without that exception process.
 - Upstream dependencies
   - GitHub Actions runner APIs and local runner registration state.
   - `gh`, `curl`, `systemctl`, `journalctl`, and token minting where evaluation or registration requires them.
@@ -42,11 +44,26 @@ The supervisor-manager identity names the fleet-level authority that keeps the r
   - Recovery operators, future agents, and incident handoff notes.
   - `_work/evals`, `_work/archives`, and other durable evidence locations.
 
+
+## Responsibility matrix
+
+| Responsibility | Current evidence | Classification |
+|---|---|---|
+| Runner lifecycle supervision | `fxrun-actions` install/register/run-once/register commands | FACT |
+| Org/repo registration policy | `fxrun-actions` defaults to org and names repo scope as explicit exception | FACT |
+| Service installation / retargeting governance | `scripts/install-runner-services.sh` and `scripts/retarget-local-runner-services.sh` | FACT |
+| Evaluation and health evidence collection | `scripts/eval-runners.sh` writes summaries, metrics, API snapshots, logs, journals, and diagnostics under `_work/evals` | FACT |
+| Recovery/handoff memory | `_work/README.md`, `_work/archives`, `_work/evals`, and `_work/identity` | FACT |
+| Safety rails and secret hygiene | `fxrun-actions` confirm gates and token-not-printing rule; issue #209 safety requirements | FACT |
+| Preserving `_work/` durable state | `_work/README.md` preservation policy | FACT |
+| Single implementation owner | Not proven; role is composed from repo surfaces | QUESTION |
+
 ## Rules
 
 - Treat the supervisor-manager as a role unless a future repo change proves one binary fully owns it.
 - Reference `fxrun-actions` specifically only for GitHub Actions runner supervisor responsibilities proven in `crates/runner-actions/src/main.rs`.
 - Keep service installation prefix-derived where portable scripts support it; do not make `/etc` or hardcoded host paths the identity source of truth.
+- Treat `/etc/systemd/system` system mode as a host adapter only; the portable prefix and `_work` state remain authoritative.
 - Preserve `_work/` durable state and record low-volume identity/evidence metadata in Git.
 - Mark missing ownership, lane priority, rotation, or failover details as `QUESTION`.
 
@@ -89,6 +106,7 @@ The supervisor-manager should make the runner fleet calm to operate: explicit, r
 - Use `scripts/install-runner-services.sh --dry-run` to inspect generated portable units before writing host state.
 - Use `scripts/retarget-local-runner-services.sh` only as an explicitly retained legacy migration path.
 - Use `scripts/eval-runners.sh` for evidence collection when live runner evaluation is appropriate and authorized.
+- Recheck live user-systemd and legacy systemd unit state before service repair so duplicate listeners are not created.
 - Preserve `_work/archives/*/*.sha256`, README files, and low-volume evidence; do not commit full archives, caches, or downloaded runner internals.
 
 ## Evidence map
@@ -98,8 +116,9 @@ The supervisor-manager should make the runner fleet calm to operate: explicit, r
 | FACT | `fxrun-actions` is a self-hosted GitHub Actions runner supervisor. | Module docs and CLI metadata in `crates/runner-actions/src/main.rs`. |
 | FACT | `fxrun-actions` installs upstream runner binaries, obtains registration tokens through `gh`, registers runners, and runs jobs. | `crates/runner-actions/src/main.rs`. |
 | FACT | Org scope is the default and repo scope is an explicit exception. | `crates/runner-actions/src/main.rs`. |
-| FACT | Portable service generation keeps runner binaries, workspaces, homes, `.path`, and auth wiring under a prefix. | `scripts/install-runner-services.sh`. |
+| FACT | Portable service generation keeps runner binaries, workspaces, homes, `.path`, auth wiring, and `RUNNER_WORKSPACE` under a prefix. | `scripts/install-runner-services.sh`. |
 | FACT | Legacy retargeting exists and writes systemd services for both local slots. | `scripts/retarget-local-runner-services.sh`. |
+| FACT | At last review, live portable user units existed for both runner slots. | `systemctl --user show flexnetos-runner@01.service flexnetos-runner@02.service` output captured during issue #209 correction. |
 | FACT | Runner evaluation collects GitHub API snapshots, systemd state, logs, diagnostics, and metrics under `_work/evals`. | `scripts/eval-runners.sh`. |
 | FACT | `_work/` is the repo-local operations root and must not be blanket-ignored. | `_work/README.md`. |
 | INFERENCE | The supervisor-manager role spans code, scripts, policy, and evidence rather than one binary. | Responsibilities are split across `crates/runner-actions`, service scripts, evaluation script, and `_work/README.md`. |
