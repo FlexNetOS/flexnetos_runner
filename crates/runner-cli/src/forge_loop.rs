@@ -9261,6 +9261,129 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
+    fn portable_runner_installer_dry_runs_user_and_system_units_from_prefix() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let script = root.join("scripts/install-runner-services.sh");
+        let prefix = "/tmp/fxrun-portable-prefix";
+
+        let user_output = std::process::Command::new("bash")
+            .arg(&script)
+            .arg("--prefix")
+            .arg(prefix)
+            .arg("--mode")
+            .arg("user")
+            .arg("--dry-run")
+            .output()
+            .expect("dry-run user installer");
+        assert!(
+            user_output.status.success(),
+            "user dry-run failed: {}",
+            String::from_utf8_lossy(&user_output.stderr)
+        );
+        let user_stdout = String::from_utf8_lossy(&user_output.stdout);
+        assert!(user_stdout.contains(".config/systemd/user/flexnetos-runner@.service"));
+        assert!(user_stdout.contains(
+            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/runsvc.sh"
+        ));
+        assert!(user_stdout
+            .contains("WorkingDirectory=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i"));
+        assert!(user_stdout
+            .contains("systemctl --user enable --now flexnetos-runner@01 flexnetos-runner@02"));
+        assert!(!user_stdout.contains("sudo systemctl"));
+        assert!(!user_stdout.contains("/home/drdave"));
+        assert!(!user_stdout.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"));
+
+        let system_output = std::process::Command::new("bash")
+            .arg(&script)
+            .arg("--prefix")
+            .arg(prefix)
+            .arg("--mode")
+            .arg("system")
+            .arg("--dry-run")
+            .output()
+            .expect("dry-run system installer");
+        assert!(
+            system_output.status.success(),
+            "system dry-run failed: {}",
+            String::from_utf8_lossy(&system_output.stderr)
+        );
+        let system_stdout = String::from_utf8_lossy(&system_output.stdout);
+        assert!(system_stdout.contains("/etc/systemd/system/flexnetos-runner@.service"));
+        assert!(system_stdout.contains("User=flexnetos"));
+        assert!(system_stdout.contains(
+            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/runsvc.sh"
+        ));
+        assert!(system_stdout
+            .contains("systemctl enable --now flexnetos-runner@01 flexnetos-runner@02"));
+        assert!(!system_stdout.contains("/home/drdave"));
+        assert!(!system_stdout.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"));
+    }
+
+    #[test]
+    fn portable_runner_installer_keeps_runner_state_and_path_under_prefix() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let script = fs::read_to_string(root.join("scripts/install-runner-services.sh"))
+            .expect("read portable runner installer");
+
+        for required in [
+            "_work/repos/actions-runner-01",
+            "_work/repos/actions-runner-02",
+            "_work/actions-runner-01-work",
+            "_work/actions-runner-02-work",
+            "_work/runner-home-01",
+            "_work/runner-home-02",
+            "CODEX_HOME",
+            "GH_CONFIG_DIR",
+            "GIT_CONFIG_GLOBAL",
+            "loginctl enable-linger",
+            "--enable-linger",
+        ] {
+            assert!(script.contains(required), "installer missing {required}");
+        }
+        assert!(
+            !script.contains("/home/drdave"),
+            "portable installer must not reference the old host"
+        );
+        assert!(
+            !script.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"),
+            "portable installer must not require the current checkout path"
+        );
+    }
+
+    #[test]
+    fn portable_runner_active_surfaces_do_not_require_fixed_checkout_paths() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+
+        for path in [
+            "scripts/install-runner-services.sh",
+            "scripts/eval-runners.sh",
+            ".github/workflows/ci.yml",
+            ".github/workflows/runner-sustain.yml",
+            ".github/workflows/runner-smoke.yml",
+        ] {
+            let contents = fs::read_to_string(root.join(path))
+                .unwrap_or_else(|err| panic!("read portable runner active surface {path}: {err}"));
+            assert!(
+                !contents.contains("/home/drdave"),
+                "{path} must not require the old host"
+            );
+            assert!(
+                !contents.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"),
+                "{path} must not require the current fixed source checkout"
+            );
+        }
+    }
+
+    #[test]
     fn runner_queue_role_docs_and_collector_are_guarded() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
