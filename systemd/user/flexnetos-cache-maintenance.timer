@@ -1,0 +1,12 @@
+[Unit]
+Description=Run FlexNetOS runner cache maintenance during idle windows
+Documentation=docs/cache-compression.md
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=flexnetos-cache-maintenance@all.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=FlexNetOS runner cache maintenance (%i)
+Documentation=docs/cache-compression.md
+ConditionPathExists=@FXRUN_PREFIX@/scripts/cache-maintenance.sh
+
+[Service]
+Type=oneshot
+WorkingDirectory=@FXRUN_PREFIX@
+Environment=FXRUN_BIN=@FXRUN_PREFIX@/target/debug/fxrun
+Environment=FXRUN_CACHE_ROOT=@FXRUN_PREFIX@/_work
+Environment=FXRUN_CACHE_SLOT=%i
+Environment=FXRUN_CACHE_MIN_AGE=7d
+Environment=FXRUN_CACHE_FORMAT=json
+Environment=FXRUN_CACHE_MAINTENANCE_MODE=audit
+Environment=FXRUN_CACHE_DRY_RUN=1
+ExecCondition=@FXRUN_PREFIX@/target/debug/fxrun cache audit --root @FXRUN_PREFIX@/_work --slot %i --min-age 7d --format json
+ExecStart=@FXRUN_PREFIX@/scripts/cache-maintenance.sh
