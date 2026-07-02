@@ -9222,6 +9222,25 @@ R  "docs/old note.md" -> "docs/new note.md"
     }
 
     #[test]
+    fn runner_retarget_workflow_uses_unique_temp_script() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/runner-retarget.yml"))
+            .expect("read runner retarget workflow");
+
+        assert!(
+            workflow.contains(r#"mktemp "${RUNNER_TEMP:-/tmp}/flexnetos-runner-retarget.XXXXXX""#),
+            "retarget workflow must not fail on a stale root-owned /tmp script"
+        );
+        assert!(
+            !workflow.contains("cat > /tmp/flexnetos-runner-retarget.sh"),
+            "retarget workflow must not write a fixed /tmp path"
+        );
+    }
+
+    #[test]
     fn runner_queue_role_docs_and_collector_are_guarded() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
