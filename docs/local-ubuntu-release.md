@@ -1,0 +1,48 @@
+# Local Ubuntu Release
+
+`flexnetos_runner` is the release host for the local FlexNetOS bundle. The
+release output surface is the workspace-level `release/` directory:
+
+```text
+/home/flexnetos/FlexNetOS/release/
+```
+
+The first supported target is intentionally narrow:
+
+- OS: Ubuntu 26.04
+- architecture: x86_64
+- build host: this local workstation
+
+The release lane builds from source and stages a single archive with provenance:
+
+```bash
+FXRUN_CARGO=/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-02/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo \
+  scripts/build-local-ubuntu-release.sh
+```
+
+The default component set is:
+
+- `flexnetos_runner`
+- `meta`
+- `yazelix`
+
+Yazelix is included by building `src/yazelix/rust_core` and staging the runtime
+assets needed by the generated package surface. The bundle does not use a Nix
+store path as its payload source; it copies locally built binaries and local
+repository assets into the release stage.
+
+Outputs:
+
+- `release/flexnetos-ubuntu-26.04-x86_64-<timestamp>.tar.gz`
+- `release/flexnetos-ubuntu-26.04-x86_64-<timestamp>.tar.gz.sha256`
+- `release/staging/flexnetos-ubuntu-26.04-x86_64-<timestamp>/provenance/`
+
+Use `--check-only` to validate host and toolchain wiring without compiling:
+
+```bash
+scripts/build-local-ubuntu-release.sh --check-only
+```
+
+The script accepts `FXRUN_RELEASE_COMPONENTS` for explicit component selection,
+but the checked-in default stays narrow until each additional peer has release
+contracts and proof.

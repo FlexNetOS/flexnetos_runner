@@ -164,6 +164,20 @@ cargo clippy --workspace --all-targets -- -D warnings
 fxrun doctor
 ```
 
+## Local Ubuntu release
+
+`flexnetos_runner` owns the local release lane for this workstation. The first supported target is
+Ubuntu 26.04 on `x86_64`, with artifacts written to the workspace-level `release/` directory.
+
+```bash
+FXRUN_CARGO=/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-02/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo \
+  scripts/build-local-ubuntu-release.sh
+```
+
+The default release builds `flexnetos_runner`, `meta`, and `yazelix` from local source and stages
+Yazelix runtime assets alongside provenance and SHA-256 manifests. See
+[`docs/local-ubuntu-release.md`](docs/local-ubuntu-release.md).
+
 
 ## Live runner evaluation
 
