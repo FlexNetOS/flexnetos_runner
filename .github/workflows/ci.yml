@@ -9,7 +9,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  META_CARGO_BIN: /home/drdave/Desktop/meta/.toolchains/cargo/bin
+  META_CARGO_BIN: /home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-01/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 
 jobs:
   local-linux:

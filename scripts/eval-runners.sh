@@ -57,8 +57,8 @@ need journalctl
 need sed
 need awk
 
-if [[ -z "${GH_TOKEN:-}" && -x /home/drdave/Desktop/meta/envctl/target/debug/secretctl ]]; then
-  export GH_TOKEN="$(/home/drdave/Desktop/meta/envctl/target/debug/secretctl mint-github --installation-id "${FXRUN_EVAL_GH_INSTALLATION_ID:-140063898}" --permissions organization_self_hosted_runners:write,metadata:read,actions:write --ttl-secs 3600 --output json | jq -r '.token')"
+if [[ -z "${GH_TOKEN:-}" && -x /home/flexnetos/FlexNetOS/src/envctl/target/debug/secretctl ]]; then
+  export GH_TOKEN="$(/home/flexnetos/FlexNetOS/src/envctl/target/debug/secretctl mint-github --installation-id "${FXRUN_EVAL_GH_INSTALLATION_ID:-140063898}" --permissions organization_self_hosted_runners:write,metadata:read,actions:write --ttl-secs 3600 --output json | jq -r '.token')"
 fi
 
 iso_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }

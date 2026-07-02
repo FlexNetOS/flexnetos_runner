@@ -29,9 +29,9 @@ jobs:
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     timeout-minutes: 60
     env:
-      CODEX_HOME: /home/drdave/Desktop/meta/.local/share/codex
-      CODEX_BIN: /home/drdave/.local/bin/codex
-      GH_CONFIG_DIR: /home/drdave/.config/gh
+      CODEX_HOME: /home/flexnetos/.codex
+      CODEX_BIN: /home/flexnetos/.local/bin/codex
+      GH_CONFIG_DIR: /home/flexnetos/.config/gh
       MODEL_INPUT: ${{ inputs.model }}
       EFFORT_INPUT: ${{ inputs.effort }}
       PROMPT_FILE_INPUT: ${{ inputs.prompt_file }}

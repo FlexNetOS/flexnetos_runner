@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_CODEX: &str = "/home/drdave/Desktop/meta/.toolchains/codex/bin/codex";
+const DEFAULT_CODEX: &str = "/home/flexnetos/.local/bin/codex";
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
