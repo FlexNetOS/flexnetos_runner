@@ -1,0 +1,5 @@
+{
+  "commit": {"author":"drdave <flexnetos@de-flex.net>","changes":[{"change_type":"created","content_hash":"d23bab896488f899126e1aa1a71f72747ddeaa9e6aa1d4efe062e15efd2a166a","doc_type":"task","document_id":"019f2503-2a55-78f0-a491-6f1f0e571d85","new_version":1,"previous_version":null,"slug":"tasks/cache-command-automation-seams","title":"Automate cache commands with full seams"}],"created_at":"2026-07-02T22:46:32.324080003Z","id":"019f2503-2aa0-7930-be32-dbba70e473ff","message":"Add cache command automation seams task"},
+  "content_hash": "5c921271b4ec76fd108a82a41c54aabe78615fc6a33b1eec2a61ef0ece0e8854",
+  "hash_version": 3
+}

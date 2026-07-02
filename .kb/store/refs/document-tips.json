@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "document_id": "019f24ef-9b0c-7f42-9dab-856a53e35309",
+      "slug": "tasks/cache-compression-automation",
+      "tip_commit_id": "019f252f-938a-7df3-b12c-32aa7ee62196"
+    },
+    {
+      "document_id": "019f2503-2a55-78f0-a491-6f1f0e571d85",
+      "slug": "tasks/cache-command-automation-seams",
+      "tip_commit_id": "019f252f-938a-7df3-b12c-32aa7ee62196"
+    }
+  ]
+}
