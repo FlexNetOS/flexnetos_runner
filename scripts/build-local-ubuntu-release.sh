@@ -8,7 +8,8 @@ TARGET_OS_ID="ubuntu"
 TARGET_OS_VERSION="26.04"
 TARGET_ARCH="x86_64"
 RELEASE_PREFIX="flexnetos-ubuntu-${TARGET_OS_VERSION}-${TARGET_ARCH}"
-COMPONENTS="${FXRUN_RELEASE_COMPONENTS:-flexnetos_runner meta yazelix}"
+CATALOG="${FXRUN_RELEASE_CATALOG:-$ROOT/src/flexnetos_runner/release/catalog.tsv}"
+COMPONENTS="${FXRUN_RELEASE_COMPONENTS:-}"
 
 usage() {
   cat <<USAGE
@@ -19,15 +20,14 @@ Build the local Ubuntu ${TARGET_OS_VERSION} ${TARGET_ARCH} FlexNetOS release bun
 Environment:
   FLEXNETOS_ROOT            Workspace root. Default: $ROOT
   FXRUN_RELEASE_DIR         Release output root. Default: \$FLEXNETOS_ROOT/release
-  FXRUN_RELEASE_COMPONENTS  Space-separated component list. Default: "$COMPONENTS"
+  FXRUN_RELEASE_CATALOG     Release component catalog. Default: $CATALOG
+  FXRUN_RELEASE_COMPONENTS  Optional space-separated component filter. Default: all catalog rows
   FXRUN_CARGO               Cargo binary to use when cargo is not on PATH
   FXRUN_RELEASE_ALLOW_HOST_MISMATCH=1
                             Allow running checks on a non-target host
 
-Default components:
-  flexnetos_runner  src/flexnetos_runner
-  meta              src/meta
-  yazelix           src/yazelix/rust_core
+Catalog format:
+  component<TAB>kind<TAB>source<TAB>manifest<TAB>bins<TAB>asset_profile<TAB>notes
 USAGE
 }
 
@@ -75,6 +75,24 @@ resolve_cargo() {
   command -v cargo || true
 }
 
+resolve_path() {
+  local path="$1"
+  if [[ "$path" == "-" || "$path" == /* ]]; then
+    echo "$path"
+  else
+    echo "$ROOT/$path"
+  fi
+}
+
+selected_component() {
+  local name="$1" component
+  [[ -z "$COMPONENTS" ]] && return 0
+  for component in $COMPONENTS; do
+    [[ "$component" == "$name" ]] && return 0
+  done
+  return 1
+}
+
 git_value() {
   local repo="$1" key="$2"
   git -C "$repo" "$key" 2>/dev/null || true
@@ -89,33 +107,65 @@ repo_dirty() {
   fi
 }
 
-copy_release_bins() {
-  local target_dir="$1" dest="$2"
+copy_named_bins() {
+  local target_dir="$1" dest="$2" bins="$3"
   local copied=0
   [[ -d "$target_dir" ]] || fail "missing target dir after build: $target_dir"
-  while IFS= read -r -d '' bin; do
-    cp "$bin" "$dest/"
+  [[ "$bins" == "-" ]] && return 0
+
+  local old_ifs="$IFS" bin src
+  IFS=,
+  for bin in $bins; do
+    src="$target_dir/$bin"
+    [[ -x "$src" ]] || fail "expected release binary is missing or not executable: $src"
+    cp "$src" "$dest/"
     copied=$((copied + 1))
-  done < <(find "$target_dir" -maxdepth 1 -type f -executable ! -name '*.d' -print0)
+  done
+  IFS="$old_ifs"
   [[ "$copied" -gt 0 ]] || fail "no executable release binaries found in $target_dir"
 }
 
 build_component() {
-  local name="$1" repo="$2" manifest="$3" stage="$4" cargo="$5"
+  local name="$1" repo="$2" manifest="$3" bins="$4" asset_profile="$5" notes="$6" stage="$7" cargo="$8"
   local manifest_dir target_dir
   manifest_dir="$(cd "$(dirname "$manifest")" && pwd)"
   target_dir="$manifest_dir/target/release"
   echo "==> building $name"
   "$cargo" build --release --manifest-path "$manifest" --locked
   mkdir -p "$stage/bin" "$stage/provenance/components/$name"
-  copy_release_bins "$target_dir" "$stage/bin"
+  copy_named_bins "$target_dir" "$stage/bin" "$bins"
+  stage_assets "$asset_profile" "$repo" "$stage"
   {
     echo "name=$name"
+    echo "kind=cargo"
     echo "repo=$repo"
     echo "manifest=$manifest"
+    echo "bins=$bins"
+    echo "asset_profile=$asset_profile"
     echo "head=$(git_value "$repo" rev-parse HEAD)"
     echo "branch=$(git_value "$repo" branch --show-current)"
     echo "dirty=$(repo_dirty "$repo")"
+    echo "notes=$notes"
+  } > "$stage/provenance/components/$name/source.env"
+}
+
+copy_bin_component() {
+  local name="$1" source="$2" bins="$3" asset_profile="$4" notes="$5" stage="$6"
+  [[ "$bins" != "-" ]] || fail "copy-bin component requires staged binary name: $name"
+  [[ "$bins" != *,* ]] || fail "copy-bin component supports one binary per row: $name"
+  [[ -x "$source" ]] || fail "copy-bin source is missing or not executable: $source"
+  echo "==> staging $name"
+  mkdir -p "$stage/bin" "$stage/provenance/components/$name"
+  cp "$source" "$stage/bin/$bins"
+  chmod 755 "$stage/bin/$bins"
+  stage_assets "$asset_profile" "$(dirname "$source")" "$stage"
+  {
+    echo "name=$name"
+    echo "kind=copy-bin"
+    echo "source=$source"
+    echo "bins=$bins"
+    echo "asset_profile=$asset_profile"
+    echo "notes=$notes"
   } > "$stage/provenance/components/$name/source.env"
 }
 
@@ -140,6 +190,64 @@ copy_yazelix_runtime_assets() {
   rm -f "$dest/shells/posix/yzx_cli.sh"
 }
 
+stage_assets() {
+  local profile="$1" source="$2" stage="$3"
+  case "$profile" in
+    -|"") ;;
+    yazelix-runtime) copy_yazelix_runtime_assets "$source" "$stage" ;;
+    *) fail "unknown asset profile for catalog component: $profile" ;;
+  esac
+}
+
+validate_catalog_row() {
+  local name="$1" kind="$2" source="$3" manifest="$4" bins="$5"
+  [[ -n "$name" && -n "$kind" && -n "$source" && -n "$manifest" && -n "$bins" ]] || fail "invalid catalog row for component: ${name:-<empty>}"
+  case "$kind" in
+    cargo)
+      [[ -d "$source" ]] || fail "catalog source dir missing for $name: $source"
+      [[ -f "$manifest" ]] || fail "catalog manifest missing for $name: $manifest"
+      ;;
+    copy-bin)
+      [[ -x "$source" ]] || fail "catalog executable missing for $name: $source"
+      [[ "$manifest" == "-" ]] || fail "copy-bin manifest must be '-' for $name"
+      ;;
+    *)
+      fail "unknown catalog kind for $name: $kind"
+      ;;
+  esac
+}
+
+process_catalog() {
+  local stage="$1" cargo="$2" mode="$3"
+  [[ -f "$CATALOG" ]] || fail "release catalog not found: $CATALOG"
+
+  local name kind source manifest bins asset_profile notes extra
+  local selected=""
+  while IFS=$'\t' read -r name kind source manifest bins asset_profile notes extra || [[ -n "${name:-}" ]]; do
+    [[ -z "${name:-}" || "${name:0:1}" == "#" ]] && continue
+    [[ -z "${extra:-}" ]] || fail "catalog row has too many fields: $name"
+    selected_component "$name" || continue
+
+    source="$(resolve_path "$source")"
+    manifest="$(resolve_path "$manifest")"
+    validate_catalog_row "$name" "$kind" "$source" "$manifest" "$bins"
+    selected="${selected}${selected:+ }$name"
+
+    if [[ "$mode" == "check" ]]; then
+      echo "catalog ok: $name ($kind)"
+      continue
+    fi
+
+    case "$kind" in
+      cargo) build_component "$name" "$source" "$manifest" "$bins" "$asset_profile" "$notes" "$stage" "$cargo" ;;
+      copy-bin) copy_bin_component "$name" "$source" "$bins" "$asset_profile" "$notes" "$stage" ;;
+    esac
+  done < "$CATALOG"
+
+  [[ -n "$selected" ]] || fail "no catalog components selected"
+  SELECTED_COMPONENTS="$selected"
+}
+
 write_provenance() {
   local stage="$1" cargo="$2" release_id="$3" archive_name="$4"
   local manifest="$stage/provenance/release-manifest.env"
@@ -151,16 +259,20 @@ write_provenance() {
     echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "host=$(hostname)"
     echo "root=$ROOT"
-    echo "components=$COMPONENTS"
+    echo "catalog=$CATALOG"
+    echo "components=$SELECTED_COMPONENTS"
     echo "cargo=$cargo"
     "$cargo" --version | sed 's/^/cargo_version=/'
     "$cargo" rustc --version 2>/dev/null | sed 's/^/rustc_version=/' || true
     echo "archive=$archive_name"
   } > "$manifest"
+  cp "$CATALOG" "$stage/provenance/catalog.tsv"
 
-  find "$stage/bin" -maxdepth 1 -type f -executable -print0 \
-    | sort -z \
-    | xargs -0 sha256sum > "$stage/provenance/binary-sha256s.txt"
+  local sha_file="$stage/provenance/binary-sha256s.txt"
+  : > "$sha_file"
+  while IFS= read -r -d '' bin; do
+    sha256sum "$bin" >> "$sha_file"
+  done < <(find "$stage/bin" -maxdepth 1 -type f -executable -print0 | sort -z)
 }
 
 main() {
@@ -177,11 +289,14 @@ main() {
   [[ -n "$cargo" ]] || fail "cargo not found; set FXRUN_CARGO to a runner-local cargo binary"
   export PATH="$(dirname "$cargo"):$PATH"
   "$cargo" --version >/dev/null
+  SELECTED_COMPONENTS=""
 
   if [[ "$CHECK_ONLY" == "1" ]]; then
+    process_catalog "" "$cargo" check
     echo "release checks passed"
     echo "cargo=$cargo"
-    echo "components=$COMPONENTS"
+    echo "catalog=$CATALOG"
+    echo "components=$SELECTED_COMPONENTS"
     exit 0
   fi
 
@@ -194,24 +309,7 @@ main() {
   rm -rf "$stage"
   mkdir -p "$stage/bin" "$stage/provenance" "$OUT_ROOT"
 
-  local component
-  for component in $COMPONENTS; do
-    case "$component" in
-      flexnetos_runner)
-        build_component "$component" "$ROOT/src/flexnetos_runner" "$ROOT/src/flexnetos_runner/Cargo.toml" "$stage" "$cargo"
-        ;;
-      meta)
-        build_component "$component" "$ROOT/src/meta" "$ROOT/src/meta/Cargo.toml" "$stage" "$cargo"
-        ;;
-      yazelix)
-        build_component "$component" "$ROOT/src/yazelix" "$ROOT/src/yazelix/rust_core/Cargo.toml" "$stage" "$cargo"
-        copy_yazelix_runtime_assets "$ROOT/src/yazelix" "$stage"
-        ;;
-      *)
-        fail "unknown release component: $component"
-        ;;
-    esac
-  done
+  process_catalog "$stage" "$cargo" build
 
   write_provenance "$stage" "$cargo" "$release_id" "$(basename "$archive")"
   tar -C "$OUT_ROOT/staging" -czf "$archive" "$release_id"

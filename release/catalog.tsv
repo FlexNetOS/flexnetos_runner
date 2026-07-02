@@ -1,0 +1,36 @@
+# FlexNetOS local release catalog.
+# Format:
+# component<TAB>kind<TAB>source<TAB>manifest<TAB>bins<TAB>asset_profile<TAB>notes
+#
+# kind:
+#   cargo     Build a Cargo manifest with --release --locked. bins is comma-separated.
+#             Use "-" for source-only/library peers that must compile but do not stage a binary.
+#   copy-bin  Copy an existing executable payload. source is the executable path, bins is the staged name.
+#
+# source and manifest are relative to FLEXNETOS_ROOT unless absolute.
+#
+# Core release runner and control plane.
+flexnetos_runner	cargo	src/flexnetos_runner	src/flexnetos_runner/Cargo.toml	fxrun,fxrun-actions,fxrun-dispatch	-	Local release runner and GitHub/local execution plane.
+meta	cargo	src/meta	src/meta/Cargo.toml	meta,meta-git,meta-mcp,meta-project,meta-rust,loop	-	Meta control plane workspace and loop CLI.
+meta-agent	cargo	src/meta	src/meta/agent/Cargo.toml	agent	-	Meta agent binary excluded from the meta workspace.
+
+# GitKB and agent frontdoors used by Codex/meta sessions.
+gitkb	copy-bin	usr/bin/git-kb	-	git-kb	-	GitKB local binary; source repo should become a cataloged peer when available.
+codex	copy-bin	/home/flexnetos/.codex/packages/standalone/current/bin/codex	-	codex	-	Codex Rust standalone binary used by local agent sessions.
+
+# FlexNetOS environment and issue/task tools.
+envctl	cargo	src/envctl	src/envctl/Cargo.toml	envctl,envctl-gui,secretd,secretctl	-	Environment manager and local secrets/toolchain plane.
+beads_rust	cargo	src/beads_rust	src/beads_rust/Cargo.toml	br	-	Agent-first local issue tracker.
+rtk-tokenkill	cargo	src/rtk-tokenkill	src/rtk-tokenkill/Cargo.toml	rtk	-	RTK token compression/proxy CLI.
+
+# Yazelix runtime surface.
+yazelix	cargo	src/yazelix	src/yazelix/rust_core/Cargo.toml	yzx,yzx_control,yzx_core,yazelix_zellij_config_pack,yzx_repo_maintainer,yzx_repo_validator	yazelix-runtime	Yazelix local runtime and support binaries.
+yazelix-helix	cargo	src/yazelix-helix	src/yazelix-helix/Cargo.toml	hx,hx-loader	-	Yazelix Helix editor runtime.
+
+# Code intelligence and plugin peers.
+nu_plugin	cargo	src/nu_plugin	src/nu_plugin/Cargo.toml	codedb,nu_plugin_codedb	-	CodeDB/Nushell plugin workspace.
+loop_lib	cargo	src/loop_lib	src/loop_lib/Cargo.toml	-	-	Standalone loop_lib peer; source-only compile check.
+meta_plugin_protocol	cargo	src/meta_plugin_protocol	src/meta_plugin_protocol/Cargo.toml	-	-	Standalone meta plugin protocol peer; source-only compile check.
+
+# Workspace-owned toolchain frontdoors.
+bun	copy-bin	.toolchains/.bun/bin/bun	-	bun	-	Bun runtime used as the node/bunx frontdoor payload.
