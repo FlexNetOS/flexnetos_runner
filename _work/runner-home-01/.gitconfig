@@ -3467,6 +3467,7 @@
 	directory = /home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/actions-runner-01-work/flexnetos_runner/flexnetos_runner
 	directory = /home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/actions-runner-01-work/flexnetos_runner/flexnetos_runner
 	directory = /home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/actions-runner-01-work/flexnetos_runner/flexnetos_runner
+	directory = /home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/actions-runner-01-work/flexnetos_runner/flexnetos_runner
 [credential "https://gist.github.com"]
 	helper = 
 	helper = !/home/drdave/Desktop/meta/.local/bin/gh auth git-credential
