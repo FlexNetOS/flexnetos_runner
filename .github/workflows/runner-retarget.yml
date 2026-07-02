@@ -16,7 +16,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat > /tmp/flexnetos-runner-retarget.sh <<'SCRIPT'
+          temp_script="$(mktemp "${RUNNER_TEMP:-/tmp}/flexnetos-runner-retarget.XXXXXX")"
+          trap 'rm -f "${temp_script}"' EXIT
+          cat > "${temp_script}" <<'SCRIPT'
           #!/usr/bin/env bash
           set -euo pipefail
 
@@ -84,6 +86,6 @@ jobs:
             systemctl show "${service}" -p User -p FragmentPath -p ActiveState -p SubState -p ExecMainStartTimestamp --no-pager
           done
           SCRIPT
-          sudo install -m 0755 /tmp/flexnetos-runner-retarget.sh /usr/local/sbin/flexnetos-runner-retarget.sh
+          sudo install -m 0755 "${temp_script}" /usr/local/sbin/flexnetos-runner-retarget.sh
           sudo systemd-run --unit=flexnetos-runner-retarget --on-active=3s /usr/local/sbin/flexnetos-runner-retarget.sh
           echo "retarget scheduled via systemd-run; this job exits before runner services restart"
