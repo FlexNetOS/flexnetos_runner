@@ -30,6 +30,7 @@ system_path_tail="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/
 codex_home="${CODEX_HOME:-}"
 gh_config_dir="${GH_CONFIG_DIR:-}"
 codex_bin_dir="${FXRUN_RUNNER_CODEX_BIN_DIR:-}"
+unit_config_home="${FXRUN_RUNNER_XDG_CONFIG_HOME:-}"
 
 usage() {
   cat <<USAGE
@@ -53,6 +54,7 @@ Options:
   --codex-home DIR       CODEX_HOME to place in units.
   --gh-config-dir DIR    GH_CONFIG_DIR to place in units.
   --codex-bin-dir DIR    Codex binary dir to include in generated .path.
+  --xdg-config-home DIR  Config home for user-mode unit placement.
   -h, --help             Show this help.
 
 Examples:
@@ -90,6 +92,7 @@ while [[ $# -gt 0 ]]; do
     --codex-home) codex_home="$2"; shift 2 ;;
     --gh-config-dir) gh_config_dir="$2"; shift 2 ;;
     --codex-bin-dir) codex_bin_dir="$2"; shift 2 ;;
+    --xdg-config-home) unit_config_home="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -152,6 +155,9 @@ if [[ -z "$codex_bin_dir" ]]; then
 fi
 if [[ -z "$yazelix_bin" ]]; then
   yazelix_bin="${prefix}/usr/bin"
+fi
+if [[ -z "$unit_config_home" ]]; then
+  unit_config_home="${runner_home_base}/.config"
 fi
 
 unit_names=()
@@ -221,7 +227,7 @@ UNIT
 
 unit_dir_for_mode() {
   case "$mode" in
-    user) printf '%s\n' "${XDG_CONFIG_HOME:-${HOME:?HOME is required}/.config}/systemd/user" ;;
+    user) printf '%s\n' "${unit_config_home}/systemd/user" ;;
     system) printf '%s\n' "/etc/systemd/system" ;;
   esac
 }

@@ -9295,6 +9295,7 @@ R  "docs/old note.md" -> "docs/new note.md"
         let portable_codex_bin_dir = "/tmp/fxrun-portable-auth/bin";
         let ambient_runtime_dir = root.join("_work/fake-ci-runtime");
         let ambient_dbus_address = format!("unix:path={}/bus", ambient_runtime_dir.display());
+        let ambient_xdg_config_home = root.join("_work/fake-ci-config");
 
         let user_output = std::process::Command::new("bash")
             .arg(&script)
@@ -9308,6 +9309,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             .env("GH_CONFIG_DIR", portable_gh_config_dir)
             .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
             .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
+            .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
             .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
             .output()
             .expect("dry-run user installer");
@@ -9352,6 +9354,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             .env("GH_CONFIG_DIR", portable_gh_config_dir)
             .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
             .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
+            .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
             .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
             .output()
             .expect("dry-run system installer");
