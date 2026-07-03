@@ -3593,8 +3593,14 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     ".codex/agents/forge-loop-ci-sentinel.toml",
                     "nickname_candidates",
                 ),
-                (".codex/hooks.json", "SubagentStart"),
-                (".codex/hooks.json", "SubagentStop"),
+                (
+                    ".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md",
+                    "SubagentStart",
+                ),
+                (
+                    ".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md",
+                    "SubagentStop",
+                ),
             ],
             guard_terms: &[
                 ("crates/runner-cli/src/forge_loop.rs", "subagent-roster"),
@@ -3963,10 +3969,10 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             rationale: "Advanced Codex config supports trusted project-scoped .codex/config.toml layers for repo-local model, sandbox, agent, MCP, and skill defaults.",
         },
         LoopComponent {
-            id: "hooks",
+            id: "archived-hooks",
             surface: "hooks",
-            path: ".codex/hooks.json",
-            rationale: "Advanced Codex config supports repo-local hooks.json for lifecycle hooks next to an active project config layer.",
+            path: ".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md",
+            rationale: "Advanced Codex config supports repo-local hooks.json for lifecycle hooks, while this repo now preserves the removed lifecycle wiring in an auditable archive instead of activating duplicate root hooks.",
         },
         LoopComponent {
             id: "permission-request-hook",
@@ -6330,7 +6336,9 @@ R  "docs/old note.md" -> "docs/new note.md"
         assert!(report
             .missing_components
             .contains(&"project-config".to_string()));
-        assert!(report.missing_components.contains(&"hooks".to_string()));
+        assert!(report
+            .missing_components
+            .contains(&"archived-hooks".to_string()));
 
         fs::remove_dir_all(out).ok();
     }
@@ -8681,7 +8689,10 @@ R  "docs/old note.md" -> "docs/new note.md"
             .expect("workspace root");
         let manifest = fs::read_to_string(root.join(".codex/hooks/forge-loop-hooks.manifest.json"))
             .expect("read hook manifest");
-        let hooks = fs::read_to_string(root.join(".codex/hooks.json")).expect("read hooks");
+        let hooks = fs::read_to_string(
+            root.join(".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md"),
+        )
+        .expect("read archived hooks");
 
         for required in [
             "SessionStart",
@@ -8710,7 +8721,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             "forge_loop_stop_summary.py",
         ] {
             assert!(manifest.contains(script), "hook manifest missing {script}");
-            assert!(hooks.contains(script), "hooks.json missing {script}");
+            assert!(hooks.contains(script), "archived hooks missing {script}");
         }
     }
 
@@ -9055,7 +9066,10 @@ R  "docs/old note.md" -> "docs/new note.md"
             .and_then(Path::parent)
             .expect("workspace root");
         let config = fs::read_to_string(root.join(".codex/config.toml")).expect("read config");
-        let hooks = fs::read_to_string(root.join(".codex/hooks.json")).expect("read hooks");
+        let hooks = fs::read_to_string(
+            root.join(".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md"),
+        )
+        .expect("read archived hooks");
         let permissions =
             fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
                 .expect("read permission blueprint");
@@ -9091,7 +9105,10 @@ R  "docs/old note.md" -> "docs/new note.md"
             "forge_loop_compact_summary.py",
             "forge_loop_subagent_summary.py",
         ] {
-            assert!(hooks.contains(required), "hooks missing {required}");
+            assert!(
+                hooks.contains(required),
+                "archived hooks missing {required}"
+            );
         }
         for required in [
             "developers.openai.com/codex/github-action",
@@ -9298,7 +9315,7 @@ R  "docs/old note.md" -> "docs/new note.md"
         let user_stdout = String::from_utf8_lossy(&user_output.stdout);
         assert!(user_stdout.contains(".config/systemd/user/flexnetos-runner@.service"));
         assert!(user_stdout.contains(
-            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/runsvc.sh"
+            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/flexnetos-runner-entrypoint.sh"
         ));
         assert!(user_stdout
             .contains("WorkingDirectory=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i"));
@@ -9341,7 +9358,7 @@ R  "docs/old note.md" -> "docs/new note.md"
         assert!(system_stdout.contains("/etc/systemd/system/flexnetos-runner@.service"));
         assert!(system_stdout.contains("User=flexnetos"));
         assert!(system_stdout.contains(
-            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/runsvc.sh"
+            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/flexnetos-runner-entrypoint.sh"
         ));
         assert!(
             system_stdout.contains(
