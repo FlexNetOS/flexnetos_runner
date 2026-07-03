@@ -30,11 +30,6 @@ system_path_tail="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/
 codex_home="${CODEX_HOME:-}"
 gh_config_dir="${GH_CONFIG_DIR:-}"
 codex_bin_dir="${FXRUN_RUNNER_CODEX_BIN_DIR:-}"
-session_display="${DISPLAY:-}"
-session_wayland_display="${WAYLAND_DISPLAY:-}"
-session_type="${XDG_SESSION_TYPE:-}"
-session_runtime_dir="${XDG_RUNTIME_DIR:-}"
-session_dbus_address="${DBUS_SESSION_BUS_ADDRESS:-}"
 
 usage() {
   cat <<USAGE
@@ -140,52 +135,10 @@ resolve_user_home() {
   return 1
 }
 
-resolve_user_runtime_dir() {
-  local user="$1"
-  local user_uid=""
-  if command -v id >/dev/null 2>&1; then
-    if user_uid="$(id -u "$user" 2>/dev/null)"; then
-      printf '/run/user/%s\n' "$user_uid"
-      return 0
-    fi
-  fi
-  return 1
-}
-
-user_manager_env_value() {
-  local key="$1"
-  local runtime_dir="${2:-}"
-  [[ "$mode" == "user" ]] || return 1
-  [[ -n "$runtime_dir" ]] || return 1
-  [[ -S "$runtime_dir/bus" ]] || return 1
-  env \
-    XDG_RUNTIME_DIR="$runtime_dir" \
-    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" \
-    systemctl --user show-environment 2>/dev/null \
-    | awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }'
-}
-
 runner_home_base="$(resolve_user_home "$runner_user")"
 if [[ -z "$runner_home_base" ]]; then
   echo "could not resolve home for runner user $runner_user" >&2
   exit 1
-fi
-
-resolved_runtime_dir="$(resolve_user_runtime_dir "$runner_user" || true)"
-if [[ -z "$session_runtime_dir" && -n "$resolved_runtime_dir" ]]; then
-  session_runtime_dir="$resolved_runtime_dir"
-fi
-if [[ -z "$session_dbus_address" && -n "$session_runtime_dir" && -S "$session_runtime_dir/bus" ]]; then
-  session_dbus_address="unix:path=${session_runtime_dir}/bus"
-fi
-if [[ -z "$session_display" && -n "$session_runtime_dir" ]]; then
-  session_display="$(user_manager_env_value DISPLAY "$session_runtime_dir" || true)"
-fi
-if [[ -z "$session_wayland_display" && -n "$session_runtime_dir" ]]; then
-  session_wayland_display="$(user_manager_env_value WAYLAND_DISPLAY "$session_runtime_dir" || true)"
-fi
-if [[ -z "$session_type" && -n "$session_runtime_dir" ]]; then
-  session_type="$(user_manager_env_value XDG_SESSION_TYPE "$session_runtime_dir" || true)"
 fi
 
 if [[ -z "$codex_home" ]]; then
@@ -256,12 +209,6 @@ KillMode=process
 KillSignal=SIGTERM
 TimeoutStopSec=5min
 UNIT
-  if [[ -n "$session_runtime_dir" ]]; then
-    printf 'Environment=XDG_RUNTIME_DIR=%s\n' "$session_runtime_dir"
-  fi
-  if [[ -n "$session_dbus_address" ]]; then
-    printf 'Environment=DBUS_SESSION_BUS_ADDRESS=%s\n' "$session_dbus_address"
-  fi
   if [[ "$include_user" == 1 ]]; then
     printf 'User=%s\n' "$runner_user"
   fi
