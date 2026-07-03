@@ -8,7 +8,6 @@ priority: high
 tags: [runner, state, _work, settle, automation, guardrails]
 ---
 
-
 ## Problem
 `_work` is intentionally preserved, but live runner activity keeps the repo dirty with timestamp churn, cache churn, runner-home gitconfig duplication, and GitKB runtime workspaces. The fix must not hide `_work` in `.gitignore`; it must classify, normalize, compress, snapshot, and gate preserved runner state.
 
