@@ -1,0 +1,5 @@
+{
+  "commit": {"author":"drdave <flexnetos@de-flex.net>","changes":[{"change_type":"modified","content_hash":"1d1d9a18ad70f04d1e703e1f92a3f668a15bca3dd221ade39690680ea4511f19","doc_type":"task","document_id":"019f2942-b2c9-75d3-9165-fa064437f69e","hunks":[{"lines":[{"content":"Live pack finish matrix created in `docs/pack-finish-matrix.md`; remaining","op":"add"},{"content":"rows advance only from live proof surfaces, not recovered pack artifacts.","op":"add"}],"new_count":2,"new_start":1,"old_count":0,"old_start":1}],"new_version":3,"previous_commit_id":"019f29f8-bd18-7971-96e4-6d284ff1aa11","previous_hash":"f4250f1338b2b4b0f350f48fb91053645c5bdbac00bd81be21227c5858d52b40","previous_version":2,"slug":"create-live-pack-finish-matrix","title":"Create live pack finish matrix"}],"created_at":"2026-07-03T21:54:12.414357329Z","id":"019f29f9-9d46-7c62-8036-33b2b46591cf","message":"Document pack finish matrix proof rule"},
+  "content_hash": "d03c6d3f1bf09b4461888489cf155c0b0e05f08a9683df1ec22e7c560dfdaa09",
+  "hash_version": 3
+}

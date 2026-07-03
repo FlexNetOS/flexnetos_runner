@@ -22,6 +22,7 @@ codex	copy-bin	/home/flexnetos/.codex/packages/standalone/current/bin/codex	-	co
 envctl	cargo	src/envctl	src/envctl/Cargo.toml	envctl,envctl-gui,secretd,secretctl	-	Environment manager and local secrets/toolchain plane.
 beads_rust	cargo	src/beads_rust	src/beads_rust/Cargo.toml	br	-	Agent-first local issue tracker.
 rtk-tokenkill	cargo	src/rtk-tokenkill	src/rtk-tokenkill/Cargo.toml	rtk	-	RTK token compression/proxy CLI.
+lifeos	bun-tauri	src/lifeos	src/lifeos/package.json	lifeos	lifeos-bundle	LifeOS desktop app bundle for the local Ubuntu release lane (defaults to deb).
 
 # Yazelix runtime surface.
 yazelix	cargo	src/yazelix	src/yazelix/rust_core/Cargo.toml	yzx,yzx_control,yzx_core,yazelix_zellij_config_pack,yzx_repo_maintainer,yzx_repo_validator	yazelix-runtime	Yazelix local runtime and support binaries.

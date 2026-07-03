@@ -30,6 +30,11 @@ system_path_tail="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/
 codex_home="${CODEX_HOME:-}"
 gh_config_dir="${GH_CONFIG_DIR:-}"
 codex_bin_dir="${FXRUN_RUNNER_CODEX_BIN_DIR:-}"
+session_display="${DISPLAY:-}"
+session_wayland_display="${WAYLAND_DISPLAY:-}"
+session_type="${XDG_SESSION_TYPE:-}"
+session_runtime_dir="${XDG_RUNTIME_DIR:-}"
+session_dbus_address="${DBUS_SESSION_BUS_ADDRESS:-}"
 
 usage() {
   cat <<USAGE
@@ -135,10 +140,52 @@ resolve_user_home() {
   return 1
 }
 
+resolve_user_runtime_dir() {
+  local user="$1"
+  local user_uid=""
+  if command -v id >/dev/null 2>&1; then
+    if user_uid="$(id -u "$user" 2>/dev/null)"; then
+      printf '/run/user/%s\n' "$user_uid"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+user_manager_env_value() {
+  local key="$1"
+  local runtime_dir="${2:-}"
+  [[ "$mode" == "user" ]] || return 1
+  [[ -n "$runtime_dir" ]] || return 1
+  [[ -S "$runtime_dir/bus" ]] || return 1
+  env \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" \
+    systemctl --user show-environment 2>/dev/null \
+    | awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }'
+}
+
 runner_home_base="$(resolve_user_home "$runner_user")"
 if [[ -z "$runner_home_base" ]]; then
   echo "could not resolve home for runner user $runner_user" >&2
   exit 1
+fi
+
+resolved_runtime_dir="$(resolve_user_runtime_dir "$runner_user" || true)"
+if [[ -z "$session_runtime_dir" && -n "$resolved_runtime_dir" ]]; then
+  session_runtime_dir="$resolved_runtime_dir"
+fi
+if [[ -z "$session_dbus_address" && -n "$session_runtime_dir" && -S "$session_runtime_dir/bus" ]]; then
+  session_dbus_address="unix:path=${session_runtime_dir}/bus"
+fi
+if [[ -z "$session_display" && -n "$session_runtime_dir" ]]; then
+  session_display="$(user_manager_env_value DISPLAY "$session_runtime_dir" || true)"
+fi
+if [[ -z "$session_wayland_display" && -n "$session_runtime_dir" ]]; then
+  session_wayland_display="$(user_manager_env_value WAYLAND_DISPLAY "$session_runtime_dir" || true)"
+fi
+if [[ -z "$session_type" && -n "$session_runtime_dir" ]]; then
+  session_type="$(user_manager_env_value XDG_SESSION_TYPE "$session_runtime_dir" || true)"
 fi
 
 if [[ -z "$codex_home" ]]; then
@@ -166,9 +213,10 @@ join_units() {
 
 path_for_slot() {
   local slot="$1"
-  printf '%s:%s:%s:%s:%s\n' \
+  printf '%s:%s:%s:%s:%s:%s\n' \
     "$yazelix_bin" \
     "${prefix}/_work/runner-home-${slot}/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin" \
+    "${prefix}/_work/runner-home-${slot}/.cargo/bin" \
     "$codex_bin_dir" \
     "$nix_profile_bin" \
     "$system_path_tail"
@@ -183,10 +231,24 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=${prefix}/_work/repos/actions-runner-%i/runsvc.sh
+ExecStart=${prefix}/_work/repos/actions-runner-%i/flexnetos-runner-entrypoint.sh
 WorkingDirectory=${prefix}/_work/repos/actions-runner-%i
+PassEnvironment=DBUS_SESSION_BUS_ADDRESS
+PassEnvironment=DISPLAY
+PassEnvironment=WAYLAND_DISPLAY
+PassEnvironment=XDG_RUNTIME_DIR
+PassEnvironment=XDG_SESSION_TYPE
 Environment=HOME=${prefix}/_work/runner-home-%i
 Environment=GIT_CONFIG_GLOBAL=${prefix}/_work/runner-home-%i/.gitconfig
+Environment=XDG_CONFIG_HOME=${prefix}/_work/runner-home-%i/.config
+Environment=XDG_CACHE_HOME=${prefix}/_work/runner-home-%i/.cache
+Environment=CARGO_HOME=${prefix}/_work/runner-home-%i/.cargo
+Environment=CARGO_BUILD_RUSTC_WRAPPER=${prefix}/_work/runner-home-%i/.cargo/bin/flexnetos-kache-rustc-wrapper
+Environment=RUSTUP_HOME=${prefix}/_work/runner-home-%i/.rustup
+Environment=BUN_INSTALL=${prefix}/_work/runner-home-%i/.bun
+Environment=BUN_TMPDIR=${prefix}/_work/runner-home-%i/.cache/bun/tmp
+Environment=KACHE_CONFIG=${prefix}/_work/runner-home-%i/.config/kache/config.toml
+Environment=KACHE_CACHE_DIR=${prefix}/_work/runner-home-%i/.cache/kache
 Environment=CODEX_HOME=${codex_home}
 Environment=GH_CONFIG_DIR=${gh_config_dir}
 Environment=RUNNER_WORKSPACE=${prefix}/_work/actions-runner-%i-work
@@ -194,6 +256,12 @@ KillMode=process
 KillSignal=SIGTERM
 TimeoutStopSec=5min
 UNIT
+  if [[ -n "$session_runtime_dir" ]]; then
+    printf 'Environment=XDG_RUNTIME_DIR=%s\n' "$session_runtime_dir"
+  fi
+  if [[ -n "$session_dbus_address" ]]; then
+    printf 'Environment=DBUS_SESSION_BUS_ADDRESS=%s\n' "$session_dbus_address"
+  fi
   if [[ "$include_user" == 1 ]]; then
     printf 'User=%s\n' "$runner_user"
   fi
@@ -265,6 +333,69 @@ write_path_files() {
     home_dir="${prefix}/_work/runner-home-${slot}"
     work_dir="${prefix}/_work/actions-runner-${slot}-work"
     install -d -m 0755 "$runner_dir" "$home_dir" "$work_dir"
+    install -d -m 0755 "${home_dir}/.cargo/bin" "${home_dir}/.config/kache" "${home_dir}/.cache/kache"
+    cat > "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export KACHE_CONFIG="${home_dir}/.config/kache/config.toml"
+export KACHE_CACHE_DIR="${home_dir}/.cache/kache"
+exec "/home/flexnetos/FlexNetOS/usr/bin/kache-rustc-wrapper" "\$@"
+EOF
+    chmod 755 "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+    cat > "${home_dir}/.cargo/config.toml" <<EOF
+[build]
+rustc-wrapper = "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+EOF
+    cat > "${home_dir}/.config/kache/config.toml" <<EOF
+[cache]
+local_store = "${home_dir}/.cache/kache"
+local_max_size = "50GiB"
+local_only = true
+clean_incremental = true
+cache_executables = false
+EOF
+    cat > "${runner_dir}/flexnetos-runner-entrypoint.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+current_user="\$(id -un)"
+
+manager_env_value() {
+  local key="\$1"
+  systemctl --user show-environment 2>/dev/null | awk -F= -v key="\$key" '\$1 == key { print substr(\$0, length(key) + 2); exit }'
+}
+
+active_session_id() {
+  loginctl list-sessions --no-legend 2>/dev/null | awk -v user="\$current_user" '\$3 == user && \$6 == "user" && \$5 != "manager" { print \$1; exit }'
+}
+
+session_property() {
+  local key="\$1"
+  local session_id
+  session_id="\$(active_session_id || true)"
+  [[ -n "\$session_id" ]] || return 1
+  loginctl show-session "\$session_id" -p "\$key" --value 2>/dev/null
+}
+
+if [[ -z "\${DISPLAY:-}" ]]; then
+  export DISPLAY="\$(manager_env_value DISPLAY || true)"
+fi
+if [[ -z "\${WAYLAND_DISPLAY:-}" ]]; then
+  export WAYLAND_DISPLAY="\$(manager_env_value WAYLAND_DISPLAY || true)"
+fi
+if [[ -z "\${XDG_SESSION_TYPE:-}" || "\${XDG_SESSION_TYPE:-}" == "unspecified" ]]; then
+  session_type="\$(manager_env_value XDG_SESSION_TYPE || true)"
+  if [[ -z "\$session_type" || "\$session_type" == "unspecified" ]]; then
+    session_type="\$(session_property Type || true)"
+  fi
+  if [[ -n "\$session_type" ]]; then
+    export XDG_SESSION_TYPE="\$session_type"
+  fi
+fi
+
+exec "${runner_dir}/runsvc.sh"
+EOF
+    chmod 755 "${runner_dir}/flexnetos-runner-entrypoint.sh"
     path_for_slot "$slot" > "${runner_dir}/.path"
   done
 }

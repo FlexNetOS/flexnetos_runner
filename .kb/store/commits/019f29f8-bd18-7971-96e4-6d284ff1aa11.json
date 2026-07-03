@@ -1,0 +1,5 @@
+{
+  "commit": {"author":"drdave <flexnetos@de-flex.net>","changes":[{"change_type":"modified","content_hash":"f4250f1338b2b4b0f350f48fb91053645c5bdbac00bd81be21227c5858d52b40","doc_type":"task","document_id":"019f2942-b2c9-75d3-9165-fa064437f69e","metadata_changes":[{"field":"status","new_value":"completed","old_value":"draft"}],"new_version":2,"previous_commit_id":"019f294b-f7be-7953-b122-f767f921c52f","previous_hash":"2a06aaf656063139ec90af8dc35e537d5a5b13cff29f9712e18d546fb8b9cbb9","previous_version":1,"slug":"create-live-pack-finish-matrix","title":"Create live pack finish matrix"}],"created_at":"2026-07-03T21:53:15.024508792Z","id":"019f29f8-bd18-7971-96e4-6d284ff1aa11","message":"Complete pack finish matrix task"},
+  "content_hash": "3d2f8074c07ad75da25eb3167ac0e94af5df823c5032bcc566f0ca6146bd431c",
+  "hash_version": 3
+}
