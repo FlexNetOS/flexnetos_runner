@@ -3,6 +3,7 @@
 
 mod cache;
 mod forge_loop;
+mod runner_state;
 
 use clap::{Parser, Subcommand};
 use runner_core::{
@@ -44,6 +45,11 @@ enum Cmd {
     Cache {
         #[command(subcommand)]
         cmd: cache::CacheCommand,
+    },
+    // Classify, normalize, settle, and snapshot preserved runner state.
+    RunnerState {
+        #[command(subcommand)]
+        cmd: runner_state::RunnerStateCommand,
     },
     /// Report rails + seam wiring status.
     Doctor,
@@ -110,6 +116,7 @@ fn main() -> anyhow::Result<()> {
         }
         Cmd::ForgeLoop { cmd } => forge_loop::execute(*cmd)?,
         Cmd::Cache { cmd } => cache::execute(cmd)?,
+        Cmd::RunnerState { cmd } => runner_state::execute(cmd)?,
         Cmd::Doctor => {
             let rails = safety::Rails::default();
             println!("fxrun");
