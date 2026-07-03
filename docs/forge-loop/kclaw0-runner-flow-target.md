@@ -93,3 +93,7 @@ The agentic watch waits briefly on that trigger so the completed Codex run leave
 before it evaluates another growth dispatch. It still refuses to launch another Codex cycle while any
 PR is open or another Codex run is active, so the completion wakeup closes post-growth idle gaps
 without violating the merge-before-next-cycle invariant.
+
+## Runner state settle gate
+
+`fxrun runner-state audit --strict --format json` is the local preserve-state gate for repo-local runner churn. It classifies `_work` dirty state instead of hiding it, preserves runner identity files, dedupes runner-home `safe.directory` churn through `fxrun runner-state normalize`, and routes old cache pressure to `fxrun cache compress` when `settle --compress-old-cache` is requested. A strict pass means preserved runner state is clean, actively owned, manifest-compressed, normalized, or intentionally ready for a snapshot commit.
