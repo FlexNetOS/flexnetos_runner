@@ -7,6 +7,12 @@ release output surface is the workspace-level `release/` directory:
 /home/flexnetos/FlexNetOS/release/
 ```
 
+See [pack-finish-matrix.md](pack-finish-matrix.md) for the live finish matrix
+derived from the quarantined production pack. The pack is intent and ordering;
+release readiness comes only from live proof surfaces such as clean `env -i`
+commands, envctl tables, GitKB/meta status, Yazelix doctor, runner provenance,
+release checksums, and clean-prefix install logs.
+
 The first supported target is intentionally narrow:
 
 - OS: Ubuntu 26.04

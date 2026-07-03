@@ -30,6 +30,7 @@ system_path_tail="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/
 codex_home="${CODEX_HOME:-}"
 gh_config_dir="${GH_CONFIG_DIR:-}"
 codex_bin_dir="${FXRUN_RUNNER_CODEX_BIN_DIR:-}"
+unit_config_home="${FXRUN_RUNNER_XDG_CONFIG_HOME:-}"
 
 usage() {
   cat <<USAGE
@@ -53,6 +54,7 @@ Options:
   --codex-home DIR       CODEX_HOME to place in units.
   --gh-config-dir DIR    GH_CONFIG_DIR to place in units.
   --codex-bin-dir DIR    Codex binary dir to include in generated .path.
+  --xdg-config-home DIR  Config home for user-mode unit placement.
   -h, --help             Show this help.
 
 Examples:
@@ -90,6 +92,7 @@ while [[ $# -gt 0 ]]; do
     --codex-home) codex_home="$2"; shift 2 ;;
     --gh-config-dir) gh_config_dir="$2"; shift 2 ;;
     --codex-bin-dir) codex_bin_dir="$2"; shift 2 ;;
+    --xdg-config-home) unit_config_home="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -153,6 +156,9 @@ fi
 if [[ -z "$yazelix_bin" ]]; then
   yazelix_bin="${prefix}/usr/bin"
 fi
+if [[ -z "$unit_config_home" ]]; then
+  unit_config_home="${runner_home_base}/.config"
+fi
 
 unit_names=()
 for slot in "${slots[@]}"; do
@@ -166,9 +172,10 @@ join_units() {
 
 path_for_slot() {
   local slot="$1"
-  printf '%s:%s:%s:%s:%s\n' \
+  printf '%s:%s:%s:%s:%s:%s\n' \
     "$yazelix_bin" \
     "${prefix}/_work/runner-home-${slot}/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin" \
+    "${prefix}/_work/runner-home-${slot}/.cargo/bin" \
     "$codex_bin_dir" \
     "$nix_profile_bin" \
     "$system_path_tail"
@@ -183,10 +190,24 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=${prefix}/_work/repos/actions-runner-%i/runsvc.sh
+ExecStart=${prefix}/_work/repos/actions-runner-%i/flexnetos-runner-entrypoint.sh
 WorkingDirectory=${prefix}/_work/repos/actions-runner-%i
+PassEnvironment=DBUS_SESSION_BUS_ADDRESS
+PassEnvironment=DISPLAY
+PassEnvironment=WAYLAND_DISPLAY
+PassEnvironment=XDG_RUNTIME_DIR
+PassEnvironment=XDG_SESSION_TYPE
 Environment=HOME=${prefix}/_work/runner-home-%i
 Environment=GIT_CONFIG_GLOBAL=${prefix}/_work/runner-home-%i/.gitconfig
+Environment=XDG_CONFIG_HOME=${prefix}/_work/runner-home-%i/.config
+Environment=XDG_CACHE_HOME=${prefix}/_work/runner-home-%i/.cache
+Environment=CARGO_HOME=${prefix}/_work/runner-home-%i/.cargo
+Environment=CARGO_BUILD_RUSTC_WRAPPER=${prefix}/_work/runner-home-%i/.cargo/bin/flexnetos-kache-rustc-wrapper
+Environment=RUSTUP_HOME=${prefix}/_work/runner-home-%i/.rustup
+Environment=BUN_INSTALL=${prefix}/_work/runner-home-%i/.bun
+Environment=BUN_TMPDIR=${prefix}/_work/runner-home-%i/.cache/bun/tmp
+Environment=KACHE_CONFIG=${prefix}/_work/runner-home-%i/.config/kache/config.toml
+Environment=KACHE_CACHE_DIR=${prefix}/_work/runner-home-%i/.cache/kache
 Environment=CODEX_HOME=${codex_home}
 Environment=GH_CONFIG_DIR=${gh_config_dir}
 Environment=RUNNER_WORKSPACE=${prefix}/_work/actions-runner-%i-work
@@ -206,7 +227,7 @@ UNIT
 
 unit_dir_for_mode() {
   case "$mode" in
-    user) printf '%s\n' "${XDG_CONFIG_HOME:-${HOME:?HOME is required}/.config}/systemd/user" ;;
+    user) printf '%s\n' "${unit_config_home}/systemd/user" ;;
     system) printf '%s\n' "/etc/systemd/system" ;;
   esac
 }
@@ -265,6 +286,69 @@ write_path_files() {
     home_dir="${prefix}/_work/runner-home-${slot}"
     work_dir="${prefix}/_work/actions-runner-${slot}-work"
     install -d -m 0755 "$runner_dir" "$home_dir" "$work_dir"
+    install -d -m 0755 "${home_dir}/.cargo/bin" "${home_dir}/.config/kache" "${home_dir}/.cache/kache"
+    cat > "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export KACHE_CONFIG="${home_dir}/.config/kache/config.toml"
+export KACHE_CACHE_DIR="${home_dir}/.cache/kache"
+exec "/home/flexnetos/FlexNetOS/usr/bin/kache-rustc-wrapper" "\$@"
+EOF
+    chmod 755 "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+    cat > "${home_dir}/.cargo/config.toml" <<EOF
+[build]
+rustc-wrapper = "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+EOF
+    cat > "${home_dir}/.config/kache/config.toml" <<EOF
+[cache]
+local_store = "${home_dir}/.cache/kache"
+local_max_size = "50GiB"
+local_only = true
+clean_incremental = true
+cache_executables = false
+EOF
+    cat > "${runner_dir}/flexnetos-runner-entrypoint.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+current_user="\$(id -un)"
+
+manager_env_value() {
+  local key="\$1"
+  systemctl --user show-environment 2>/dev/null | awk -F= -v key="\$key" '\$1 == key { print substr(\$0, length(key) + 2); exit }'
+}
+
+active_session_id() {
+  loginctl list-sessions --no-legend 2>/dev/null | awk -v user="\$current_user" '\$3 == user && \$6 == "user" && \$5 != "manager" { print \$1; exit }'
+}
+
+session_property() {
+  local key="\$1"
+  local session_id
+  session_id="\$(active_session_id || true)"
+  [[ -n "\$session_id" ]] || return 1
+  loginctl show-session "\$session_id" -p "\$key" --value 2>/dev/null
+}
+
+if [[ -z "\${DISPLAY:-}" ]]; then
+  export DISPLAY="\$(manager_env_value DISPLAY || true)"
+fi
+if [[ -z "\${WAYLAND_DISPLAY:-}" ]]; then
+  export WAYLAND_DISPLAY="\$(manager_env_value WAYLAND_DISPLAY || true)"
+fi
+if [[ -z "\${XDG_SESSION_TYPE:-}" || "\${XDG_SESSION_TYPE:-}" == "unspecified" ]]; then
+  session_type="\$(manager_env_value XDG_SESSION_TYPE || true)"
+  if [[ -z "\$session_type" || "\$session_type" == "unspecified" ]]; then
+    session_type="\$(session_property Type || true)"
+  fi
+  if [[ -n "\$session_type" ]]; then
+    export XDG_SESSION_TYPE="\$session_type"
+  fi
+fi
+
+exec "${runner_dir}/runsvc.sh"
+EOF
+    chmod 755 "${runner_dir}/flexnetos-runner-entrypoint.sh"
     path_for_slot "$slot" > "${runner_dir}/.path"
   done
 }
