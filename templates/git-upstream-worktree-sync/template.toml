@@ -1,0 +1,24 @@
+name = "git-upstream-worktree-sync"
+version = "0.1.0"
+owner = "FlexNetOS"
+description = "Reusable isolated-worktree template for fork upstream syncs without disturbing local checkout work."
+
+[provenance]
+source_repo = "FlexNetOS/rtk-tokenkill"
+merge_commit = "9e6f7b0774b781261422f31f7cefe5607f449595"
+upstream_command_commit = "ab83e7933ebc26ca76f843d33285729875efb913"
+observed_sync_branch = "chore/sync-upstream-0.42.4"
+observed_remote_tracking_ref = "upstream/master"
+
+[install]
+copy_scripts_to = "scripts/"
+copy_claude_commands_to = ".claude/commands/"
+append_gitignore_from = ".gitignore.append"
+optional_worktree_include = ".worktreeinclude.example"
+
+[safety]
+uses_isolated_worktree = true
+force_pushes = false
+resets_history = false
+direct_push_default = false
+generated_runtime = false

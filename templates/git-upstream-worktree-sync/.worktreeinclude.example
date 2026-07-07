@@ -1,0 +1,8 @@
+# Files copied into newly-created worktrees by the template helpers.
+# Keep this list repo-specific. Avoid tracked raw secrets unless the target repo
+# already deliberately tracks them.
+
+.env
+.env.local
+.claude/settings.local.json
+.codex/config.toml
