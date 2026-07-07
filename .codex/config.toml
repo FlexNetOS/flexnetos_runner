@@ -3,7 +3,6 @@
 model = "gpt-5.5"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
-approval_policy = "never"
 model_context_window = 4000000
 model_auto_compact_token_limit = 3000000
 model_auto_compact_token_limit_scope = "total"
@@ -16,6 +15,5 @@ hooks = true
 auto_compaction = true
 
 [agents]
-max_threads = 6
 max_depth = 1
 job_max_runtime_seconds = 1800
