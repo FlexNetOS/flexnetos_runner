@@ -421,6 +421,7 @@ pub struct ResearchSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CodexInvocation {
     pub program: String,
+    pub env: BTreeMap<String, String>,
     pub args: Vec<String>,
 }
 
@@ -961,6 +962,7 @@ fn run(args: RunArgs) -> Result<()> {
     }
 
     let status = Command::new(&invocation.program)
+        .envs(&invocation.env)
         .args(&invocation.args)
         .stdin(Stdio::null())
         .status()
@@ -1038,6 +1040,7 @@ fn research(args: ResearchArgs) -> Result<()> {
     let invocation = codex_invocation(prompt);
     println!("{}", serde_json::to_string_pretty(&invocation)?);
     let status = Command::new(&invocation.program)
+        .envs(&invocation.env)
         .args(&invocation.args)
         .stdin(Stdio::null())
         .status()
@@ -1059,6 +1062,7 @@ fn self_upgrade(args: SelfUpgradeArgs) -> Result<()> {
     let prompt = self_upgrade_prompt(report.score);
     let invocation = codex_invocation(prompt);
     let status = Command::new(&invocation.program)
+        .envs(&invocation.env)
         .args(&invocation.args)
         .status()?;
     if !status.success() {
@@ -4282,8 +4286,18 @@ fn codex_auth_readiness() -> CodexAuthReadiness {
 }
 
 pub fn codex_invocation(prompt: String) -> CodexInvocation {
+    let program = codex_program();
+    let codex_home = std::env::var("CODEX_HOME")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_CODEX_HOME.into());
+    let mut env = BTreeMap::new();
+    env.insert("CODEX_HOME".into(), codex_home);
+    env.insert("FXRUN_CODEX".into(), program.clone());
+
     CodexInvocation {
-        program: codex_program(),
+        program,
+        env,
         args: vec![
             "exec".into(),
             "--json".into(),
@@ -5140,6 +5154,35 @@ mod tests {
                 "--output-schema",
                 ".github/codex/schemas/forge-loop-output.schema.json"
             ]));
+    }
+
+    #[test]
+    fn codex_invocation_exports_local_chatgpt_auth_environment() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        let previous_fxrun_codex = std::env::var("FXRUN_CODEX").ok();
+        std::env::remove_var("CODEX_HOME");
+        std::env::remove_var("FXRUN_CODEX");
+
+        let inv = codex_invocation("do work".into());
+
+        if let Some(value) = previous_codex_home {
+            std::env::set_var("CODEX_HOME", value);
+        }
+        if let Some(value) = previous_fxrun_codex {
+            std::env::set_var("FXRUN_CODEX", value);
+        }
+
+        assert_eq!(
+            inv.env.get("CODEX_HOME").map(String::as_str),
+            Some(DEFAULT_CODEX_HOME),
+            "nested codex exec should use the scheduled local ChatGPT auth home"
+        );
+        assert_eq!(
+            inv.env.get("FXRUN_CODEX").map(String::as_str),
+            Some(inv.program.as_str()),
+            "nested codex exec should preserve the profile-owned Codex frontdoor"
+        );
     }
 
     #[test]
