@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_CODEX: &str = "/home/flexnetos/.local/bin/codex";
+const DEFAULT_CODEX: &str = "/home/flexnetos/.nix-profile/bin/codex";
 const DEFAULT_CODEX_HOME: &str = "/home/flexnetos/.codex";
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
@@ -5122,6 +5122,11 @@ mod tests {
             .windows(2)
             .any(|w| w == ["--config", "approval_policy=\"never\""]));
         assert_eq!(inv.args.last().unwrap(), "do work");
+    }
+
+    #[test]
+    fn codex_program_default_uses_profile_owned_codex_frontdoor() {
+        assert_eq!(DEFAULT_CODEX, "/home/flexnetos/.nix-profile/bin/codex");
     }
 
     #[test]
