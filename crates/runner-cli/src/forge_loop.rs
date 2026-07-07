@@ -453,6 +453,7 @@ pub struct CodexAuthReadiness {
     pub auth_json: String,
     pub auth_json_present: bool,
     pub login_status_command: &'static str,
+    pub verification_commands: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -4216,9 +4217,13 @@ fn codex_auth_readiness() -> CodexAuthReadiness {
     CodexAuthReadiness {
         auth_mode: "local_chatgpt",
         codex_home,
-        auth_json: auth_json_display,
+        auth_json: auth_json_display.clone(),
         auth_json_present: auth_json.exists(),
         login_status_command: "rtk codex login status",
+        verification_commands: vec![
+            "rtk codex login status".into(),
+            format!("rtk proxy test -f {auth_json_display}"),
+        ],
     }
 }
 
@@ -5072,6 +5077,30 @@ mod tests {
     }
 
     #[test]
+    fn codex_auth_readiness_exports_subscription_verification_commands() {
+        let auth = codex_auth_readiness();
+
+        assert!(
+            auth.verification_commands
+                .iter()
+                .any(|command| command == "rtk codex login status"),
+            "auth readiness should include the subscription login status proof command"
+        );
+        assert!(
+            auth.verification_commands
+                .iter()
+                .any(|command| command.contains("auth.json")),
+            "auth readiness should include a non-secret auth.json presence proof command"
+        );
+        assert!(
+            auth.verification_commands
+                .iter()
+                .all(|command| command.starts_with("rtk ")),
+            "auth readiness verification commands must obey forge-loop shell discipline"
+        );
+    }
+
+    #[test]
     fn subscription_auth_readiness_defaults_to_scheduled_codex_home() {
         let _guard = ENV_LOCK.lock().expect("env lock");
         let previous = std::env::var("CODEX_HOME").ok();
@@ -5786,6 +5815,16 @@ R  "docs/old note.md" -> "docs/new note.md"
             format!("{DEFAULT_CODEX_HOME}/auth.json")
         );
         assert_eq!(parsed["login_status_command"], "rtk codex login status");
+        let verification_commands = parsed["verification_commands"]
+            .as_array()
+            .expect("verification commands");
+        assert!(verification_commands
+            .iter()
+            .any(|command| command == "rtk codex login status"));
+        assert!(verification_commands
+            .iter()
+            .filter_map(|command| command.as_str())
+            .all(|command| command.starts_with("rtk ")));
 
         fs::remove_dir_all(out).ok();
     }
