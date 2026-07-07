@@ -9803,7 +9803,8 @@ R  "docs/old note.md" -> "docs/new note.md"
             "Codex Forge Loop",
             "required local checks need the runner lane",
             "runner-pressure.env",
-            "pending PR-local checks own the runner lane",
+            "pending/failed PR-local checks or required main-branch local checks own the runner lane",
+            "required_run_pressure",
             "dispatching Runner Sustain lane",
             "runner-flow-audit",
             "--strict",
@@ -9824,7 +9825,7 @@ R  "docs/old note.md" -> "docs/new note.md"
         assert!(target.contains("required-check pressure clears"));
         assert!(target.contains("tops up a small `Runner Sustain` active/queued backlog"));
         assert!(
-            target.contains("pending PR or main-branch local checks make the watch record a non-strict audit and stay green")
+            target.contains("pending or failed PR-local checks or required main-branch local checks make the watch record a non-strict audit and stay green")
         );
         assert!(target.contains("clamped to 1-4"));
         assert!(target.contains("defaults to 4"));
