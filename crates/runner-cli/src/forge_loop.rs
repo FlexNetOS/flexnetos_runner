@@ -821,6 +821,12 @@ pub struct CycleManifest {
     pub goal: String,
     pub pr_title: String,
     pub prompt_sha256: String,
+    #[serde(default = "default_auth_mode_string")]
+    pub auth_mode: String,
+    #[serde(default = "default_auth_status_command_string")]
+    pub auth_status_command: String,
+    #[serde(default = "default_auth_verification_commands")]
+    pub auth_verification_commands: Vec<String>,
     pub once: bool,
     pub auto_merge: bool,
     pub strict_upgrade_only: bool,
@@ -4634,16 +4640,32 @@ fn cycle_number_from_goal(goal: &str) -> Option<u8> {
 
 fn cycle_manifest(args: &RunArgs) -> CycleManifest {
     let prompt = cycle_prompt(&args.goal, args.auto_merge);
+    let auth = codex_auth_readiness();
     CycleManifest {
         schema_version: CYCLE_MANIFEST_SCHEMA_VERSION,
         goal: args.goal.clone(),
         pr_title: cycle_pr_title(&args.goal),
         prompt_sha256: runner_core::constitution::hash(prompt.as_bytes()),
+        auth_mode: auth.auth_mode.into(),
+        auth_status_command: auth.login_status_command.into(),
+        auth_verification_commands: auth.verification_commands,
         once: args.once,
         auto_merge: args.auto_merge,
         strict_upgrade_only: true,
         phases: required_phases(),
     }
+}
+
+fn default_auth_mode_string() -> String {
+    codex_auth_readiness().auth_mode.into()
+}
+
+fn default_auth_status_command_string() -> String {
+    codex_auth_readiness().login_status_command.into()
+}
+
+fn default_auth_verification_commands() -> Vec<String> {
+    codex_auth_readiness().verification_commands
 }
 
 fn required_phases() -> Vec<CyclePhase> {
@@ -5227,6 +5249,28 @@ mod tests {
                 .all(|command| command.starts_with("rtk ")),
             "auth readiness verification commands must obey forge-loop shell discipline"
         );
+    }
+
+    #[test]
+    fn cycle_manifest_preserves_subscription_auth_readiness_contract() {
+        let manifest = cycle_manifest(&RunArgs {
+            goal: "scheduled subscription-auth Codex self-improvement".into(),
+            out: PathBuf::from("_work/forge-loop"),
+            dry_run: false,
+            auto_merge: true,
+            once: true,
+        });
+
+        assert_eq!(manifest.auth_mode, "local_chatgpt");
+        assert_eq!(manifest.auth_status_command, "rtk codex login status");
+        assert!(manifest
+            .auth_verification_commands
+            .iter()
+            .any(|command| command == "rtk codex login status"));
+        assert!(manifest
+            .auth_verification_commands
+            .iter()
+            .any(|command| command == "rtk proxy test -f /home/flexnetos/.codex/auth.json"));
     }
 
     #[test]
