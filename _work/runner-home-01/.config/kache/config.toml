@@ -1,0 +1,6 @@
+[cache]
+local_store = "/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-01/.cache/kache"
+local_max_size = "50GiB"
+local_only = true
+clean_incremental = true
+cache_executables = false
