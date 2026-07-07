@@ -9443,6 +9443,16 @@ audit = "rtk cargo audit --deny warnings"
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
         }
+        let dispatch_offset = workflow
+            .find("Dispatch Codex forge-loop growth when safe")
+            .expect("dispatch growth step");
+        let strict_proof_offset = workflow
+            .find("Prove end-to-end agentic system")
+            .expect("strict proof step");
+        assert!(
+            dispatch_offset < strict_proof_offset,
+            "agentic watch must dispatch/refill growth before the strict proof gate so always-growing evidence can become true"
+        );
         for required in [
             "Always researching",
             "Always evaluating",
