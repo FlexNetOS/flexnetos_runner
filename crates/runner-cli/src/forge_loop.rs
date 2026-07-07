@@ -2913,6 +2913,7 @@ fn is_local_runner_check(name: &str) -> bool {
 
 fn components_audit(args: ComponentsAuditArgs) -> Result<()> {
     let report = components_audit_report(&args.root);
+    let strict_blockers = components_audit_strict_blockers(&report);
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
@@ -2926,16 +2927,53 @@ fn components_audit(args: ComponentsAuditArgs) -> Result<()> {
                 println!("    - {component}");
             }
         }
+        if !report.permission_profile_readiness.blockers.is_empty() {
+            println!("  permission profile blockers:");
+            for blocker in &report.permission_profile_readiness.blockers {
+                println!("    - {blocker}");
+            }
+        }
+        if !report.checklist_shell_discipline.blockers.is_empty() {
+            println!("  checklist shell-discipline blockers:");
+            for blocker in &report.checklist_shell_discipline.blockers {
+                println!("    - {blocker}");
+            }
+        }
     }
 
-    if args.strict && !report.missing_components.is_empty() {
+    if args.strict && !strict_blockers.is_empty() {
         Err(anyhow!(
-            "forge-loop components missing: {}",
-            report.missing_components.join(", ")
+            "forge-loop components audit blockers: {}",
+            strict_blockers.join(", ")
         ))
     } else {
         Ok(())
     }
+}
+
+fn components_audit_strict_blockers(report: &ComponentsAuditReport) -> Vec<String> {
+    let mut blockers = Vec::new();
+    blockers.extend(
+        report
+            .missing_components
+            .iter()
+            .map(|component| format!("missing_component:{component}")),
+    );
+    blockers.extend(
+        report
+            .permission_profile_readiness
+            .blockers
+            .iter()
+            .map(|blocker| format!("permission_profile:{blocker}")),
+    );
+    blockers.extend(
+        report
+            .checklist_shell_discipline
+            .blockers
+            .iter()
+            .map(|blocker| format!("checklist_shell_discipline:{blocker}")),
+    );
+    blockers
 }
 
 fn target_mining_audit(args: TargetMiningAuditArgs) -> Result<()> {
@@ -6393,6 +6431,51 @@ R  "docs/old note.md" -> "docs/new note.md"
                 "self-upgrade plan phase validation commands must preserve rtk shell discipline for {phase}"
             );
         }
+    }
+
+    #[test]
+    fn components_audit_strict_fails_on_readiness_blockers() {
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-components-audit-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        let checklist_dir = root.join(".codex/checklists");
+        fs::create_dir_all(&checklist_dir).expect("checklist dir");
+        fs::write(
+            checklist_dir.join("forge-loop-cycle.toml"),
+            r#"
+component_audit = "cargo run -q -p runner-cli -- forge-loop components-audit --strict"
+target_mining_audit = "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
+docs_drift = "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json"
+forge_loop_tests = "rtk cargo test -p runner-cli --all-features forge_loop::tests"
+workspace_tests = "rtk cargo test --workspace --all-features"
+clippy = "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings"
+audit = "rtk cargo audit --deny warnings"
+"#,
+        )
+        .expect("checklist");
+
+        let error = components_audit(ComponentsAuditArgs {
+            root: root.clone(),
+            json: true,
+            strict: true,
+        })
+        .expect_err("strict components audit must fail on readiness blockers");
+
+        let message = error.root_cause().to_string();
+        assert!(
+            message.contains("checklist_shell_discipline"),
+            "strict failure should name checklist shell-discipline blockers: {message}"
+        );
+        assert!(
+            message.contains("permission_profile"),
+            "strict failure should name permission-profile readiness blockers: {message}"
+        );
+
+        fs::remove_dir_all(root).ok();
     }
 
     #[test]
