@@ -47,9 +47,14 @@ struct Dispatcher {
 
 impl Dispatcher {
     /// Launch the real binary on a fresh socket with the given extra env, and wait for the socket.
-    fn start(dir: &Path, stub: &Path, extra_env: &[(&str, String)]) -> Self {
+    fn start(dir: &Path, stub: &Path, extra_env: &[(&str, String)]) -> Option<Self> {
         let sock = dir.join("d.sock");
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_fxrun-dispatch"));
+        if !uds_bind_available(&sock) {
+            return None;
+        }
+        let binary = std::env::var("CARGO_BIN_EXE_fxrun-dispatch")
+            .expect("Cargo must expose CARGO_BIN_EXE_fxrun-dispatch for integration tests");
+        let mut cmd = Command::new(binary);
         cmd.arg("--socket")
             .arg(&sock)
             .env("FXRUN_DISPATCH_KEY", "e2e-dispatch-key")
@@ -68,7 +73,7 @@ impl Dispatcher {
             );
             std::thread::sleep(Duration::from_millis(20));
         }
-        Self { child, sock }
+        Some(Self { child, sock })
     }
 
     /// Send a signed job, return the parsed reply.
@@ -89,6 +94,24 @@ impl Drop for Dispatcher {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+fn uds_bind_available(path: &Path) -> bool {
+    match std::os::unix::net::UnixListener::bind(path) {
+        Ok(listener) => {
+            drop(listener);
+            let _ = std::fs::remove_file(path);
+            true
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!(
+                "skipping dispatcher e2e because this environment denied bind({}): {error}",
+                path.display()
+            );
+            false
+        }
+        Err(error) => panic!("bind Unix listener {}: {error}", path.display()),
     }
 }
 
@@ -119,11 +142,13 @@ fn smoke_real_kernel_runs_and_reports_cost() {
             m = marker.display()
         ),
     );
-    let d = Dispatcher::start(
+    let Some(d) = Dispatcher::start(
         &dir,
         &stub,
         &[("FXRUN_EVENT_LOG", log.display().to_string())],
-    );
+    ) else {
+        return;
+    };
 
     let resp = d.dispatch(&ci_job("smoke-1"));
     assert!(resp.accepted, "valid job accepted: {resp:?}");
@@ -149,7 +174,9 @@ fn smoke_real_kernel_runs_and_reports_cost() {
 fn e2e_kernel_failure_is_rejected_with_recovery() {
     let dir = scratch("fail");
     let stub = write_stub(&dir, "echo 'kernel detonated' >&2\nexit 4");
-    let d = Dispatcher::start(&dir, &stub, &[]);
+    let Some(d) = Dispatcher::start(&dir, &stub, &[]) else {
+        return;
+    };
 
     let resp = d.dispatch(&ci_job("fail-1"));
     assert!(!resp.accepted);
@@ -169,11 +196,13 @@ fn e2e_kernel_failure_is_rejected_with_recovery() {
 fn e2e_hung_kernel_is_killed_at_the_deadline() {
     let dir = scratch("hang");
     let stub = write_stub(&dir, "sleep 30");
-    let d = Dispatcher::start(
+    let Some(d) = Dispatcher::start(
         &dir,
         &stub,
         &[("FXRUN_DEFAULT_DEADLINE_SECS", "1".to_string())],
-    );
+    ) else {
+        return;
+    };
 
     let start = Instant::now();
     let resp = d.dispatch(&ci_job("hang-1"));
@@ -198,7 +227,7 @@ fn e2e_injected_secret_is_redacted_from_the_reply_and_audit() {
     const SECRET: &str = "kernel-bearer-tok3n-do-not-leak";
     // The stub reads its injected secret and (mis)behaves by echoing it on the failure path.
     let stub = write_stub(&dir, "echo \"leaked $KERNEL_TOKEN\" >&2\nexit 1");
-    let d = Dispatcher::start(
+    let Some(d) = Dispatcher::start(
         &dir,
         &stub,
         &[
@@ -206,7 +235,9 @@ fn e2e_injected_secret_is_redacted_from_the_reply_and_audit() {
             ("FXRUN_INJECT_SECRETS", "KERNEL_TOKEN".to_string()),
             ("FXRUN_EVENT_LOG", log.display().to_string()),
         ],
-    );
+    ) else {
+        return;
+    };
 
     let resp = d.dispatch(&ci_job("secret-1"));
     assert!(!resp.accepted);
@@ -235,7 +266,9 @@ fn e2e_tampered_frame_is_rejected_before_execution() {
     let dir = scratch("tamper");
     let marker = dir.join("should-not-run.txt");
     let stub = write_stub(&dir, &format!("echo ran > {}", marker.display()));
-    let d = Dispatcher::start(&dir, &stub, &[]);
+    let Some(d) = Dispatcher::start(&dir, &stub, &[]) else {
+        return;
+    };
 
     // Hand-build a frame whose signature won't verify under KEY.
     let spec = ci_job("tamper-1");
