@@ -105,12 +105,14 @@ jobs:
           set -euo pipefail
           pr_pending_pressure=0
           pr_failed_pressure=0
+          required_run_pressure=0
           if [ -f runner-pressure.env ]; then
             # shellcheck disable=SC1091
             . ./runner-pressure.env
           fi
-          if [ "${pr_pending_pressure}" -gt 0 ]; then
-            echo "::notice::recording non-strict runner-flow audit while ${pr_pending_pressure} pending PR-local checks own the runner lane; failed-pressure witness=${pr_failed_pressure}"
+          pr_pressure=$((pr_pending_pressure + pr_failed_pressure + required_run_pressure))
+          if [ "${pr_pressure}" -gt 0 ]; then
+            echo "::notice::recording non-strict runner-flow audit while pending/failed PR-local checks or required main-branch local checks own the runner lane; pending=${pr_pending_pressure} failed=${pr_failed_pressure} required_runs=${required_run_pressure}"
             cargo run -q -p runner-cli -- forge-loop runner-flow-audit \
               --runs-json runs-live.json \
               --prs-json prs-open.json \
