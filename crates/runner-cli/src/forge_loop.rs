@@ -897,6 +897,10 @@ fn run(args: RunArgs) -> Result<()> {
         serde_json::to_string_pretty(&research_sources())?,
     )?;
     fs::write(
+        cycle_dir.join("codex-auth-readiness.json"),
+        serde_json::to_string_pretty(&codex_auth_readiness())?,
+    )?;
+    fs::write(
         cycle_dir.join("required-gates.json"),
         serde_json::to_string_pretty(&REQUIRED_GATE_COMMANDS)?,
     )?;
@@ -5749,6 +5753,39 @@ R  "docs/old note.md" -> "docs/new note.md"
             .any(|command| command == "rtk cargo audit --deny warnings"));
         assert!(parsed.iter().any(|command| command
             == "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings"));
+
+        fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn dry_run_writes_subscription_auth_readiness_artifact() {
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-auth-readiness-{}",
+            std::process::id()
+        ));
+        fs::remove_dir_all(&out).ok();
+
+        run(RunArgs {
+            goal: "scheduled subscription-auth Codex self-improvement".into(),
+            out: out.clone(),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        })
+        .expect("dry run");
+
+        let auth = fs::read_to_string(out.join("cycle/codex-auth-readiness.json"))
+            .expect("subscription auth readiness artifact");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&auth).expect("subscription auth readiness json");
+
+        assert_eq!(parsed["auth_mode"], "local_chatgpt");
+        assert_eq!(parsed["codex_home"], DEFAULT_CODEX_HOME);
+        assert_eq!(
+            parsed["auth_json"],
+            format!("{DEFAULT_CODEX_HOME}/auth.json")
+        );
+        assert_eq!(parsed["login_status_command"], "rtk codex login status");
 
         fs::remove_dir_all(out).ok();
     }
