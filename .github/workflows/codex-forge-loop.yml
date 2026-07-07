@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 60
     env:
       CODEX_HOME: /home/flexnetos/.codex
-      CODEX_BIN: /home/flexnetos/.local/bin/codex
+      CODEX_BIN: /home/flexnetos/.nix-profile/bin/codex
       GH_CONFIG_DIR: /home/flexnetos/.config/gh
       MODEL_INPUT: ${{ inputs.model }}
       EFFORT_INPUT: ${{ inputs.effort }}
@@ -51,7 +51,14 @@ jobs:
           unset GH_TOKEN GITHUB_TOKEN
           gh auth status --hostname github.com
           gh auth setup-git --hostname github.com
-          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ ! -s /home/flexnetos/.ssh/id_ed25519 ]; then
+            echo "::error::local runner SSH deploy key missing; workflow-file PR publishing needs SSH instead of OAuth workflow scope"
+            exit 1
+          fi
+          mkdir -p /home/flexnetos/.ssh
+          ssh-keyscan -H github.com >> /home/flexnetos/.ssh/known_hosts 2>/dev/null || true
+          echo "GIT_SSH_COMMAND=ssh -i /home/flexnetos/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" >> "${GITHUB_ENV}"
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
       - name: Run Codex forge-loop prompt with local ChatGPT auth
         id: run_codex
         shell: bash

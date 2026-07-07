@@ -9236,6 +9236,9 @@ audit = "rtk cargo audit --deny warnings"
             "unset GH_TOKEN GITHUB_TOKEN",
             "gh auth setup-git --hostname github.com",
             "git remote set-url origin",
+            "GIT_SSH_COMMAND",
+            "git@github.com:${GITHUB_REPOSITORY}.git",
+            "CODEX_BIN: /home/flexnetos/.nix-profile/bin/codex",
             "actions: write",
             "PROMPT_FILE_INPUT:",
             "invalid prompt_file input",
@@ -9252,6 +9255,10 @@ audit = "rtk cargo audit --deny warnings"
         ] {
             assert!(workflow.contains(required), "workflow missing {required}");
         }
+        assert!(
+            !workflow.contains("CODEX_BIN: /home/flexnetos/.local/bin/codex"),
+            "workflow must not route Codex through stale user-local shadows"
+        );
     }
 
     #[test]
