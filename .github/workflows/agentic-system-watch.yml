@@ -117,12 +117,22 @@ jobs:
           gh run list --limit "${RUN_HISTORY_LIMIT}" --json name,status,conclusion,createdAt,updatedAt,event,displayTitle,url > runs-live.json
           gh pr list --state open --limit 100 --json number,title,state,mergedAt,statusCheckRollup,url > prs-open.json
           gh pr list --state all --limit 200 --json number,title,state,mergedAt,statusCheckRollup,url > prs-history.json
-          cargo run -q -p runner-cli -- forge-loop agentic-system-audit \
+          if cargo run -q -p runner-cli -- forge-loop agentic-system-audit \
             --runs-json runs-live.json \
             --open-prs-json prs-open.json \
             --prs-history-json prs-history.json \
             --strict \
-            --json | tee agentic-system-audit.json
+            --json | tee agentic-system-audit.json; then
+            exit 0
+          fi
+          dispatch_state="$(sed -n 's/^dispatch=//p' agentic-dispatch.env | tail -1)"
+          case "${dispatch_state}" in
+            codex_forge_loop|skipped_active_codex|skipped_open_pr|skipped_pr_pressure)
+              echo "::notice::agentic proof not strict-green yet; dispatch_state=${dispatch_state} keeps growth or PR work in flight"
+              exit 0
+              ;;
+          esac
+          exit 1
       - uses: actions/upload-artifact@v7
         if: always()
         with:

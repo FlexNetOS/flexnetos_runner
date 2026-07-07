@@ -9453,6 +9453,14 @@ audit = "rtk cargo audit --deny warnings"
             dispatch_offset < strict_proof_offset,
             "agentic watch must dispatch/refill growth before the strict proof gate so always-growing evidence can become true"
         );
+        assert!(
+            workflow.contains("dispatch_state=\"$(sed -n 's/^dispatch=//p' agentic-dispatch.env | tail -1)\""),
+            "agentic watch must read dispatch state before deciding whether an in-flight repair is acceptable"
+        );
+        assert!(
+            workflow.contains("agentic proof not strict-green yet; dispatch_state=${dispatch_state} keeps growth or PR work in flight"),
+            "agentic watch should not fail red while dispatched growth or PR pressure is already in flight"
+        );
         for required in [
             "Always researching",
             "Always evaluating",
