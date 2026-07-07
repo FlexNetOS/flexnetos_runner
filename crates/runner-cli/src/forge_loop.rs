@@ -1089,6 +1089,7 @@ fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
         "runner_queue_audit": "rtk fxrun forge-loop runner-queue-audit --repo-jobs-json <repo-jobs.json> --json",
         "agentic_system_audit": "rtk fxrun forge-loop agentic-system-audit --json",
         "compact_continuity": "compact-continuity.json",
+        "compact_summary_events": compact_continuity_artifact().compact_summary_events,
         "phase_next_actions": phase_next_actions(),
         "phase_validation_commands": phase_validation_commands(),
         "phase_validation_state": phase_validation_state()
@@ -6433,6 +6434,23 @@ R  "docs/old note.md" -> "docs/new note.md"
                 "self-upgrade plan phase validation commands must preserve rtk shell discipline for {phase}"
             );
         }
+    }
+
+    #[test]
+    fn self_upgrade_plan_exports_compact_summary_event_continuity() {
+        let plan = self_upgrade_plan(70);
+        let compact_summary_events = plan["compact_summary_events"]
+            .as_array()
+            .expect("self-upgrade plan compact summary events");
+
+        assert_eq!(
+            compact_summary_events,
+            &vec![
+                serde_json::Value::String("PreCompact".into()),
+                serde_json::Value::String("PostCompact".into())
+            ],
+            "self-upgrade plan must expose the compact summary hook events that preserve phase/source/validation/next-action continuity"
+        );
     }
 
     #[test]
