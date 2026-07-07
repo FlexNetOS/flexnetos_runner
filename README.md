@@ -164,6 +164,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 fxrun doctor
 ```
 
+## Templates
+
+Reusable fleet templates live under [`templates/`](templates/). The first
+template is [`templates/git-upstream-worktree-sync/`](templates/git-upstream-worktree-sync/),
+which packages the safe upstream-sync pattern proven in `rtk-tokenkill`: create
+an isolated `.worktrees/<sync-branch>` checkout, fetch/merge the upstream
+remote-tracking branch there, and only land the result directly when local
+branch policy allows.
+
 ## Local Ubuntu release
 
 `flexnetos_runner` owns the local release lane for this workstation. The first supported target is
