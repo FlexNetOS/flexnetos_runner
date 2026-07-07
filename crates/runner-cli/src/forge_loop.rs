@@ -4930,6 +4930,8 @@ fn phase_validation_commands() -> BTreeMap<String, Vec<String>> {
     commands.insert(
         cycle_phase_label(CyclePhase::Red).to_string(),
         vec![
+            "rtk codex login status".to_string(),
+            format!("rtk proxy test -f {DEFAULT_CODEX_HOME}/auth.json"),
             "rtk cargo test -p runner-cli --all-features <new_red_test_name> -- --nocapture"
                 .to_string(),
         ],
@@ -5197,6 +5199,23 @@ mod tests {
                     .iter()
                     .any(|source| source.contains(&command)),
                 "compact continuity validation sources should preserve auth proof command: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_exports_subscription_auth_commands_under_red_phase() {
+        let expected_commands = codex_auth_readiness().verification_commands;
+        let continuity = compact_continuity_artifact();
+        let red_commands = continuity
+            .phase_validation_commands
+            .get("Red")
+            .expect("Red phase validation commands");
+
+        for command in expected_commands {
+            assert!(
+                red_commands.contains(&command),
+                "Red phase validation commands should preserve auth proof command: {command}"
             );
         }
     }
