@@ -3853,6 +3853,7 @@ fn checklist_shell_discipline_readiness(root: &Path) -> ChecklistShellDiscipline
     let checklist = fs::read_to_string(root.join(checklist_path)).unwrap_or_default();
     let mut checked_commands = Vec::new();
     let mut raw_command_keys = Vec::new();
+    let mut raw_commands = Vec::new();
     for line in checklist.lines().map(str::trim) {
         let Some((key, value)) = line.split_once(" = ") else {
             continue;
@@ -3863,6 +3864,7 @@ fn checklist_shell_discipline_readiness(root: &Path) -> ChecklistShellDiscipline
         checked_commands.push(key.to_string());
         if !value.starts_with("\"rtk ") {
             raw_command_keys.push(key.to_string());
+            raw_commands.push((key.to_string(), unquote_toml_string(value)));
         }
     }
 
@@ -3871,8 +3873,10 @@ fn checklist_shell_discipline_readiness(root: &Path) -> ChecklistShellDiscipline
         blockers
             .push("forge-loop checklist is missing one or more required command entries".into());
     }
-    for key in &raw_command_keys {
-        blockers.push(format!("checklist command {key} is not rtk-prefixed"));
+    for (key, command) in &raw_commands {
+        blockers.push(format!(
+            "checklist command {key} is not rtk-prefixed; expected: rtk {command}"
+        ));
     }
 
     ChecklistShellDisciplineReadiness {
@@ -3958,6 +3962,15 @@ fn extract_quoted_toml_value(text: &str, key: &str) -> Option<String> {
         .and_then(|value| value.split('"').next())
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+fn unquote_toml_string(value: &str) -> String {
+    value
+        .trim()
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or(value.trim())
+        .to_string()
 }
 
 fn expected_loop_components() -> Vec<LoopComponent> {
@@ -6541,6 +6554,22 @@ R  "docs/old note.md" -> "docs/new note.md"
                 .iter()
                 .any(|blocker| blocker.contains("not rtk-prefixed")),
             "readiness blockers must explain shell-discipline drift: {readiness:?}"
+        );
+    }
+
+    #[test]
+    fn checklist_shell_discipline_blockers_include_rtk_replacements() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let readiness = components_audit_report(root).checklist_shell_discipline;
+
+        assert!(
+            readiness.blockers.iter().any(|blocker| blocker.contains(
+                "component_audit is not rtk-prefixed; expected: rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict"
+            )),
+            "checklist shell-discipline blockers should include exact RTK replacements: {readiness:?}"
         );
     }
 
