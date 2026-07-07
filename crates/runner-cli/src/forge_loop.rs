@@ -1076,6 +1076,12 @@ fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
         "required_gate_commands": REQUIRED_GATE_COMMANDS,
         "components_audit": "rtk fxrun forge-loop components-audit --json",
         "target_mining_audit": "rtk fxrun forge-loop target-mining-audit --json",
+        "runner_flow_audit": "rtk fxrun forge-loop runner-flow-audit --json",
+        "runner_black_factor_audit": "rtk fxrun forge-loop runner-black-factor-audit --json",
+        "runner_ops_slo_audit": "rtk fxrun forge-loop runner-ops-slo-audit --json",
+        "runner_fleet_audit": "rtk fxrun forge-loop runner-fleet-audit --json",
+        "runner_queue_audit": "rtk fxrun forge-loop runner-queue-audit --repo-jobs-json <repo-jobs.json> --json",
+        "agentic_system_audit": "rtk fxrun forge-loop agentic-system-audit --json",
         "compact_continuity": "compact-continuity.json",
         "phase_next_actions": phase_next_actions(),
         "phase_validation_commands": phase_validation_commands(),
@@ -1101,13 +1107,13 @@ fn doctor(args: DoctorArgs) -> Result<()> {
         "runner_health_input": "gh pr view <PR> --json statusCheckRollup",
         "required_local_checks": REQUIRED_LOCAL_CHECKS,
         "required_gate_commands": REQUIRED_GATE_COMMANDS,
-        "target_mining_audit": "fxrun forge-loop target-mining-audit --json",
-        "runner_flow_audit": "fxrun forge-loop runner-flow-audit --json",
-        "runner_black_factor_audit": "fxrun forge-loop runner-black-factor-audit --json",
-        "runner_ops_slo_audit": "fxrun forge-loop runner-ops-slo-audit --json",
-        "runner_fleet_audit": "fxrun forge-loop runner-fleet-audit --json",
-        "runner_queue_audit": "fxrun forge-loop runner-queue-audit --repo-jobs-json <repo-jobs.json> --json",
-        "agentic_system_audit": "fxrun forge-loop agentic-system-audit --json"
+        "target_mining_audit": "rtk fxrun forge-loop target-mining-audit --json",
+        "runner_flow_audit": "rtk fxrun forge-loop runner-flow-audit --json",
+        "runner_black_factor_audit": "rtk fxrun forge-loop runner-black-factor-audit --json",
+        "runner_ops_slo_audit": "rtk fxrun forge-loop runner-ops-slo-audit --json",
+        "runner_fleet_audit": "rtk fxrun forge-loop runner-fleet-audit --json",
+        "runner_queue_audit": "rtk fxrun forge-loop runner-queue-audit --repo-jobs-json <repo-jobs.json> --json",
+        "agentic_system_audit": "rtk fxrun forge-loop agentic-system-audit --json"
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -6095,6 +6101,30 @@ R  "docs/old note.md" -> "docs/new note.md"
             assert!(
                 command.starts_with("rtk "),
                 "self-upgrade plan {field} command must preserve rtk shell discipline: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn self_upgrade_plan_audit_surfaces_are_direct_rtk_commands() {
+        let plan = self_upgrade_plan(70);
+
+        for field in [
+            "components_audit",
+            "target_mining_audit",
+            "runner_flow_audit",
+            "runner_black_factor_audit",
+            "runner_ops_slo_audit",
+            "runner_fleet_audit",
+            "runner_queue_audit",
+            "agentic_system_audit",
+        ] {
+            let command = plan[field]
+                .as_str()
+                .unwrap_or_else(|| panic!("self-upgrade plan missing {field} command"));
+            assert!(
+                command.starts_with("rtk fxrun forge-loop "),
+                "self-upgrade plan {field} command must be directly runnable through rtk: {command}"
             );
         }
     }
