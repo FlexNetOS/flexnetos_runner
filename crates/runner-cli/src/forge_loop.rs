@@ -4852,7 +4852,7 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             .iter()
             .map(|command| format!("passed: {command}"))
             .collect(),
-        validation_sources: validation_source_entries(),
+        validation_sources: compact_validation_source_entries(),
         phase_continuity: phase_continuity_entries(),
         phase_next_actions: phase_next_actions(),
         phase_validation_commands: phase_validation_commands(),
@@ -4954,6 +4954,21 @@ fn validation_source_entries() -> Vec<String> {
             )
         })
         .collect()
+}
+
+fn compact_validation_source_entries() -> Vec<String> {
+    let mut entries = validation_source_entries();
+    entries.extend(
+        codex_auth_readiness()
+            .verification_commands
+            .into_iter()
+            .map(|command| {
+                format!(
+                    "phase=Red source=subscription_auth validation_state=pending command={command}"
+                )
+            }),
+    );
+    entries
 }
 
 fn validation_phase_for_command(command: &str) -> CyclePhase {
@@ -5098,6 +5113,21 @@ mod tests {
                 .all(|command| command.starts_with("rtk ")),
             "auth readiness verification commands must obey forge-loop shell discipline"
         );
+    }
+
+    #[test]
+    fn compact_continuity_preserves_subscription_auth_verification_commands() {
+        let continuity = compact_continuity_artifact();
+
+        for command in codex_auth_readiness().verification_commands {
+            assert!(
+                continuity
+                    .validation_sources
+                    .iter()
+                    .any(|source| source.contains(&command)),
+                "compact continuity validation sources should preserve auth proof command: {command}"
+            );
+        }
     }
 
     #[test]
