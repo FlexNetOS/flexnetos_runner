@@ -1,0 +1,2 @@
+[build]
+rustc-wrapper = "/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-01/.cargo/bin/flexnetos-kache-rustc-wrapper"

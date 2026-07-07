@@ -54,3 +54,6 @@ _work/**/.claude/plugins/marketplaces/*/
 _work/**/_diag/
 _work/**/bin/
 _work/**/actions-runner-linux-*.tar.gz
+
+# Local release payloads are generated artifacts, not source state.
+/release/out/
