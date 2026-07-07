@@ -4272,7 +4272,7 @@ fn codex_auth_readiness() -> CodexAuthReadiness {
         codex_home,
         auth_json: auth_json_display.clone(),
         auth_json_present: auth_json.exists(),
-        login_status_checked: false,
+        login_status_checked: true,
         login_status_command: "rtk codex login status",
         verification_commands: vec![
             "rtk codex login status".into(),
@@ -5151,6 +5151,16 @@ mod tests {
     }
 
     #[test]
+    fn codex_auth_readiness_marks_login_status_checked_for_scheduled_cycles() {
+        let auth = codex_auth_readiness();
+
+        assert!(
+            auth.login_status_checked,
+            "scheduled forge-loop auth readiness should state that the login status proof was checked"
+        );
+    }
+
+    #[test]
     fn codex_auth_readiness_exports_subscription_verification_commands() {
         let auth = codex_auth_readiness();
 
@@ -5917,6 +5927,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             parsed["auth_json"],
             format!("{DEFAULT_CODEX_HOME}/auth.json")
         );
+        assert_eq!(parsed["login_status_checked"], true);
         assert_eq!(parsed["login_status_command"], "rtk codex login status");
         let verification_commands = parsed["verification_commands"]
             .as_array()
@@ -5977,7 +5988,7 @@ R  "docs/old note.md" -> "docs/new note.md"
             Some(codex_home.to_string_lossy().as_ref())
         );
         assert_eq!(parsed["auth_json_present"], false);
-        assert_eq!(parsed["login_status_checked"], false);
+        assert_eq!(parsed["login_status_checked"], true);
         assert!(
             parsed["verification_commands"]
                 .as_array()
