@@ -452,6 +452,7 @@ pub struct CodexAuthReadiness {
     pub codex_home: String,
     pub auth_json: String,
     pub auth_json_present: bool,
+    pub login_status_checked: bool,
     pub login_status_command: &'static str,
     pub verification_commands: Vec<String>,
 }
@@ -4232,6 +4233,7 @@ fn codex_auth_readiness() -> CodexAuthReadiness {
         codex_home,
         auth_json: auth_json_display.clone(),
         auth_json_present: auth_json.exists(),
+        login_status_checked: false,
         login_status_command: "rtk codex login status",
         verification_commands: vec![
             "rtk codex login status".into(),
@@ -5840,6 +5842,9 @@ R  "docs/old note.md" -> "docs/new note.md"
 
     #[test]
     fn dry_run_writes_subscription_auth_readiness_artifact() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let previous = std::env::var("CODEX_HOME").ok();
+        std::env::remove_var("CODEX_HOME");
         let out = std::env::temp_dir().join(format!(
             "fxrun-forge-loop-auth-readiness-{}",
             std::process::id()
@@ -5878,7 +5883,71 @@ R  "docs/old note.md" -> "docs/new note.md"
             .filter_map(|command| command.as_str())
             .all(|command| command.starts_with("rtk ")));
 
+        if let Some(previous) = previous {
+            std::env::set_var("CODEX_HOME", previous);
+        }
         fs::remove_dir_all(out).ok();
+    }
+
+    #[test]
+    fn dry_run_auth_readiness_distinguishes_file_presence_from_login_status_check() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let previous = std::env::var("CODEX_HOME").ok();
+        let codex_home = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-empty-codex-home-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        let out = std::env::temp_dir().join(format!(
+            "fxrun-forge-loop-auth-proof-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::remove_dir_all(&codex_home).ok();
+        fs::remove_dir_all(&out).ok();
+        fs::create_dir_all(&codex_home).expect("codex home");
+        std::env::set_var("CODEX_HOME", &codex_home);
+
+        run(RunArgs {
+            goal: "scheduled subscription-auth Codex self-improvement".into(),
+            out: out.clone(),
+            dry_run: true,
+            auto_merge: true,
+            once: true,
+        })
+        .expect("dry run");
+
+        let auth = fs::read_to_string(out.join("cycle/codex-auth-readiness.json"))
+            .expect("subscription auth readiness artifact");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&auth).expect("subscription auth readiness json");
+
+        assert_eq!(
+            parsed["codex_home"].as_str(),
+            Some(codex_home.to_string_lossy().as_ref())
+        );
+        assert_eq!(parsed["auth_json_present"], false);
+        assert_eq!(parsed["login_status_checked"], false);
+        assert!(
+            parsed["verification_commands"]
+                .as_array()
+                .expect("verification commands")
+                .iter()
+                .any(|command| command == "rtk codex login status"),
+            "artifact must preserve the explicit subscription login command for the caller to run"
+        );
+
+        if let Some(previous) = previous {
+            std::env::set_var("CODEX_HOME", previous);
+        } else {
+            std::env::remove_var("CODEX_HOME");
+        }
+        fs::remove_dir_all(out).ok();
+        fs::remove_dir_all(codex_home).ok();
     }
 
     #[test]
