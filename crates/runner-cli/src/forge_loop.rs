@@ -4535,7 +4535,7 @@ impl EvalInput {
 fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
     let pr_title = cycle_pr_title(goal);
     format!(
-        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates.",
+        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Verify local ChatGPT subscription auth before implementation with `rtk codex login status` and `rtk proxy test -f /home/flexnetos/.codex/auth.json`. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates.",
         if auto_merge { "auto-merge once green when repository settings allow" } else { "leave the PR ready for review" }
     )
 }
@@ -5460,6 +5460,15 @@ mod tests {
         assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
         assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
         assert!(prompt.contains("rtk proxy find"));
+    }
+
+    #[test]
+    fn cycle_prompt_requires_subscription_auth_verification_before_implementation() {
+        let prompt = cycle_prompt("scheduled subscription-auth Codex self-improvement", true);
+
+        assert!(prompt.contains("Verify local ChatGPT subscription auth before implementation"));
+        assert!(prompt.contains("rtk codex login status"));
+        assert!(prompt.contains("rtk proxy test -f /home/flexnetos/.codex/auth.json"));
     }
 
     #[test]
