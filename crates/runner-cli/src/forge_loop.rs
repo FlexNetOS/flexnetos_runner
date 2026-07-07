@@ -5132,9 +5132,11 @@ mod tests {
 
     #[test]
     fn compact_continuity_preserves_subscription_auth_verification_commands() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let expected_commands = codex_auth_readiness().verification_commands;
         let continuity = compact_continuity_artifact();
 
-        for command in codex_auth_readiness().verification_commands {
+        for command in expected_commands {
             assert!(
                 continuity
                     .validation_sources
