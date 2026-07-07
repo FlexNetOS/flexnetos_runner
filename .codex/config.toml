@@ -2,7 +2,7 @@
 # Loaded only when this trusted repo's .codex layer is active.
 model = "gpt-5.5"
 model_reasoning_effort = "high"
-sandbox_mode = "workspace-write"
+default_permissions = "forge-loop-workspace"
 model_context_window = 4000000
 model_auto_compact_token_limit = 3000000
 model_auto_compact_token_limit_scope = "total"
@@ -17,3 +17,32 @@ auto_compaction = true
 [agents]
 max_depth = 1
 job_max_runtime_seconds = 1800
+
+[permissions.forge-loop-workspace.filesystem]
+glob_scan_max_depth = 3
+":minimal" = "read"
+":tmpdir" = "write"
+":slash_tmp" = "write"
+
+[permissions.forge-loop-workspace.filesystem.":workspace_roots"]
+"." = "write"
+".git" = "read"
+".codex" = "write"
+".github" = "write"
+".handoff" = "write"
+"docs" = "write"
+"target" = "write"
+"**/*.env" = "deny"
+"**/*secret*" = "deny"
+"**/*token*" = "deny"
+
+[permissions.forge-loop-workspace.network]
+enabled = true
+
+[permissions.forge-loop-workspace.network.domains]
+"developers.openai.com" = "allow"
+"github.com" = "allow"
+"api.github.com" = "allow"
+"crates.io" = "allow"
+"index.crates.io" = "allow"
+"static.crates.io" = "allow"

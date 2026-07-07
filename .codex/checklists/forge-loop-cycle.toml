@@ -8,13 +8,13 @@ wait_for_merge_before_next_cycle = true
 
 [required_evidence]
 red_or_guard_test = true
-component_audit = "cargo run -q -p runner-cli -- forge-loop components-audit --strict"
-target_mining_audit = "cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
-docs_drift = "cargo run -q -p runner-cli -- forge-loop docs-drift --json"
-forge_loop_tests = "cargo test -p runner-cli --all-features forge_loop::tests"
-workspace_tests = "cargo test --workspace --all-features"
-clippy = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
-audit = "cargo audit --deny warnings"
+component_audit = "rtk cargo run -q -p runner-cli -- forge-loop components-audit --strict"
+target_mining_audit = "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
+docs_drift = "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json"
+forge_loop_tests = "rtk cargo test -p runner-cli --all-features forge_loop::tests"
+workspace_tests = "rtk cargo test --workspace --all-features"
+clippy = "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings"
+audit = "rtk cargo audit --deny warnings"
 
 [required_pr_evidence]
 pr_url = true

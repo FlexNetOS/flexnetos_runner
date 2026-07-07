@@ -6678,11 +6678,29 @@ audit = "rtk cargo audit --deny warnings"
 
     #[test]
     fn components_audit_exposes_checklist_shell_discipline_drift() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("workspace root");
-        let readiness = components_audit_report(root).checklist_shell_discipline;
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-checklist-shell-drift-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        let checklist_dir = root.join(".codex/checklists");
+        fs::create_dir_all(&checklist_dir).expect("checklist dir");
+        fs::write(
+            checklist_dir.join("forge-loop-cycle.toml"),
+            r#"
+component_audit = "cargo run -q -p runner-cli -- forge-loop components-audit --strict"
+target_mining_audit = "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
+docs_drift = "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json"
+forge_loop_tests = "rtk cargo test -p runner-cli --all-features forge_loop::tests"
+workspace_tests = "rtk cargo test --workspace --all-features"
+clippy = "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings"
+audit = "rtk cargo audit --deny warnings"
+"#,
+        )
+        .expect("checklist");
+        let readiness = components_audit_report(&root).checklist_shell_discipline;
 
         assert_eq!(
             readiness.checklist_path,
@@ -6709,15 +6727,34 @@ audit = "rtk cargo audit --deny warnings"
                 .any(|blocker| blocker.contains("not rtk-prefixed")),
             "readiness blockers must explain shell-discipline drift: {readiness:?}"
         );
+        fs::remove_dir_all(root).ok();
     }
 
     #[test]
     fn checklist_shell_discipline_blockers_include_rtk_replacements() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("workspace root");
-        let readiness = components_audit_report(root).checklist_shell_discipline;
+        let root = std::env::temp_dir().join(format!(
+            "fxrun-checklist-shell-replacements-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        let checklist_dir = root.join(".codex/checklists");
+        fs::create_dir_all(&checklist_dir).expect("checklist dir");
+        fs::write(
+            checklist_dir.join("forge-loop-cycle.toml"),
+            r#"
+component_audit = "cargo run -q -p runner-cli -- forge-loop components-audit --strict"
+target_mining_audit = "rtk cargo run -q -p runner-cli -- forge-loop target-mining-audit --strict"
+docs_drift = "rtk cargo run -q -p runner-cli -- forge-loop docs-drift --json"
+forge_loop_tests = "rtk cargo test -p runner-cli --all-features forge_loop::tests"
+workspace_tests = "rtk cargo test --workspace --all-features"
+clippy = "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings"
+audit = "rtk cargo audit --deny warnings"
+"#,
+        )
+        .expect("checklist");
+        let readiness = components_audit_report(&root).checklist_shell_discipline;
 
         assert!(
             readiness.blockers.iter().any(|blocker| blocker.contains(
@@ -6725,6 +6762,7 @@ audit = "rtk cargo audit --deny warnings"
             )),
             "checklist shell-discipline blockers should include exact RTK replacements: {readiness:?}"
         );
+        fs::remove_dir_all(root).ok();
     }
 
     #[test]
@@ -7938,12 +7976,21 @@ audit = "rtk cargo audit --deny warnings"
             readiness.profile_rules_present,
             "permission profile mirror must retain least-privilege parity rules"
         );
+        assert_eq!(
+            readiness.active_default_permissions.as_deref(),
+            Some("forge-loop-workspace")
+        );
         assert!(
-            readiness
-                .blockers
-                .iter()
-                .any(|blocker| blocker.contains("sandbox_mode")),
-            "readiness audit must expose the active sandbox_mode migration blocker"
+            readiness.active_sandbox_mode.is_none(),
+            "active config must finish the sandbox_mode to default_permissions migration"
+        );
+        assert!(
+            readiness.migration_ready,
+            "repo config and permission mirror should be migration-ready: {readiness:?}"
+        );
+        assert!(
+            readiness.blockers.is_empty(),
+            "readiness audit should be green after the active permission-profile upgrade: {readiness:?}"
         );
     }
 
@@ -9426,8 +9473,12 @@ audit = "rtk cargo audit --deny warnings"
             .expect("read mining ledger");
 
         assert!(
-            config.contains("sandbox_mode"),
-            "active config should still use the older sandbox surface"
+            config.contains("default_permissions = \"forge-loop-workspace\""),
+            "active config should select the forge-loop permission profile"
+        );
+        assert!(
+            !config.contains("sandbox_mode"),
+            "active config must not mix permission profiles with sandbox_mode"
         );
         assert!(
             permissions.contains("default_permissions")
@@ -9437,8 +9488,10 @@ audit = "rtk cargo audit --deny warnings"
             "permission blueprint must encode least-privilege filesystem and network intent"
         );
         assert!(
-            !config.contains("default_permissions"),
-            "do not mix active permission profiles with sandbox_mode"
+            config.contains("\"**/*.env\" = \"deny\"")
+                && config.contains("\"developers.openai.com\" = \"allow\"")
+                && config.contains("\"github.com\" = \"allow\""),
+            "active permission profile must mirror the least-privilege filesystem and network intent"
         );
         for required in [
             "PreToolUse",

@@ -1,8 +1,6 @@
 # Permission-profile blueprint for future Codex clients using default_permissions.
-# This file is intentionally not loaded as .codex/config.toml because Codex docs say
-# permission profiles do not compose with the older sandbox_mode setting currently used
-# by the project config. Keep it as a reviewed migration target and machine-audited
-# least-privilege contract for the forge-loop harness.
+# The active project config now selects this profile and carries the same rules.
+# Keep this mirror as a reviewed parity contract for audits and future clients.
 default_permissions = "forge-loop-workspace"
 
 [permissions.forge-loop-workspace.filesystem]
