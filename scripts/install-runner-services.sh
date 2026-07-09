@@ -202,7 +202,7 @@ Environment=GIT_CONFIG_GLOBAL=${prefix}/_work/runner-home-%i/.gitconfig
 Environment=XDG_CONFIG_HOME=${prefix}/_work/runner-home-%i/.config
 Environment=XDG_CACHE_HOME=${prefix}/_work/runner-home-%i/.cache
 Environment=CARGO_HOME=${prefix}/_work/runner-home-%i/.cargo
-Environment=CARGO_BUILD_RUSTC_WRAPPER=${prefix}/_work/runner-home-%i/.cargo/bin/flexnetos-kache-rustc-wrapper
+Environment=CARGO_BUILD_RUSTC_WRAPPER=${prefix}/_work/kache-shims/flexnetos-kache-rustc-wrapper-%i
 Environment=RUSTUP_HOME=${prefix}/_work/runner-home-%i/.rustup
 Environment=BUN_INSTALL=${prefix}/_work/runner-home-%i/.bun
 Environment=BUN_TMPDIR=${prefix}/_work/runner-home-%i/.cache/bun/tmp
@@ -286,18 +286,23 @@ write_path_files() {
     home_dir="${prefix}/_work/runner-home-${slot}"
     work_dir="${prefix}/_work/actions-runner-${slot}-work"
     install -d -m 0755 "$runner_dir" "$home_dir" "$work_dir"
-    install -d -m 0755 "${home_dir}/.cargo/bin" "${home_dir}/.config/kache" "${home_dir}/.cache/kache"
-    cat > "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper" <<EOF
+    kache_shim="${prefix}/_work/kache-shims/flexnetos-kache-rustc-wrapper-${slot}"
+    install -d -m 0755 "${home_dir}/.cargo/bin" "${home_dir}/.config/kache" "${home_dir}/.cache/kache" "${prefix}/_work/kache-shims"
+    # The shim lives OUTSIDE $CARGO_HOME/bin: Swatinem/rust-cache prunes .cargo/bin
+    # back to its cache manifest between jobs, which deleted the wrapper and broke
+    # every cargo job with rustc-wrapper ENOENT (2026-07-09 incident). _work/kache-shims
+    # is runner-managed and never touched by job-level cache actions.
+    cat > "$kache_shim" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export KACHE_CONFIG="${home_dir}/.config/kache/config.toml"
 export KACHE_CACHE_DIR="${home_dir}/.cache/kache"
 exec "/home/flexnetos/FlexNetOS/usr/bin/kache-rustc-wrapper" "\$@"
 EOF
-    chmod 755 "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+    chmod 755 "$kache_shim"
     cat > "${home_dir}/.cargo/config.toml" <<EOF
 [build]
-rustc-wrapper = "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+rustc-wrapper = "$kache_shim"
 EOF
     cat > "${home_dir}/.config/kache/config.toml" <<EOF
 [cache]
