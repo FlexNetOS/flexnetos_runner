@@ -9911,9 +9911,8 @@ audit = "rtk cargo audit --deny warnings"
         assert!(user_stdout.contains(
             "FXRUN_REPO_BLOCKLIST=/tmp/fxrun-portable-prefix/_work/config/runner-blocklist.txt"
         ));
-        assert!(user_stdout.contains(
-            "kache_rustc_wrapper=/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper"
-        ));
+        assert!(user_stdout
+            .contains("kache_rustc_wrapper=/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper"));
         assert!(user_stdout
             .contains("systemctl --user enable --now flexnetos-runner@01 flexnetos-runner@02"));
         assert!(!user_stdout.contains("sudo systemctl"));
