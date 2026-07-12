@@ -3,6 +3,7 @@
 
 mod cache;
 mod forge_loop;
+mod release;
 mod runner_state;
 
 use clap::{Parser, Subcommand};
@@ -50,6 +51,11 @@ enum Cmd {
     RunnerState {
         #[command(subcommand)]
         cmd: runner_state::RunnerStateCommand,
+    },
+    /// Build or check the local Ubuntu release bundle (LOCAL compile lane, runner-local defaults).
+    Release {
+        #[command(subcommand)]
+        cmd: release::ReleaseCommand,
     },
     /// Report rails + seam wiring status.
     Doctor,
@@ -117,6 +123,7 @@ fn main() -> anyhow::Result<()> {
         Cmd::ForgeLoop { cmd } => forge_loop::execute(*cmd)?,
         Cmd::Cache { cmd } => cache::execute(cmd)?,
         Cmd::RunnerState { cmd } => runner_state::execute(cmd)?,
+        Cmd::Release { cmd } => release::execute(cmd)?,
         Cmd::Doctor => {
             let rails = safety::Rails::default();
             println!("fxrun");

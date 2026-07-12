@@ -2,7 +2,13 @@
 # Build a local workspace release bundle for this workstation.
 set -euo pipefail
 
-ROOT="${FXRUN_WORKSPACE_ROOT:-${FLEXNETOS_ROOT:-/home/flexnetos/FlexNetOS}}"
+# Resolve the workspace root deterministically and symlink-independently.
+# The script lives at <ROOT>/src/flexnetos_runner/scripts/build-local-ubuntu-release.sh,
+# so its own on-disk location (with symlinks resolved by cd -P) yields ROOT even when the
+# historical /home/flexnetos/FlexNetOS symlink is absent. Explicit env overrides still win.
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+DERIVED_ROOT="$(cd -P "$SCRIPT_DIR/../../.." >/dev/null 2>&1 && pwd)"
+ROOT="${FXRUN_WORKSPACE_ROOT:-${FLEXNETOS_ROOT:-${DERIVED_ROOT:-/home/flexnetos/FlexNetOS}}}"
 OUT_ROOT="${FXRUN_RELEASE_DIR:-$ROOT/release}"
 TARGET_OS_ID="ubuntu"
 TARGET_OS_VERSION="26.04"
@@ -18,8 +24,24 @@ CARGO_HOME_ROOT="${FXRUN_CARGO_HOME:-$RUNNER_HOME/.cargo}"
 RUSTUP_HOME_ROOT="${FXRUN_RUSTUP_HOME:-$RUNNER_HOME/.rustup}"
 KACHE_CACHE_ROOT="${FXRUN_KACHE_CACHE_DIR:-$RUNNER_HOME/.cache/kache}"
 KACHE_CONFIG_PATH="${FXRUN_KACHE_CONFIG:-$RUNNER_HOME/.config/kache/config.toml}"
-KACHE_RUSTC_WRAPPER="${FXRUN_KACHE_RUSTC_WRAPPER:-/home/flexnetos/FlexNetOS/usr/bin/kache-rustc-wrapper}"
+KACHE_RUSTC_WRAPPER="${FXRUN_KACHE_RUSTC_WRAPPER:-$ROOT/usr/bin/kache-rustc-wrapper}"
 KACHE_WRAPPER_SHIM="${FXRUN_KACHE_WRAPPER_SHIM:-$RUNNER_HOME/.cargo/bin/flexnetos-kache-rustc-wrapper}"
+
+# CodeDB runner-proof gate (additive; no-ops cleanly when CodeDB is unavailable).
+PROOF_CODEDB="${FXRUN_CODEDB:-}"
+PROOF_REPO_ID="${FXRUN_PROOF_REPO_ID:-flexnetos_runner}"
+# Scan the runner's Rust source tree, not the repo root: the committed _work/ tree carries
+# vendored rustup toolchain sources that CodeDB's parser rejects, which would crash the gate.
+PROOF_REPO_PATH="${FXRUN_PROOF_REPO_PATH:-$ROOT/src/flexnetos_runner/crates}"
+PROOF_STORE="${FXRUN_PROOF_STORE:-}"
+# Documented exceptions. The current runner_proof_manifest emits permanent, owned deferrals:
+#   release_readiness              pending  runner_owner=true  (closed by this build's staged receipt)
+#   fixture_matrix                 pending  CodeDB-side future fixture matrix work
+#   generated_artifact_reproduction pending CodeDB-side future reproduction-mode work
+#   capture_gaps_recorded          degraded raw_log logs/CDB039-runner.log
+# Any status=failed always blocks. Any pending/degraded gate_id NOT listed here blocks (fail-closed).
+PROOF_PENDING_ALLOW="${FXRUN_PROOF_PENDING_ALLOW:-release_readiness fixture_matrix generated_artifact_reproduction}"
+PROOF_DEGRADED_ALLOW="${FXRUN_PROOF_DEGRADED_ALLOW:-capture_gaps_recorded}"
 
 usage() {
   cat <<USAGE
@@ -45,6 +67,15 @@ Environment:
   FXRUN_KACHE_RUSTC_WRAPPER Cargo rustc-wrapper path for runner-local cargo config. Default: $KACHE_RUSTC_WRAPPER
   FXRUN_KACHE_WRAPPER_SHIM  Runner-local shim that pins Kache config/cache for Cargo wrapper mode. Default: $KACHE_WRAPPER_SHIM
   FXRUN_TAURI_BUNDLES       Comma-separated Tauri bundle list. Default: $TAURI_BUNDLES
+  FXRUN_CODEDB              CodeDB binary for the runner-proof gate. Default: PATH codedb, else
+                            \$ROOT/src/nu_plugin/target/release/codedb, else gate skips.
+  FXRUN_PROOF_REPO_ID       CodeDB repo id for the proof manifest. Default: $PROOF_REPO_ID
+  FXRUN_PROOF_REPO_PATH     Path CodeDB scans for the proof manifest. Default: $PROOF_REPO_PATH
+  FXRUN_PROOF_STORE         Optional CodeDB --store path. Default: unset (omitted)
+  FXRUN_PROOF_PENDING_ALLOW Space-separated pending gate_ids allowed (documented deferrals).
+                            Default: $PROOF_PENDING_ALLOW
+  FXRUN_PROOF_DEGRADED_ALLOW Space-separated degraded gate_ids allowed (must name a raw_log).
+                            Default: $PROOF_DEGRADED_ALLOW
   FXRUN_RELEASE_ALLOW_HOST_MISMATCH=1
                             Allow running checks on a non-target host
 
@@ -439,6 +470,162 @@ write_provenance() {
   done < <(find "$stage/bin" -maxdepth 1 -type f -executable -print0 | sort -z)
 }
 
+resolve_codedb() {
+  if [[ -n "$PROOF_CODEDB" ]]; then
+    [[ -x "$PROOF_CODEDB" ]] || fail "FXRUN_CODEDB is not executable: $PROOF_CODEDB"
+    echo "$PROOF_CODEDB"
+    return 0
+  fi
+  if command -v codedb >/dev/null 2>&1; then
+    command -v codedb
+    return 0
+  fi
+  local vendored="$ROOT/src/nu_plugin/target/release/codedb"
+  if [[ -x "$vendored" ]]; then
+    echo "$vendored"
+    return 0
+  fi
+  echo ""
+}
+
+# Consume the CodeDB runner_proof_manifest before staging the tarball. Emits the manifest and a
+# requirement-proof receipt into the release provenance, and FAILS the build on any status=failed,
+# any un-allowlisted pending, or any un-allowlisted/degraded-without-raw-log row. No-ops cleanly
+# (build proceeds) when CodeDB or python3 is unavailable, so the lane still works standalone.
+run_proof_gate() {
+  local stage="$1"
+  local codedb manifest_json receipt gate_stderr rc
+  codedb="$(resolve_codedb)"
+  manifest_json="$stage/provenance/runner_proof_manifest.json"
+  receipt="$stage/provenance/requirement-proof-receipt.txt"
+  gate_stderr="$stage/provenance/runner_proof_manifest.stderr"
+
+  if [[ -z "$codedb" ]]; then
+    echo "==> proof gate skipped: codedb unavailable (set FXRUN_CODEDB to enable the runner-proof gate)"
+    {
+      echo "gate=runner_proof_manifest"
+      echo "result=skipped"
+      echo "reason=codedb_unavailable"
+      echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$receipt"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "==> proof gate skipped: python3 unavailable for manifest evaluation"
+    {
+      echo "gate=runner_proof_manifest"
+      echo "result=skipped"
+      echo "reason=python3_unavailable"
+      echo "codedb=$codedb"
+      echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$receipt"
+    return 0
+  fi
+
+  echo "==> proof gate: $codedb export runner_proof_manifest (repo=$PROOF_REPO_ID path=$PROOF_REPO_PATH)"
+  local -a args=(export runner_proof_manifest --repo-id "$PROOF_REPO_ID" --repo-path "$PROOF_REPO_PATH" --format json)
+  [[ -n "$PROOF_STORE" ]] && args+=(--store "$PROOF_STORE")
+  set +e
+  "$codedb" "${args[@]}" > "$manifest_json" 2> "$gate_stderr"
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]]; then
+    echo "warning: proof gate skipped: codedb export failed (rc=$rc); see $gate_stderr" >&2
+    {
+      echo "gate=runner_proof_manifest"
+      echo "result=skipped"
+      echo "reason=codedb_export_failed_rc_$rc"
+      echo "codedb=$codedb"
+      echo "stderr=$gate_stderr"
+      echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$receipt"
+    return 0
+  fi
+
+  set +e
+  PROOF_PENDING_ALLOW="$PROOF_PENDING_ALLOW" \
+  PROOF_DEGRADED_ALLOW="$PROOF_DEGRADED_ALLOW" \
+  PROOF_CODEDB="$codedb" \
+  PROOF_REPO_ID="$PROOF_REPO_ID" \
+  PROOF_REPO_PATH="$PROOF_REPO_PATH" \
+  PROOF_STORE="$PROOF_STORE" \
+  PROOF_MANIFEST="$manifest_json" \
+  PROOF_RECEIPT="$receipt" \
+  python3 - <<'PYGATE'
+import json, os, sys, datetime
+
+manifest = os.environ["PROOF_MANIFEST"]
+receipt = os.environ["PROOF_RECEIPT"]
+pending_allow = set(os.environ.get("PROOF_PENDING_ALLOW", "").split())
+degraded_allow = set(os.environ.get("PROOF_DEGRADED_ALLOW", "").split())
+
+with open(manifest, "r", encoding="utf-8") as fh:
+    rows = json.load(fh)
+if not isinstance(rows, list):
+    print("error: proof manifest is not a JSON array", file=sys.stderr)
+    sys.exit(1)
+
+evaluated = []
+blocked = []
+for row in rows:
+    gate_id = row.get("gate_id", "<unknown>")
+    status = row.get("status", "<missing>")
+    raw_log = row.get("raw_log_path", "")
+    if status == "satisfied":
+        disposition = "ok"
+    elif status == "pending":
+        if gate_id in pending_allow:
+            disposition = "allowed-pending"
+        else:
+            disposition = "BLOCKED-pending"
+    elif status == "degraded":
+        if gate_id in degraded_allow and raw_log:
+            disposition = "allowed-degraded"
+        elif gate_id in degraded_allow and not raw_log:
+            disposition = "BLOCKED-degraded-no-raw-log"
+        else:
+            disposition = "BLOCKED-degraded"
+    elif status == "failed":
+        disposition = "BLOCKED-failed"
+    else:
+        disposition = "BLOCKED-unknown-status"
+    evaluated.append((gate_id, status, disposition, raw_log))
+    if disposition.startswith("BLOCKED"):
+        blocked.append((gate_id, status, disposition, raw_log))
+
+result = "blocked" if blocked else "pass"
+lines = [
+    "gate=runner_proof_manifest",
+    "result=%s" % result,
+    "generated_at=%s" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "codedb=%s" % os.environ.get("PROOF_CODEDB", ""),
+    "repo_id=%s" % os.environ.get("PROOF_REPO_ID", ""),
+    "repo_path=%s" % os.environ.get("PROOF_REPO_PATH", ""),
+    "store=%s" % os.environ.get("PROOF_STORE", ""),
+    "row_count=%d" % len(evaluated),
+    "pending_allow=%s" % " ".join(sorted(pending_allow)),
+    "degraded_allow=%s" % " ".join(sorted(degraded_allow)),
+]
+for gate_id, status, disposition, raw_log in evaluated:
+    lines.append("row=%s status=%s disposition=%s raw_log=%s" % (gate_id, status, disposition, raw_log))
+with open(receipt, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(lines) + "\n")
+
+for gate_id, status, disposition, raw_log in evaluated:
+    print("  proof %-32s %-10s %s" % (gate_id, status, disposition))
+if blocked:
+    print("error: release proof gate blocked by %d row(s):" % len(blocked), file=sys.stderr)
+    for gate_id, status, disposition, raw_log in blocked:
+        print("  %s status=%s (%s) raw_log=%s" % (gate_id, status, disposition, raw_log), file=sys.stderr)
+    sys.exit(1)
+print("proof gate passed: %d rows, %d allowed exception(s)" % (
+    len(evaluated), sum(1 for _, _, d, _ in evaluated if d.startswith("allowed"))))
+PYGATE
+  local gate_rc=$?
+  set -e
+  [[ "$gate_rc" -eq 0 ]] || fail "release proof gate blocked the build; see $receipt and $manifest_json"
+}
+
 main() {
   need date
   need find
@@ -483,6 +670,7 @@ main() {
   process_catalog "$stage" "$cargo" "$bun" build
 
   write_provenance "$stage" "$cargo" "$release_id" "$(basename "$archive")"
+  run_proof_gate "$stage"
   tar -C "$OUT_ROOT/staging" -czf "$archive" "$release_id"
   sha256sum "$archive" > "$archive.sha256"
 
