@@ -9831,7 +9831,7 @@ audit = "rtk cargo audit --deny warnings"
             "retarget workflow must not write a fixed /tmp path"
         );
         for required in [
-            "repo=/home/flexnetos/FlexNetOS/src/flexnetos_runner",
+            "repo=/home/flexnetos/meta/src/flexnetos_runner",
             "User=flexnetos",
             "CODEX_HOME=/home/flexnetos/.codex",
             "GH_CONFIG_DIR=/home/flexnetos/.config/gh",
@@ -9860,6 +9860,7 @@ audit = "rtk cargo audit --deny warnings"
         let portable_codex_home = "/tmp/fxrun-portable-auth/codex";
         let portable_gh_config_dir = "/tmp/fxrun-portable-auth/gh";
         let portable_codex_bin_dir = "/tmp/fxrun-portable-auth/bin";
+        let portable_kache_wrapper = "/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper";
         let ambient_runtime_dir = root.join("_work/fake-ci-runtime");
         let ambient_dbus_address = format!("unix:path={}/bus", ambient_runtime_dir.display());
         let ambient_xdg_config_home = root.join("_work/fake-ci-config");
@@ -9875,6 +9876,7 @@ audit = "rtk cargo audit --deny warnings"
             .env("CODEX_HOME", portable_codex_home)
             .env("GH_CONFIG_DIR", portable_gh_config_dir)
             .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
+            .env("FXRUN_KACHE_RUSTC_WRAPPER", portable_kache_wrapper)
             .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
             .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
             .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
@@ -9903,6 +9905,14 @@ audit = "rtk cargo audit --deny warnings"
         assert!(user_stdout.contains(
             "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
         ));
+        assert!(user_stdout.contains(
+            "ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/fxrun-portable-prefix/scripts/runner-repo-guard.sh"
+        ));
+        assert!(user_stdout.contains(
+            "FXRUN_REPO_BLOCKLIST=/tmp/fxrun-portable-prefix/_work/config/runner-blocklist.txt"
+        ));
+        assert!(user_stdout
+            .contains("kache_rustc_wrapper=/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper"));
         assert!(user_stdout
             .contains("systemctl --user enable --now flexnetos-runner@01 flexnetos-runner@02"));
         assert!(!user_stdout.contains("sudo systemctl"));
@@ -9920,6 +9930,7 @@ audit = "rtk cargo audit --deny warnings"
             .env("CODEX_HOME", portable_codex_home)
             .env("GH_CONFIG_DIR", portable_gh_config_dir)
             .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
+            .env("FXRUN_KACHE_RUSTC_WRAPPER", portable_kache_wrapper)
             .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
             .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
             .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
@@ -9946,6 +9957,9 @@ audit = "rtk cargo audit --deny warnings"
         assert!(system_stdout.contains("Environment=GH_CONFIG_DIR=/tmp/fxrun-portable-auth/gh"));
         assert!(system_stdout.contains(
             "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
+        ));
+        assert!(system_stdout.contains(
+            "ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/fxrun-portable-prefix/scripts/runner-repo-guard.sh"
         ));
         assert!(system_stdout
             .contains("systemctl enable --now flexnetos-runner@01 flexnetos-runner@02"));
@@ -9975,6 +9989,9 @@ audit = "rtk cargo audit --deny warnings"
             "RUNNER_WORKSPACE",
             "loginctl enable-linger",
             "--enable-linger",
+            "--kache-wrapper",
+            "ACTIONS_RUNNER_HOOK_JOB_STARTED",
+            "FXRUN_REPO_BLOCKLIST",
         ] {
             assert!(script.contains(required), "installer missing {required}");
         }
@@ -9985,6 +10002,14 @@ audit = "rtk cargo audit --deny warnings"
         assert!(
             !script.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"),
             "portable installer must not require the current checkout path"
+        );
+        assert!(
+            !script.contains("/home/flexnetos/FlexNetOS/usr/bin"),
+            "portable installer must not use retired workspace usr/bin shims"
+        );
+        assert!(
+            !script.contains("/home/flexnetos/lifeos"),
+            "portable installer must not recreate the retired lifeos root"
         );
     }
 
