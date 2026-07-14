@@ -837,6 +837,7 @@ pub struct CycleManifest {
 pub struct CompactContinuityArtifact {
     pub enabled: bool,
     pub compact_prompt: String,
+    pub preserved_state: Vec<String>,
     pub compact_summary_events: Vec<String>,
     pub phases: Vec<CyclePhase>,
     pub active_phase: CyclePhase,
@@ -4925,6 +4926,7 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
     CompactContinuityArtifact {
         enabled: true,
         compact_prompt: COMPACT_PROMPT_PATH.into(),
+        preserved_state: preserved_state_entries(),
         compact_summary_events: vec!["PreCompact".into(), "PostCompact".into()],
         phases: required_phases(),
         active_phase: CyclePhase::Red,
@@ -4952,6 +4954,25 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
     }
+}
+
+fn preserved_state_entries() -> Vec<String> {
+    let auth = codex_auth_readiness();
+    vec![
+        format!(
+            "auth_mode={} codex_home={} login_status_checked={} auth_json_present={}",
+            auth.auth_mode, auth.codex_home, auth.login_status_checked, auth.auth_json_present
+        ),
+        format!(
+            "source_coverage={} required research sources loaded",
+            research_sources().len()
+        ),
+        format!(
+            "validation_terminal_state={} required gate outcomes must be retained across compaction",
+            REQUIRED_GATE_COMMANDS.len()
+        ),
+        "next_action=continue with the next required forge-loop phase".into(),
+    ]
 }
 
 fn phase_validation_state() -> BTreeMap<String, String> {
@@ -5305,6 +5326,40 @@ mod tests {
                 "Red phase validation commands should preserve auth proof command: {command}"
             );
         }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_preserves_resume_state() {
+        let continuity = compact_continuity_artifact();
+
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("local_chatgpt")),
+            "compact summaries should preserve subscription auth mode"
+        );
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("source_coverage")),
+            "compact summaries should preserve source coverage state"
+        );
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("validation_terminal_state")),
+            "compact summaries should preserve terminal validation state"
+        );
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("next_action")),
+            "compact summaries should preserve the next action"
+        );
     }
 
     #[test]
