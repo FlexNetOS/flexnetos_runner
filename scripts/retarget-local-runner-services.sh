@@ -3,7 +3,7 @@
 # runner directories and flexnetos-owned auth/tooling homes.
 set -euo pipefail
 
-repo=/home/flexnetos/FlexNetOS/src/flexnetos_runner
+repo=/home/flexnetos/meta/src/flexnetos_runner
 owner=flexnetos:flexnetos
 services=(
   actions.runner.FlexNetOS.fxrun-drdave-TRX50-AI-TOP-flexnetos-01.service
