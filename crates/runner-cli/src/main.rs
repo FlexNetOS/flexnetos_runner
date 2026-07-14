@@ -1,7 +1,6 @@
 //! `fxrun` — operator CLI for `flexnetos_runner` (ADR-0008 §2). Shows how a job kind
 //! routes (kernel + placement) and reports runner seam wiring.
 
-mod cache;
 mod forge_loop;
 mod release;
 mod runner_state;
@@ -41,11 +40,6 @@ enum Cmd {
     ForgeLoop {
         #[command(subcommand)]
         cmd: Box<forge_loop::ForgeLoopCommand>,
-    },
-    /// Audit, compress, and restore preserved runner cache state.
-    Cache {
-        #[command(subcommand)]
-        cmd: cache::CacheCommand,
     },
     // Classify, normalize, settle, and snapshot preserved runner state.
     RunnerState {
@@ -121,7 +115,6 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Cmd::ForgeLoop { cmd } => forge_loop::execute(*cmd)?,
-        Cmd::Cache { cmd } => cache::execute(cmd)?,
         Cmd::RunnerState { cmd } => runner_state::execute(cmd)?,
         Cmd::Release { cmd } => release::execute(cmd)?,
         Cmd::Doctor => {
