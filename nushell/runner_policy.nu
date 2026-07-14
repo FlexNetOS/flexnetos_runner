@@ -46,8 +46,17 @@ def audit_workflow [file: path] {
   $cache_rows ++ $shell_rows
 }
 
+def audit_tracked_work [root: path] {
+  ^git -C $root ls-files -- _work
+  | lines
+  | each {|file| {file: $file, kind: "tracked-runtime-state", term: "_work"} }
+}
+
 def main [--root: path = ".", --json] {
-  let findings = (workflow_files $root | each {|file| audit_workflow $file } | flatten)
+  let findings = (
+    (workflow_files $root | each {|file| audit_workflow $file } | flatten)
+    ++ (audit_tracked_work $root)
+  )
   if $json {
     $findings | to json --indent 2 | print
   } else if ($findings | is-empty) {
