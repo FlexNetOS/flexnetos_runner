@@ -1,3 +1,0 @@
-[v1]
-"cargo-audit 0.22.2 (registry+https://github.com/rust-lang/crates.io-index)" = ["cargo-audit"]
-"wild-linker 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = ["wild"]

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 runner_user="${FXRUN_RUNNER_USER:-flexnetos}"
-prefix="${FXRUN_RUNNER_PREFIX:-/home/flexnetos/FlexNetOS/src/flexnetos_runner}"
+prefix="${FXRUN_RUNNER_PREFIX:-/home/flexnetos/meta/src/flexnetos_runner}"
 unit_prefix="${FXRUN_RUNNER_UNIT_PREFIX:-flexnetos-runner}"
 wait_seconds="${FXRUN_RUNNER_CUTOVER_WAIT_SECONDS:-600}"
 force="${FXRUN_RUNNER_CUTOVER_FORCE:-0}"

@@ -73,7 +73,7 @@ inventory, data-flow diagrams, fresh backlog, agent automation story, and user c
 | `runner-core` | — | Pure core: signed job-spec type, kernel router (delegate-only), fork-PR isolation policy, JIT lifecycle state. Fully unit-tested. |
 | `runner-actions` | `fxrun-actions` | Self-hosted Actions runner supervisor (JIT register → run one → deregister). P1. |
 | `runner-dispatch` | `fxrun-dispatch` | UDS server: verify signed job spec → route → invoke kernel. P2. |
-| `runner-cli` | `fxrun` | Operator CLI: `route`, `agents`, `doctor`. |
+| `runner-cli` | `fxrun` | Operator CLI: `route`, `agents`, `release`, `doctor`. |
 
 ## Agent backends (any agent — Claude right now)
 
@@ -131,11 +131,11 @@ up the org-scoped runner in a clean `RUNNER_HOME`, verify the shared labels serv
 meta peers, then retire the old repo-scoped service/config. Do not mutate a live repo-scoped runner
 home in place, and do not create a repo-scoped `envctl`/`meta` runner as a special-case fix.
 
-On this workstation the persistent FlexNetOS org runners live inside this repo-local committed
-operations root, `_work/`. The default `fxrun-actions` paths target slot `actions-runner-01`; the
-second parallel slot uses the same layout with suffix `-02`. Historical `/home/drdave/_work` runner
-state is retired into `_work/archives/retired/`; do not move active runner state back outside this
-repo-local `_work` tree.
+On this workstation the FlexNetOS org runners use a disposable repo-local runtime root, `_work/`.
+It is ignored in full: runner homes, credentials, checkouts, logs, caches, archives, and evaluator
+output are never repository truth. The Yazelix/Nix profile owns the runner configuration and
+recreates the required runtime shape. The default paths target slot `actions-runner-01`; the second
+parallel slot uses the same layout with suffix `-02`.
 
 ### Org runner-group dispatch repair
 
@@ -176,12 +176,37 @@ branch policy allows.
 ## Local Ubuntu release
 
 `flexnetos_runner` owns the local release lane for this workstation. The first supported target is
-Ubuntu 26.04 on `x86_64`, with artifacts written to the workspace-level `release/` directory.
+Ubuntu 26.04 on `x86_64`, with artifacts written to the workspace-level `release/` directory. The
+LOCAL compile lane is first-class through `fxrun release` — it resolves a runner-local `cargo` and
+`bun` automatically, so no `FXRUN_CARGO=` prefix is required:
 
 ```bash
-FXRUN_CARGO=/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-02/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo \
+fxrun release check      # host + toolchain + catalog validation (script --check-only)
+fxrun release build      # compile the catalog, stage provenance + proof, write the tarball
+# scope to present components, override output, etc.:
+fxrun release check --components flexnetos_runner,envctl,rtk-tokenkill
+fxrun release build --out /tmp/relout --cargo /path/to/cargo
+```
+
+The output root resolves deterministically to `<workspace-root>/release` from the script's own
+location (symlink-independent); `FXRUN_RELEASE_DIR` still overrides it. The underlying script stays
+usable standalone:
+
+```bash
+FXRUN_CARGO=.../stable-x86_64-unknown-linux-gnu/bin/cargo \
   scripts/build-local-ubuntu-release.sh
 ```
+
+**Runner-proof gate.** Before staging the tarball, the build runs
+`codedb export runner_proof_manifest` and fails closed on any `failed` status, any un-allowlisted
+`pending`, or any `degraded` row missing a raw-log reference. The manifest carries permanent
+runner-owned deferrals (`release_readiness`, `fixture_matrix`, `generated_artifact_reproduction`,
+and the `capture_gaps_recorded` degradation), which are the documented default exceptions
+(`FXRUN_PROOF_PENDING_ALLOW` / `FXRUN_PROOF_DEGRADED_ALLOW`). The gate scans the runner's Rust
+source tree (`crates/`, not the `_work/`-laden repo root, whose vendored toolchain sources crash
+CodeDB's parser). The manifest and a `requirement-proof-receipt.txt` are staged into the tarball's
+`provenance/`. When CodeDB is unavailable the gate no-ops with a clear skip so the lane still builds
+standalone.
 
 The release reads [`release/catalog.tsv`](release/catalog.tsv) as the component source of truth.
 That catalog includes the Rust workspaces, GitKB/Codex binary payloads, Yazelix, envctl,
