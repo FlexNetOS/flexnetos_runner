@@ -20,7 +20,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Install Nushell
-        uses: nushell/setup-nu@v1
+        uses: hustcer/setup-nu@ccd5bb5426b05a32009c2ba967946231f3919c97 # v3
         with:
           version: 0.113.1
       - name: Reject non-Kache caches and automatic non-Nushell jobs
