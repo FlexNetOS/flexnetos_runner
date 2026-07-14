@@ -1,4 +1,5 @@
 name: Semantic PR Title
+# OWNER_BREAK_GLASS_ONLY: disabled until every run step is Nushell.
 
 on:
   pull_request_target:
@@ -19,6 +20,7 @@ concurrency:
 
 jobs:
   validate:
+    if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Semantic PR Title
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     env:

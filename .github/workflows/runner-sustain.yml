@@ -1,4 +1,5 @@
 name: Runner Sustain
+# OWNER_BREAK_GLASS_ONLY: disabled until every run step is Nushell.
 
 on:
   workflow_dispatch:
@@ -29,6 +30,7 @@ concurrency:
 
 jobs:
   local-runner-sustain:
+    if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Runner sustain slot ${{ inputs.lane_slot || '1' }}
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     timeout-minutes: 10

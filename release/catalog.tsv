@@ -11,12 +11,12 @@
 #
 # Core release runner and control plane.
 flexnetos_runner	cargo	src/flexnetos_runner	src/flexnetos_runner/Cargo.toml	fxrun,fxrun-actions,fxrun-dispatch	-	Local release runner and GitHub/local execution plane.
-meta	cargo	src/meta	src/meta/Cargo.toml	meta,meta-git,meta-mcp,meta-project,meta-rust,loop	-	Meta control plane workspace and loop CLI.
-meta-agent	cargo	src/meta	src/meta/agent/Cargo.toml	agent	-	Meta agent binary excluded from the meta workspace.
+meta	cargo	.	Cargo.toml	meta,meta-git,meta-mcp,meta-project,meta-rust,loop	-	Meta control plane workspace and loop CLI.
+meta-agent	cargo	agent	agent/Cargo.toml	agent	-	Meta agent binary excluded from the meta workspace.
 
 # GitKB and agent frontdoors used by Codex/meta sessions.
-gitkb	copy-bin	usr/bin/git-kb	-	git-kb	-	GitKB local binary; source repo should become a cataloged peer when available.
-codex	copy-bin	/home/flexnetos/.codex/packages/standalone/current/bin/codex	-	codex	-	Codex Rust standalone binary used by local agent sessions.
+gitkb	copy-bin	/nix/store/66llanvj1g9qbcvbj8c674jc595ri2rr-lifeos-foundation-yzx/toolbin/git-kb	-	git-kb	-	GitKB local binary; source repo should become a cataloged peer when available.
+codex	copy-bin	/nix/store/66llanvj1g9qbcvbj8c674jc595ri2rr-lifeos-foundation-yzx/toolbin/codex	-	codex	-	Codex Rust standalone binary used by local agent sessions.
 
 # FlexNetOS environment and issue/task tools.
 envctl	cargo	src/envctl	src/envctl/Cargo.toml	envctl,envctl-gui,secretd,secretctl	-	Environment manager and local secrets/toolchain plane.

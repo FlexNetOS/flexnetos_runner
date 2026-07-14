@@ -1,4 +1,5 @@
 name: Agentic System Watch
+# OWNER_BREAK_GLASS_ONLY: disabled until every run step is Nushell.
 run-name: Agentic System Watch (${{ github.event_name }} ${{ inputs.trigger_source || github.event.workflow_run.name || 'scheduled' }})
 
 on:
@@ -27,6 +28,7 @@ concurrency:
 
 jobs:
   watch-and-grow:
+    if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Prove agentic system and dispatch growth
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -45,7 +47,6 @@ jobs:
             sleep 90
           fi
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - name: Capture run and PR history
         shell: bash
         env:

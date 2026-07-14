@@ -1,8 +1,8 @@
 //! `fxrun` — operator CLI for `flexnetos_runner` (ADR-0008 §2). Shows how a job kind
 //! routes (kernel + placement) and reports runner seam wiring.
 
-mod cache;
 mod forge_loop;
+mod release;
 mod runner_state;
 
 use clap::{Parser, Subcommand};
@@ -41,15 +41,15 @@ enum Cmd {
         #[command(subcommand)]
         cmd: Box<forge_loop::ForgeLoopCommand>,
     },
-    /// Audit, compress, and restore preserved runner cache state.
-    Cache {
-        #[command(subcommand)]
-        cmd: cache::CacheCommand,
-    },
     // Classify, normalize, settle, and snapshot preserved runner state.
     RunnerState {
         #[command(subcommand)]
         cmd: runner_state::RunnerStateCommand,
+    },
+    /// Build or check the local Ubuntu release bundle (LOCAL compile lane, runner-local defaults).
+    Release {
+        #[command(subcommand)]
+        cmd: release::ReleaseCommand,
     },
     /// Report rails + seam wiring status.
     Doctor,
@@ -115,8 +115,8 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Cmd::ForgeLoop { cmd } => forge_loop::execute(*cmd)?,
-        Cmd::Cache { cmd } => cache::execute(cmd)?,
         Cmd::RunnerState { cmd } => runner_state::execute(cmd)?,
+        Cmd::Release { cmd } => release::execute(cmd)?,
         Cmd::Doctor => {
             let rails = safety::Rails::default();
             println!("fxrun");

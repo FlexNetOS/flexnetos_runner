@@ -29,25 +29,25 @@ struct Cli {
     /// GitHub owner or organization.
     #[arg(long, env = "RUNNER_ORG", default_value = "FlexNetOS")]
     org: String,
-    /// Runner install directory.
+    /// Volatile runner tree materialized from the immutable Yazelix profile.
     #[arg(
         long,
         env = "RUNNER_HOME",
-        default_value = "/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/repos/actions-runner-01"
+        default_value = "/run/user/1001/yazelix/runners/01/runner"
     )]
     home: PathBuf,
-    /// Runner work directory passed to config.sh.
+    /// Volatile runner work directory passed to Runner.Listener.
     #[arg(
         long,
         env = "RUNNER_WORK_DIR",
-        default_value = "/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/actions-runner-01-work"
+        default_value = "/run/user/1001/yazelix/runners/01/work"
     )]
     work_dir: PathBuf,
     /// HOME/GIT_CONFIG_GLOBAL sandbox used by the systemd service.
     #[arg(
         long,
         env = "RUNNER_SERVICE_HOME",
-        default_value = "/home/flexnetos/FlexNetOS/src/flexnetos_runner/_work/runner-home-01"
+        default_value = "/run/user/1001/yazelix/runners/01/home"
     )]
     service_home: PathBuf,
     /// Comma-separated runner labels.
@@ -99,7 +99,7 @@ enum Cmd {
         #[arg(long, env = "REPLACE", default_value_t = true, action = ArgAction::Set)]
         replace: bool,
     },
-    /// Register a persistent runner, optionally installed as a system service.
+    /// Refused by policy: FlexNetOS runners are ephemeral and profile-supervised.
     Register {
         /// Registration scope (defaults to org; repo is an explicit sandbox/exception).
         #[arg(long, value_enum, env = "RUNNER_SCOPE", default_value_t = Scope::Org)]
@@ -110,10 +110,10 @@ enum Cmd {
         /// Replace an existing local runner config.
         #[arg(long, env = "REPLACE", default_value_t = true, action = ArgAction::Set)]
         replace: bool,
-        /// Install and start the GitHub runner service after registration.
+        /// Retained for CLI compatibility; always refused by the ephemeral-runner policy.
         #[arg(long, env = "INSTALL_SERVICE", default_value_t = false, action = ArgAction::Set)]
         service: bool,
-        /// User for svc.sh install.
+        /// Retained for CLI compatibility; service ownership is profile-managed.
         #[arg(long, env = "RUNNER_USER", default_value = "flexnetos")]
         user: String,
     },
@@ -177,12 +177,8 @@ fn doctor(cli: &Cli) -> Result<()> {
     println!("  work dir           : {}", cli.work_dir.display());
     println!("  service home       : {}", cli.service_home.display());
     println!(
-        "  config.sh          : {}",
-        cli.home.join("config.sh").is_file()
-    );
-    println!(
-        "  run.sh             : {}",
-        cli.home.join("run.sh").is_file()
+        "  Runner.Listener    : {}",
+        is_executable(runner_listener_path(&cli.home))
     );
     match read_local_runner_config(&cli.home)? {
         Some(config) => {
@@ -293,18 +289,6 @@ fn install(
         .arg(&archive_path)
         .current_dir(&cli.home))?;
 
-    let deps = cli.home.join("bin/installdependencies.sh");
-    if deps.is_file() {
-        let status = Command::new("sudo")
-            .arg(&deps)
-            .current_dir(&cli.home)
-            .status();
-        match status {
-            Ok(status) if status.success() => {}
-            Ok(status) => eprintln!("WARN: dependency installer exited with {status}"),
-            Err(err) => eprintln!("WARN: could not run dependency installer: {err}"),
-        }
-    }
     println!(
         "OK: actions runner v{version} installed at {}",
         cli.home.display()
@@ -318,7 +302,9 @@ fn run_once(cli: &Cli, scope: &Scope, repo: Option<&str>, replace: bool) -> Resu
         return Ok(());
     }
     println!("OK: runner registered; running exactly one job");
-    run(Command::new(cli.home.join("run.sh")).current_dir(&cli.home))?;
+    run(Command::new(runner_listener_path(&cli.home))
+        .arg("run")
+        .current_dir(&cli.home))?;
     Ok(())
 }
 
@@ -327,41 +313,13 @@ fn register_persistent(
     scope: &Scope,
     repo: Option<&str>,
     replace: bool,
-    service: bool,
-    user: &str,
+    _service: bool,
+    _user: &str,
 ) -> Result<()> {
-    let name = configure_runner(cli, scope, repo, replace, false)?;
-    if cli.dry_run {
-        return Ok(());
-    }
-    if service {
-        let svc = cli.home.join("svc.sh");
-        if !svc.is_file() {
-            bail!("{} is missing; cannot install service", svc.display());
-        }
-        run(Command::new("sudo")
-            .arg(&svc)
-            .arg("install")
-            .arg(user)
-            .current_dir(&cli.home))?;
-        let unit = service_unit_name(&cli.org, scope, repo, &name)?;
-        install_service_home_dropin(&unit, &cli.service_home)?;
-        run(Command::new("sudo")
-            .arg(&svc)
-            .arg("start")
-            .current_dir(&cli.home))?;
-        let _ = Command::new("sudo")
-            .arg(&svc)
-            .arg("status")
-            .current_dir(&cli.home)
-            .status();
-    } else {
-        println!(
-            "OK: runner registered. Start it with {}",
-            cli.home.join("run.sh").display()
-        );
-    }
-    Ok(())
+    let _ = (cli, scope, repo, replace);
+    bail!(
+        "persistent runner registration is disabled: use the profile-owned Nushell service to run one ephemeral job"
+    )
 }
 
 fn configure_runner(
@@ -373,11 +331,11 @@ fn configure_runner(
 ) -> Result<String> {
     require_confirm(cli)?;
     require_cmd("gh")?;
-    let config = cli.home.join("config.sh");
-    if !config.is_file() || !cli.home.join("run.sh").is_file() {
+    let listener = runner_listener_path(&cli.home);
+    if !is_executable(&listener) {
         bail!(
-            "runner is not installed at {}; run `fxrun-actions install --dry-run=false --confirm=true` first",
-            cli.home.display()
+            "Runner.Listener is not executable at {}; materialize the profile-owned runner tree first",
+            listener.display()
         );
     }
 
@@ -435,8 +393,15 @@ fn configure_runner(
     if replace {
         args.push("--replace".to_string());
     }
-    run(Command::new(&config).args(args).current_dir(&cli.home))?;
+    run(Command::new(&listener)
+        .arg("configure")
+        .args(args)
+        .current_dir(&cli.home))?;
     Ok(name)
+}
+
+fn runner_listener_path(home: &Path) -> PathBuf {
+    home.join("bin/Runner.Listener")
 }
 
 fn registration_url(org: &str, scope: Scope, repo: Option<&str>) -> Result<String> {
@@ -526,47 +491,6 @@ fn guard_existing_runner_target(
         home.display(),
         existing.git_hub_url
     )
-}
-
-fn service_unit_name(org: &str, scope: &Scope, repo: Option<&str>, name: &str) -> Result<String> {
-    let scope_part = match scope {
-        Scope::Org => org.to_string(),
-        Scope::Repo => format!(
-            "{org}-{}",
-            repo.ok_or_else(|| anyhow!("--repo is required when --scope repo"))?
-        ),
-    };
-    Ok(format!("actions.runner.{scope_part}.{name}.service"))
-}
-
-fn install_service_home_dropin(unit: &str, service_home: &Path) -> Result<()> {
-    fs::create_dir_all(service_home)
-        .with_context(|| format!("create runner service home {}", service_home.display()))?;
-    let gitconfig = service_home.join(".gitconfig");
-    if !gitconfig.exists() {
-        fs::write(
-            &gitconfig,
-            "[credential \"https://github.com\"]\n\thelper = \n\thelper = !/usr/bin/gh auth git-credential\n",
-        )
-        .with_context(|| format!("write {}", gitconfig.display()))?;
-    }
-
-    let dropin_dir = format!("/etc/systemd/system/{unit}.d");
-    let dropin_content = format!(
-        "[Service]\nEnvironment=HOME={home}\nEnvironment=GIT_CONFIG_GLOBAL={home}/.gitconfig\n",
-        home = service_home.display()
-    );
-    let tmp = env::temp_dir().join(format!("fxrun-actions-{unit}-runner-home.conf"));
-    fs::write(&tmp, dropin_content).with_context(|| format!("write {}", tmp.display()))?;
-    run(Command::new("sudo").args(["mkdir", "-p", &dropin_dir]))?;
-    run(Command::new("sudo")
-        .arg("install")
-        .args(["-m", "0644"])
-        .arg(&tmp)
-        .arg(format!("{dropin_dir}/10-runner-home.conf")))?;
-    let _ = fs::remove_file(&tmp);
-    run(Command::new("sudo").args(["systemctl", "daemon-reload"]))?;
-    Ok(())
 }
 
 /// GitHub-enforced minimum self-hosted `actions/runner` version (changelog 2026-06-12). Below
@@ -883,6 +807,38 @@ mod tests {
             }
             _ => panic!("expected run-once command"),
         }
+    }
+
+    #[test]
+    fn runner_lifecycle_uses_listener_elf_and_refuses_persistent_registration() {
+        assert_eq!(
+            runner_listener_path(Path::new("/runner")),
+            PathBuf::from("/runner/bin/Runner.Listener")
+        );
+
+        let cli = Cli::try_parse_from(["fxrun-actions", "register"]).unwrap();
+        let Cmd::Register {
+            scope,
+            repo,
+            replace,
+            service,
+            user,
+        } = &cli.cmd
+        else {
+            panic!("expected register command");
+        };
+        let error = register_persistent(
+            &cli,
+            scope,
+            repo.as_deref(),
+            *replace,
+            *service,
+            user,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("persistent runner registration is disabled"));
+        assert!(error.contains("profile-owned Nushell service"));
     }
 
     #[test]
