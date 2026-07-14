@@ -1,4 +1,5 @@
 name: Runner Retarget
+# OWNER_BREAK_GLASS_ONLY: disabled until every run step is Nushell.
 
 on:
   workflow_dispatch:
@@ -8,6 +9,7 @@ permissions:
 
 jobs:
   retarget:
+    if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Retarget local runner services to flexnetos repo path
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     timeout-minutes: 5
