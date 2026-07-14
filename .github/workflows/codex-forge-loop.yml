@@ -1,4 +1,5 @@
 name: Codex Forge Loop
+# OWNER_BREAK_GLASS_ONLY: disabled until every run step is Nushell.
 
 on:
   workflow_dispatch:
@@ -25,6 +26,7 @@ permissions:
 
 jobs:
   codex-forge-loop:
+    if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Codex forge-loop action
     runs-on: [self-hosted, linux, x64, local, flexnetos]
     timeout-minutes: 60
