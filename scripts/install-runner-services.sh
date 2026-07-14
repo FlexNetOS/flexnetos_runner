@@ -31,6 +31,7 @@ codex_home="${CODEX_HOME:-}"
 gh_config_dir="${GH_CONFIG_DIR:-}"
 codex_bin_dir="${FXRUN_RUNNER_CODEX_BIN_DIR:-}"
 unit_config_home="${FXRUN_RUNNER_XDG_CONFIG_HOME:-}"
+kache_rustc_wrapper="${FXRUN_KACHE_RUSTC_WRAPPER:-}"
 
 usage() {
   cat <<USAGE
@@ -54,6 +55,7 @@ Options:
   --codex-home DIR       CODEX_HOME to place in units.
   --gh-config-dir DIR    GH_CONFIG_DIR to place in units.
   --codex-bin-dir DIR    Codex binary dir to include in generated .path.
+  --kache-wrapper FILE   Profile-owned kache-rustc-wrapper executable.
   --xdg-config-home DIR  Config home for user-mode unit placement.
   -h, --help             Show this help.
 
@@ -92,6 +94,7 @@ while [[ $# -gt 0 ]]; do
     --codex-home) codex_home="$2"; shift 2 ;;
     --gh-config-dir) gh_config_dir="$2"; shift 2 ;;
     --codex-bin-dir) codex_bin_dir="$2"; shift 2 ;;
+    --kache-wrapper) kache_rustc_wrapper="$2"; shift 2 ;;
     --xdg-config-home) unit_config_home="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -159,6 +162,9 @@ fi
 if [[ -z "$unit_config_home" ]]; then
   unit_config_home="${runner_home_base}/.config"
 fi
+if [[ -z "$kache_rustc_wrapper" ]]; then
+  kache_rustc_wrapper="${runner_home_base}/.nix-profile/bin/kache-rustc-wrapper"
+fi
 
 unit_names=()
 for slot in "${slots[@]}"; do
@@ -202,7 +208,7 @@ Environment=GIT_CONFIG_GLOBAL=${prefix}/_work/runner-home-%i/.gitconfig
 Environment=XDG_CONFIG_HOME=${prefix}/_work/runner-home-%i/.config
 Environment=XDG_CACHE_HOME=${prefix}/_work/runner-home-%i/.cache
 Environment=CARGO_HOME=${prefix}/_work/runner-home-%i/.cargo
-Environment=CARGO_BUILD_RUSTC_WRAPPER=${prefix}/_work/runner-home-%i/.cargo/bin/flexnetos-kache-rustc-wrapper
+Environment=CARGO_BUILD_RUSTC_WRAPPER=${prefix}/_work/kache-shims/flexnetos-kache-rustc-wrapper-%i
 Environment=RUSTUP_HOME=${prefix}/_work/runner-home-%i/.rustup
 Environment=BUN_INSTALL=${prefix}/_work/runner-home-%i/.bun
 Environment=BUN_TMPDIR=${prefix}/_work/runner-home-%i/.cache/bun/tmp
@@ -246,11 +252,20 @@ print_plan() {
   echo "unit=${unit_path}"
   echo "codex_home=${codex_home}"
   echo "gh_config_dir=${gh_config_dir}"
+  echo "kache_rustc_wrapper=${kache_rustc_wrapper}"
   echo
   echo "# generated runner .path files"
   for slot in "${slots[@]}"; do
     echo "## ${prefix}/_work/repos/actions-runner-${slot}/.path"
     path_for_slot "$slot"
+  done
+  echo
+  echo "# generated runner .env files"
+  for slot in "${slots[@]}"; do
+    echo "## ${prefix}/_work/repos/actions-runner-${slot}/.env"
+    printf 'LANG=en_US.UTF-8\n'
+    printf 'ACTIONS_RUNNER_HOOK_JOB_STARTED=%s/scripts/runner-repo-guard.sh\n' "$prefix"
+    printf 'FXRUN_REPO_BLOCKLIST=%s/_work/config/runner-blocklist.txt\n' "$prefix"
   done
   echo
   echo "# generated systemd unit"
@@ -281,23 +296,32 @@ print_plan() {
 
 write_path_files() {
   local slot runner_dir home_dir work_dir
+  if [[ ! -x "$kache_rustc_wrapper" ]]; then
+    echo "profile-owned kache wrapper is not executable: $kache_rustc_wrapper" >&2
+    exit 1
+  fi
   for slot in "${slots[@]}"; do
     runner_dir="${prefix}/_work/repos/actions-runner-${slot}"
     home_dir="${prefix}/_work/runner-home-${slot}"
     work_dir="${prefix}/_work/actions-runner-${slot}-work"
     install -d -m 0755 "$runner_dir" "$home_dir" "$work_dir"
-    install -d -m 0755 "${home_dir}/.cargo/bin" "${home_dir}/.config/kache" "${home_dir}/.cache/kache"
-    cat > "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper" <<EOF
+    kache_shim="${prefix}/_work/kache-shims/flexnetos-kache-rustc-wrapper-${slot}"
+    install -d -m 0755 "${home_dir}/.cargo/bin" "${home_dir}/.config/kache" "${home_dir}/.cache/kache" "${prefix}/_work/kache-shims"
+    # Owner-only break-glass path. Automatic runner installation is profile-owned Nushell.
+    # back to its cache manifest between jobs, which deleted the wrapper and broke
+    # every cargo job with rustc-wrapper ENOENT (2026-07-09 incident). _work/kache-shims
+    # is runner-managed and never touched by job-level cache actions.
+    cat > "$kache_shim" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export KACHE_CONFIG="${home_dir}/.config/kache/config.toml"
 export KACHE_CACHE_DIR="${home_dir}/.cache/kache"
-exec "/home/flexnetos/FlexNetOS/usr/bin/kache-rustc-wrapper" "\$@"
+exec "${kache_rustc_wrapper}" "\$@"
 EOF
-    chmod 755 "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+    chmod 755 "$kache_shim"
     cat > "${home_dir}/.cargo/config.toml" <<EOF
 [build]
-rustc-wrapper = "${home_dir}/.cargo/bin/flexnetos-kache-rustc-wrapper"
+rustc-wrapper = "$kache_shim"
 EOF
     cat > "${home_dir}/.config/kache/config.toml" <<EOF
 [cache]
@@ -350,6 +374,11 @@ exec "${runner_dir}/runsvc.sh"
 EOF
     chmod 755 "${runner_dir}/flexnetos-runner-entrypoint.sh"
     path_for_slot "$slot" > "${runner_dir}/.path"
+    cat > "${runner_dir}/.env" <<EOF
+LANG=en_US.UTF-8
+ACTIONS_RUNNER_HOOK_JOB_STARTED=${prefix}/scripts/runner-repo-guard.sh
+FXRUN_REPO_BLOCKLIST=${prefix}/_work/config/runner-blocklist.txt
+EOF
   done
 }
 

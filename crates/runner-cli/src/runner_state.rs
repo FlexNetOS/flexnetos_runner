@@ -14,7 +14,7 @@ pub enum RunnerStateCommand {
     Audit(RunnerStateAuditCli),
     /// Normalize known benign producer churn while preserving runner identity/state.
     Normalize(RunnerStateNormalizeCli),
-    /// Run audit + normalize + optional cache compression/snapshot/publish automation.
+    /// Run audit + normalize + optional snapshot/publish automation.
     Settle(RunnerStateSettleCli),
 }
 
@@ -64,9 +64,6 @@ pub struct RunnerStateSettleCli {
     /// Override the idle gate.
     #[arg(long)]
     force: bool,
-    /// Route old cache files through `fxrun cache compress` after normalization.
-    #[arg(long)]
-    compress_old_cache: bool,
     /// Commit the settled snapshot locally when mutations exist.
     #[arg(long)]
     commit: bool,
@@ -148,7 +145,6 @@ pub struct RunnerStateSettleOptions {
     pub slots: RunnerStateSlots,
     pub require_idle: bool,
     pub force: bool,
-    pub compress_old_cache: bool,
     pub commit: bool,
     pub message: String,
     pub push_pr: bool,
@@ -247,7 +243,6 @@ pub fn execute(cmd: RunnerStateCommand) -> Result<()> {
                 slots: RunnerStateSlots::parse(&args.slots)?,
                 require_idle: args.require_idle,
                 force: args.force,
-                compress_old_cache: args.compress_old_cache,
                 commit: args.commit,
                 message: args.message,
                 push_pr: args.push_pr,
@@ -404,14 +399,6 @@ pub fn settle_runner_state(opts: RunnerStateSettleOptions) -> Result<RunnerState
         slots: opts.slots,
     })?;
     let mut actions = Vec::new();
-    if opts.compress_old_cache {
-        if opts.dry_run {
-            actions.push("dry-run: would run fxrun cache compress for old cache state".into());
-        } else {
-            run_cache_compress(&root)?;
-            actions.push("ran fxrun cache compress for old cache state".into());
-        }
-    }
     if opts.commit {
         if opts.dry_run {
             actions.push(format!("dry-run: would commit snapshot: {}", opts.message));
@@ -729,25 +716,6 @@ fn remove_path_if_exists(path: &Path) -> Result<()> {
     } else {
         fs::remove_file(path).with_context(|| format!("remove {}", path.display()))
     }
-}
-
-fn run_cache_compress(root: &Path) -> Result<()> {
-    let exe = std::env::current_exe().context("resolve current fxrun executable")?;
-    let status = Command::new(exe)
-        .arg("cache")
-        .arg("compress")
-        .arg("--root")
-        .arg(root.join("_work"))
-        .arg("--slot")
-        .arg("all")
-        .arg("--format")
-        .arg("json")
-        .status()
-        .context("spawn fxrun cache compress")?;
-    if !status.success() {
-        bail!("fxrun cache compress failed with {status}");
-    }
-    Ok(())
 }
 
 fn commit_snapshot(root: &Path, message: &str) -> Result<()> {
