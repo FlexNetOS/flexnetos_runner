@@ -307,6 +307,7 @@ write_path_files() {
     install -d -m 0755 "$runner_dir" "$home_dir" "$work_dir"
     kache_shim="${prefix}/_work/kache-shims/flexnetos-kache-rustc-wrapper-${slot}"
     install -d -m 0755 "${home_dir}/.cargo/bin" "${home_dir}/.config/kache" "${home_dir}/.cache/kache" "${prefix}/_work/kache-shims"
+    # The shim lives OUTSIDE $CARGO_HOME/bin: Swatinem/rust-cache prunes .cargo/bin
     # Owner-only break-glass path. Automatic runner installation is profile-owned Nushell.
     # back to its cache manifest between jobs, which deleted the wrapper and broke
     # every cargo job with rustc-wrapper ENOENT (2026-07-09 incident). _work/kache-shims
