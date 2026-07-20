@@ -11,12 +11,27 @@ glob_scan_max_depth = 3
 
 [permissions.forge-loop-workspace.filesystem.":workspace_roots"]
 "." = "write"
-".git" = "read"
+".git" = "write"
 ".codex" = "write"
 ".github" = "write"
 ".handoff" = "write"
 "docs" = "write"
 "target" = "write"
+
+# Merge/PR convergence sessions require write access to repo git metadata and
+# sibling worktree roots, while preserving denied secret/env globs below.
+"/home/flexnetos/meta" = "write"
+"/home/flexnetos/meta/.worktrees" = "write"
+"/home/flexnetos/meta/src/flexnetos_runner" = "write"
+
+# Runtime proof and stale-shadow cleanup surfaces. The Nix profile is the
+# read-only active frontdoor; .local paths are writable only so stale shadows
+# can be archived/removed rather than treated as active runtime authority.
+"/home/flexnetos/Downloads" = "read"
+"/home/flexnetos/.nix-profile" = "read"
+"/home/flexnetos/.config/yazelix" = "write"
+"/home/flexnetos/.local/bin" = "write"
+"/home/flexnetos/.local/share/applications" = "write"
 "**/*.env" = "deny"
 "**/*secret*" = "deny"
 "**/*token*" = "deny"

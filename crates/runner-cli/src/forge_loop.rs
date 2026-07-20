@@ -3965,7 +3965,14 @@ fn permission_profile_readiness(root: &Path) -> PermissionProfileReadiness {
         "\":slash_tmp\" = \"write\"",
         "[permissions.forge-loop-workspace.filesystem.\":workspace_roots\"]",
         "\".\" = \"write\"",
-        "\".git\" = \"read\"",
+        "\".git\" = \"write\"",
+        "\"/home/flexnetos/meta\" = \"write\"",
+        "\"/home/flexnetos/meta/.worktrees\" = \"write\"",
+        "\"/home/flexnetos/Downloads\" = \"read\"",
+        "\"/home/flexnetos/.nix-profile\" = \"read\"",
+        "\"/home/flexnetos/.config/yazelix\" = \"write\"",
+        "\"/home/flexnetos/.local/bin\" = \"write\"",
+        "\"/home/flexnetos/.local/share/applications\" = \"write\"",
         "\"**/*.env\" = \"deny\"",
         "\"**/*secret*\" = \"deny\"",
         "\"**/*token*\" = \"deny\"",
@@ -4308,11 +4315,11 @@ pub fn codex_invocation(prompt: String) -> CodexInvocation {
         args: vec![
             "exec".into(),
             "--json".into(),
-            "--sandbox".into(),
-            "workspace-write".into(),
             "--ignore-user-config".into(),
             "--config".into(),
-            "approval_policy=\"never\"".into(),
+            "default_permissions=\"forge-loop-workspace\"".into(),
+            "--config".into(),
+            "approval_policy=\"on-request\"".into(),
             "--config".into(),
             "features.auto_compaction=true".into(),
             "--config".into(),
@@ -5166,26 +5173,74 @@ mod tests {
     }
 
     #[test]
-    fn codex_invocation_uses_noninteractive_json_workspace_write() {
+    fn codex_invocation_uses_noninteractive_json_permission_profile() {
         let inv = codex_invocation("do work".into());
         assert!(inv.program.ends_with("codex") || inv.program == DEFAULT_CODEX);
         assert_eq!(inv.args[0], "exec");
         assert!(inv.args.contains(&"--json".into()));
-        assert!(inv
-            .args
-            .windows(2)
-            .any(|w| w == ["--sandbox", "workspace-write"]));
         assert!(inv.args.contains(&"--ignore-user-config".into()));
         assert!(inv
             .args
             .windows(2)
-            .any(|w| w == ["--config", "approval_policy=\"never\""]));
+            .any(|w| w == ["--config", "default_permissions=\"forge-loop-workspace\""]));
+        assert!(inv
+            .args
+            .windows(2)
+            .any(|w| w == ["--config", "approval_policy=\"on-request\""]));
+        assert!(!inv
+            .args
+            .windows(2)
+            .any(|w| w == ["--sandbox", "workspace-write"]));
         assert_eq!(inv.args.last().unwrap(), "do work");
     }
 
     #[test]
     fn codex_program_default_uses_profile_owned_codex_frontdoor() {
         assert_eq!(DEFAULT_CODEX, "/home/flexnetos/.nix-profile/bin/codex");
+    }
+
+    #[test]
+    fn codex_permissions_profile_enables_merge_cleanup_session() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let config =
+            fs::read_to_string(root.join(".codex/config.toml")).expect("read active Codex config");
+        let mirror = fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
+            .expect("read permission mirror");
+
+        for text in [&config, &mirror] {
+            for required in [
+                "\".git\" = \"write\"",
+                "\"/home/flexnetos/meta\" = \"write\"",
+                "\"/home/flexnetos/meta/.worktrees\" = \"write\"",
+                "\"/home/flexnetos/Downloads\" = \"read\"",
+                "\"/home/flexnetos/.nix-profile\" = \"read\"",
+                "\"/home/flexnetos/.config/yazelix\" = \"write\"",
+                "\"/home/flexnetos/.local/bin\" = \"write\"",
+                "\"/home/flexnetos/.local/share/applications\" = \"write\"",
+            ] {
+                assert!(
+                    text.contains(required),
+                    "permission config missing {required}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn codex_invocation_uses_active_permission_profile_with_escalation_path() {
+        let inv = codex_invocation("do work".into());
+        let args = inv.args.join("\n");
+
+        assert!(args.contains("default_permissions=\"forge-loop-workspace\""));
+        assert!(args.contains("approval_policy=\"on-request\""));
+        assert!(!args.contains("approval_policy=\"never\""));
+        assert!(!inv
+            .args
+            .windows(2)
+            .any(|w| w == ["--sandbox", "workspace-write"]));
     }
 
     #[test]
