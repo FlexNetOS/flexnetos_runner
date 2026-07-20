@@ -1109,7 +1109,7 @@ fn self_upgrade_plan(min_score: u8) -> serde_json::Value {
 
 fn self_upgrade_prompt(score: u8) -> String {
     format!(
-        "You are the forge-loop self-upgrade agent. Implement exactly one small, TDD-first reliability, accuracy, or speed improvement for fxrun forge-loop. Leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR, and enable auto-merge if checks are green when repository settings allow. Evaluation score: {score}. Strict upgrade only; no downgrades/removals without parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates."
+        "You are the forge-loop self-upgrade agent. Implement exactly one small, TDD-first reliability, accuracy, or speed improvement for fxrun forge-loop. Leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR, and enable auto-merge if checks are green when repository settings allow. Evaluation score: {score}. Strict upgrade only; no downgrades/removals without parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy -- find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates."
     )
 }
 
@@ -4287,7 +4287,7 @@ fn codex_auth_readiness() -> CodexAuthReadiness {
         login_status_command: "rtk codex login status",
         verification_commands: vec![
             "rtk codex login status".into(),
-            format!("rtk proxy test -f {auth_json_display}"),
+            format!("rtk proxy -- test -f {auth_json_display}"),
         ],
     }
 }
@@ -4610,7 +4610,7 @@ impl EvalInput {
 fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
     let pr_title = cycle_pr_title(goal);
     format!(
-        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Verify local ChatGPT subscription auth before implementation with `rtk codex login status` and `rtk proxy test -f /home/flexnetos/.codex/auth.json`. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates.",
+        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Verify local ChatGPT subscription auth before implementation with `rtk codex login status` and `rtk proxy -- test -f /home/flexnetos/.codex/auth.json`. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy -- find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates.",
         if auto_merge { "auto-merge once green when repository settings allow" } else { "leave the PR ready for review" }
     )
 }
@@ -4988,7 +4988,7 @@ fn phase_validation_commands() -> BTreeMap<String, Vec<String>> {
         cycle_phase_label(CyclePhase::Red).to_string(),
         vec![
             "rtk codex login status".to_string(),
-            format!("rtk proxy test -f {DEFAULT_CODEX_HOME}/auth.json"),
+            format!("rtk proxy -- test -f {DEFAULT_CODEX_HOME}/auth.json"),
             "rtk cargo test -p runner-cli --all-features <new_red_test_name> -- --nocapture"
                 .to_string(),
         ],
@@ -5291,7 +5291,7 @@ mod tests {
         assert!(manifest
             .auth_verification_commands
             .iter()
-            .any(|command| command == "rtk proxy test -f /home/flexnetos/.codex/auth.json"));
+            .any(|command| command == "rtk proxy -- test -f /home/flexnetos/.codex/auth.json"));
     }
 
     #[test]
@@ -5721,7 +5721,7 @@ mod tests {
         assert!(prompt.contains("leave the intended repository changes in the working tree"));
         assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
         assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
-        assert!(prompt.contains("rtk proxy find"));
+        assert!(prompt.contains("rtk proxy -- find"));
     }
 
     #[test]
@@ -5730,7 +5730,7 @@ mod tests {
 
         assert!(prompt.contains("Verify local ChatGPT subscription auth before implementation"));
         assert!(prompt.contains("rtk codex login status"));
-        assert!(prompt.contains("rtk proxy test -f /home/flexnetos/.codex/auth.json"));
+        assert!(prompt.contains("rtk proxy -- test -f /home/flexnetos/.codex/auth.json"));
     }
 
     #[test]
@@ -5741,7 +5741,7 @@ mod tests {
         assert!(prompt_lower.contains("leave the intended repository changes in the working tree"));
         assert!(prompt.contains("do not run git commit, git push, or gh pr from inside Codex"));
         assert!(prompt.contains("The outer forge-loop engine will commit, push, open a PR"));
-        assert!(prompt.contains("rtk proxy find"));
+        assert!(prompt.contains("rtk proxy -- find"));
         assert!(
             !prompt.contains("Commit, push, open a PR"),
             "self-upgrade prompt must not ask nested Codex to publish"

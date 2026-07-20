@@ -827,16 +827,9 @@ mod tests {
         else {
             panic!("expected register command");
         };
-        let error = register_persistent(
-            &cli,
-            scope,
-            repo.as_deref(),
-            *replace,
-            *service,
-            user,
-        )
-        .unwrap_err()
-        .to_string();
+        let error = register_persistent(&cli, scope, repo.as_deref(), *replace, *service, user)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("persistent runner registration is disabled"));
         assert!(error.contains("profile-owned Nushell service"));
     }
