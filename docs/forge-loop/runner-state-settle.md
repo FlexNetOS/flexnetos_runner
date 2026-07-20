@@ -7,12 +7,12 @@
 ```bash
 fxrun runner-state audit --format json
 fxrun runner-state normalize --format json
-fxrun runner-state settle --slots all --compress-old-cache --commit --push-pr
+fxrun runner-state settle --slots all --commit --push-pr
 ```
 
 - `audit` is read-only. It classifies dirty/preserved paths as `live-runner-state`, `cache-state`, `config-churn`, `gitkb-runtime`, `denied-sensitive`, or `unclassified`.
 - `normalize` atomically dedupes repeated `safe.directory` entries in `_work/runner-home-*/.gitconfig`, removes GitKB runtime caches/workspaces after GitKB has its durable store, and removes only broad `_work` gitignore rules.
-- `settle` composes audit + normalize, optionally invokes `fxrun cache compress`, optionally commits an intentional runner-state snapshot, and can push/create an auto-merge PR when requested.
+- `settle` composes audit + normalize, optionally commits an intentional runner-state snapshot, and can push/create an auto-merge PR when requested. It never owns cache compression; Kache is the only cache owner.
 
 ## Guardrails
 
@@ -34,4 +34,4 @@ That is the replacement for broad `_work/` gitignore hiding. Granular ignores fo
 
 ## Emergency behavior
 
-Use `audit --strict --format json` before mutating. If strict reports `denied-sensitive` or `unclassified`, stop and review; do not normalize those paths. If only `config-churn` and `gitkb-runtime` are reported, `normalize` is safe to run. If old cache files dominate, run `settle --compress-old-cache` so the existing cache manifest/restore contract owns the space-saving step.
+Use `audit --strict --format json` before mutating. If strict reports `denied-sensitive` or `unclassified`, stop and review; do not normalize those paths. If only `config-churn` and `gitkb-runtime` are reported, `normalize` is safe to run. Purge legacy non-Kache cache state; do not preserve, compress, or restore it.

@@ -8,10 +8,13 @@
 # in the runner's .env, then restart flexnetos-runner@NN.service.
 #
 # Blocklist: one owner/repo per line; '#' comments and blank lines ignored.
-# Default: $HARNESS_VAR/lib/runner/blocklist.txt (override: FXRUN_REPO_BLOCKLIST).
+# Default: <runner-prefix>/_work/config/runner-blocklist.txt
+# (override: FXRUN_REPO_BLOCKLIST).
 set -euo pipefail
 
-BLOCKLIST="${FXRUN_REPO_BLOCKLIST:-/home/flexnetos/lifeos/var/lib/runner/blocklist.txt}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+runner_prefix="$(cd "${script_dir}/.." && pwd)"
+BLOCKLIST="${FXRUN_REPO_BLOCKLIST:-${runner_prefix}/_work/config/runner-blocklist.txt}"
 repo="${GITHUB_REPOSITORY:-}"
 
 # No repo context or no blocklist => never block (fail-open for the guard's

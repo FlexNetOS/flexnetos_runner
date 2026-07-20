@@ -837,6 +837,7 @@ pub struct CycleManifest {
 pub struct CompactContinuityArtifact {
     pub enabled: bool,
     pub compact_prompt: String,
+    pub preserved_state: Vec<String>,
     pub compact_summary_events: Vec<String>,
     pub phases: Vec<CyclePhase>,
     pub active_phase: CyclePhase,
@@ -4925,6 +4926,7 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
     CompactContinuityArtifact {
         enabled: true,
         compact_prompt: COMPACT_PROMPT_PATH.into(),
+        preserved_state: preserved_state_entries(),
         compact_summary_events: vec!["PreCompact".into(), "PostCompact".into()],
         phases: required_phases(),
         active_phase: CyclePhase::Red,
@@ -4952,6 +4954,25 @@ fn compact_continuity_artifact() -> CompactContinuityArtifact {
             "phase=Red source_coverage=complete validation_state=pending next_action=continue"
                 .into(),
     }
+}
+
+fn preserved_state_entries() -> Vec<String> {
+    let auth = codex_auth_readiness();
+    vec![
+        format!(
+            "auth_mode={} codex_home={} login_status_checked={} auth_json_present={}",
+            auth.auth_mode, auth.codex_home, auth.login_status_checked, auth.auth_json_present
+        ),
+        format!(
+            "source_coverage={} required research sources loaded",
+            research_sources().len()
+        ),
+        format!(
+            "validation_terminal_state={} required gate outcomes must be retained across compaction",
+            REQUIRED_GATE_COMMANDS.len()
+        ),
+        "next_action=continue with the next required forge-loop phase".into(),
+    ]
 }
 
 fn phase_validation_state() -> BTreeMap<String, String> {
@@ -5305,6 +5326,40 @@ mod tests {
                 "Red phase validation commands should preserve auth proof command: {command}"
             );
         }
+    }
+
+    #[test]
+    fn compact_continuity_artifact_preserves_resume_state() {
+        let continuity = compact_continuity_artifact();
+
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("local_chatgpt")),
+            "compact summaries should preserve subscription auth mode"
+        );
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("source_coverage")),
+            "compact summaries should preserve source coverage state"
+        );
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("validation_terminal_state")),
+            "compact summaries should preserve terminal validation state"
+        );
+        assert!(
+            continuity
+                .preserved_state
+                .iter()
+                .any(|item| item.contains("next_action")),
+            "compact summaries should preserve the next action"
+        );
     }
 
     #[test]
@@ -9831,7 +9886,7 @@ audit = "rtk cargo audit --deny warnings"
             "retarget workflow must not write a fixed /tmp path"
         );
         for required in [
-            "repo=/home/flexnetos/FlexNetOS/src/flexnetos_runner",
+            "repo=/home/flexnetos/meta/src/flexnetos_runner",
             "User=flexnetos",
             "CODEX_HOME=/home/flexnetos/.codex",
             "GH_CONFIG_DIR=/home/flexnetos/.config/gh",
@@ -9860,6 +9915,7 @@ audit = "rtk cargo audit --deny warnings"
         let portable_codex_home = "/tmp/fxrun-portable-auth/codex";
         let portable_gh_config_dir = "/tmp/fxrun-portable-auth/gh";
         let portable_codex_bin_dir = "/tmp/fxrun-portable-auth/bin";
+        let portable_kache_wrapper = "/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper";
         let ambient_runtime_dir = root.join("_work/fake-ci-runtime");
         let ambient_dbus_address = format!("unix:path={}/bus", ambient_runtime_dir.display());
         let ambient_xdg_config_home = root.join("_work/fake-ci-config");
@@ -9875,6 +9931,7 @@ audit = "rtk cargo audit --deny warnings"
             .env("CODEX_HOME", portable_codex_home)
             .env("GH_CONFIG_DIR", portable_gh_config_dir)
             .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
+            .env("FXRUN_KACHE_RUSTC_WRAPPER", portable_kache_wrapper)
             .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
             .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
             .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
@@ -9903,6 +9960,14 @@ audit = "rtk cargo audit --deny warnings"
         assert!(user_stdout.contains(
             "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
         ));
+        assert!(user_stdout.contains(
+            "ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/fxrun-portable-prefix/scripts/runner-repo-guard.sh"
+        ));
+        assert!(user_stdout.contains(
+            "FXRUN_REPO_BLOCKLIST=/tmp/fxrun-portable-prefix/_work/config/runner-blocklist.txt"
+        ));
+        assert!(user_stdout
+            .contains("kache_rustc_wrapper=/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper"));
         assert!(user_stdout
             .contains("systemctl --user enable --now flexnetos-runner@01 flexnetos-runner@02"));
         assert!(!user_stdout.contains("sudo systemctl"));
@@ -9920,6 +9985,7 @@ audit = "rtk cargo audit --deny warnings"
             .env("CODEX_HOME", portable_codex_home)
             .env("GH_CONFIG_DIR", portable_gh_config_dir)
             .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
+            .env("FXRUN_KACHE_RUSTC_WRAPPER", portable_kache_wrapper)
             .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
             .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
             .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
@@ -9946,6 +10012,9 @@ audit = "rtk cargo audit --deny warnings"
         assert!(system_stdout.contains("Environment=GH_CONFIG_DIR=/tmp/fxrun-portable-auth/gh"));
         assert!(system_stdout.contains(
             "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
+        ));
+        assert!(system_stdout.contains(
+            "ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/fxrun-portable-prefix/scripts/runner-repo-guard.sh"
         ));
         assert!(system_stdout
             .contains("systemctl enable --now flexnetos-runner@01 flexnetos-runner@02"));
@@ -9975,6 +10044,9 @@ audit = "rtk cargo audit --deny warnings"
             "RUNNER_WORKSPACE",
             "loginctl enable-linger",
             "--enable-linger",
+            "--kache-wrapper",
+            "ACTIONS_RUNNER_HOOK_JOB_STARTED",
+            "FXRUN_REPO_BLOCKLIST",
         ] {
             assert!(script.contains(required), "installer missing {required}");
         }
@@ -9985,6 +10057,14 @@ audit = "rtk cargo audit --deny warnings"
         assert!(
             !script.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"),
             "portable installer must not require the current checkout path"
+        );
+        assert!(
+            !script.contains("/home/flexnetos/FlexNetOS/usr/bin"),
+            "portable installer must not use retired workspace usr/bin shims"
+        );
+        assert!(
+            !script.contains("/home/flexnetos/lifeos"),
+            "portable installer must not recreate the retired lifeos root"
         );
     }
 

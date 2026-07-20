@@ -17,7 +17,10 @@ For a prefix such as `/srv/flexnetos_runner`, the runner state remains under:
 - `/srv/flexnetos_runner/_work/runner-home-02`
 
 The installer writes `.path` files from the release/Yazelix/Nix inputs instead
-of copying ambient shell history.
+of copying ambient shell history. It also writes each runner's `.env` so the
+job-start guard and its blocklist remain under the selected prefix, and it
+requires an explicit or profile-owned `kache-rustc-wrapper` instead of a
+workspace-local compatibility shim.
 
 ## Preferred: user systemd
 
@@ -36,6 +39,9 @@ Apply without sudo:
 scripts/install-runner-services.sh \
   --prefix /srv/flexnetos_runner \
   --mode user \
+  --yazelix-bin /home/flexnetos/.nix-profile/toolbin \
+  --codex-bin-dir /home/flexnetos/.nix-profile/bin \
+  --kache-wrapper /home/flexnetos/.nix-profile/bin/kache-rustc-wrapper \
   --apply
 ```
 
