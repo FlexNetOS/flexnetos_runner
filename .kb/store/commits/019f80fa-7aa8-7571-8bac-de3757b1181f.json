@@ -1,0 +1,5 @@
+{
+  "commit": {"author":"drdave <flexnetos@de-flex.net>","changes":[{"change_type":"created","content_hash":"54874af8170e044e4f694cc42b044d607c479d7c190de069abe7e4bb6b9a6ce7","doc_type":"incident","document_id":"019f80fa-7a76-7402-a545-6572cd12c72e","new_version":1,"previous_version":null,"slug":"fix-forge-loop-rtk-auth-proof-invocation-after-bas","title":"Fix forge-loop RTK auth-proof invocation after base merge"}],"created_at":"2026-07-20T19:22:06.883338820Z","id":"019f80fa-7aa8-7571-8bac-de3757b1181f","message":"incident: record forge-loop auth proof defect"},
+  "content_hash": "b26fe549150f5a0204261b089881e024b996c6d8f7af79700a89ad1dbfead006",
+  "hash_version": 3
+}
