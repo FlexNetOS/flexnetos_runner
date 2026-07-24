@@ -1,0 +1,26 @@
+# flexnetos-runner
+
+FlexNetOS composed-runner agent harness (github-actions host)
+
+## Behavioral rules
+
+- Use the harness's MCP tools (`mcp__flexnetos-runner__*`) for orchestration
+- Memory ranking and routing are kernel primitives (`@metaharness/kernel`) the harness uses internally — there are no separate CLI subcommands for them
+- Defer destructive operations to the user
+
+## Commands
+
+After `flexnetos-runner init`, the following are available:
+
+| Command | What it does |
+|---|---|
+| `flexnetos-runner init` | Scaffold the harness into the current project |
+| `flexnetos-runner doctor` | Health check the install |
+
+Run `flexnetos-runner --help` for the full list. Memory ranking and routing are kernel
+primitives used programmatically (see [@metaharness/kernel](https://www.npmjs.com/package/@metaharness/kernel)),
+not CLI subcommands.
+
+## Architecture
+
+This harness uses [@metaharness/kernel](https://www.npmjs.com/package/@metaharness/kernel) for its primitives. The kernel is a Rust-compiled WASM module with a NAPI-RS native fallback — same code runs identically on every platform.

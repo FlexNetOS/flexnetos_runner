@@ -4,8 +4,8 @@
 # jobs FAILED at job start on this runner (operator hold), without touching
 # org-level runner-group access.
 #
-# Wiring (per runner): ACTIONS_RUNNER_HOOK_JOB_STARTED=<abs path to this file>
-# in the runner's .env, then restart flexnetos-runner@NN.service.
+# Wiring: set ACTIONS_RUNNER_HOOK_JOB_STARTED to this script before launching
+# the Nix-owned listener. The listener remains a foreground, per-session process.
 #
 # Blocklist: one owner/repo per line; '#' comments and blank lines ignored.
 # Default: <runner-prefix>/_work/config/runner-blocklist.txt

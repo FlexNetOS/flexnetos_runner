@@ -50,7 +50,7 @@
 //!   included; adapted from `Archon`'s "fail → delete the worktree, zero residue").
 //! - [`wire`] — the signed UDS dispatch frame (App → dispatcher) + reply.
 //!
-//! No process execution at this layer; `runner-actions` (Actions supervisor) and
+//! No process execution at this layer. The Nix-owned GitHub runner substrate and
 //! `runner-dispatch` (UDS server) drive these typed seams.
 
 pub mod agent;

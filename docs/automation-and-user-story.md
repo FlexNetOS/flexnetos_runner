@@ -11,7 +11,7 @@ items that close the gaps found in the 2026-06-23 deep code audit.
 | `flexnetos_github_app` | Control plane | GitHub/App host | Builds signed dispatch frames and sends jobs to the local runner. | Must provide signed provenance/status freshness seams for some backlog items. |
 | `fxrun-dispatch` | Execution-plane dispatcher | Local machine | UDS server, HMAC verification, admission gates, kernel routing, subprocess bounds, audit/recovery. | Socket hardening, full-envelope signing, concurrent serve/global cap, structured result status. |
 | `runner-core` | Pure policy core | Library | JobSpec, wire frames, routing, gates, events, recovery, cost, risk, workspace contracts. | Some new pure policies from backlog: envelope auth, rule citations, lifecycle FSM, result contracts. |
-| `runner-actions` / `fxrun-actions` | Actions runner supervisor | Local machine | Installs/registers/runs GitHub self-hosted runner, enforces minimum version. | Runner tarball verification; avoid token-in-argv exposure. |
+| `nix/gha-runner` | Canonical Actions substrate | Local Nix closure | Pins/builds the upstream runner, broker-registers the org runner, and starts a foreground listener. | Unattended reboot activation is deliberately unsupported under `NO_SYSTEM_DEPTHS`; minimize registration-token argv exposure. |
 | `fxrun` | Operator CLI | Local shell / desktop terminal | `route`, `agents`, `doctor`, and `forge-loop docs-drift` surface routing, seams, and docs consistency. | More user-facing health/approval/event inspection commands. |
 | `envctl` / secrets | Secret plane | Local machine | Transitional env injection via `FXRUN_DISPATCH_KEY`, `FXRUN_INJECT_SECRETS`. | Vault-native key retrieval remains the target; no raw env as final resting place. |
 | `loop` / `atc` / `hf` / `weave` | Existing kernels | Child processes | Runner delegates and bounds execution; kernels own work semantics. | Structured result/status contract, fan-out accounting, output coverage, rollback/checkpoint signals. |
@@ -194,13 +194,11 @@ verify, PR, and update this document + `docs/kclaw0-upgrade-ledger.md`.
      `serve_stream()` to `handle_request()`.
    - Acceptance: e2e/unit test proves cooldown expires while server is idle before next connection.
 
-5. **Actions runner artifact verification** — APPLIED (current branch)
-   - Gap: `fxrun-actions install` downloads and extracts the runner archive without checksum or
-     attestation verification.
-   - Upgrade: verify GitHub-published SHA256 and/or artifact attestation before extract.
-   - Applied: `fxrun-actions install` accepts `--sha256`/`RUNNER_SHA256`, otherwise downloads the
-     release `.sha256` asset, verifies SHA-256 before extraction, and fails closed on mismatch.
-   - Acceptance: bad digest refuses before tar extraction; latest-version path verifies automatically.
+5. **Actions runner artifact verification** — SUPERSEDED BY CANONICAL NIX RUNNER
+   - The removed host installer no longer downloads/extracts a mutable tarball.
+   - `nix/gha-runner` pins nixpkgs by revision and realizes `pkgs.github-runner` through the Nix
+     store, so content-addressed realization replaces the old installer/checksum path.
+   - Acceptance: the flake lock and offline composition gate are committed; the closure builds.
 
 6. **Actions registration token non-argv path**
    - Gap: token is passed as `config.sh --token <token>`, briefly visible in process argv.
@@ -305,7 +303,7 @@ Open runner dashboard          fxrun doctor                      PR / issue / we
 Approve / reject held work     fxrun route KIND --agent ...      Checks and PR comments
 Re-arm budget/quarantine       fxrun agents                      Semantic title / CI status
 Inspect audit timeline         fxrun-dispatch --socket PATH      Actions runner jobs
-Configure secrets/kernels      fxrun-actions install/register
+Configure secrets/kernels      nix run ./nix/gha-runner#start
 ```
 
 ### Normal no-user path
@@ -326,12 +324,12 @@ Configure secrets/kernels      fxrun-actions install/register
 | Quarantine hit | “Fingerprint failed N times; terminal until reviewed.” | Inspect stderr/audit, fix root cause, clear quarantine/re-arm. | Fingerprint can dispatch again after explicit re-arm. |
 | Constitution changed | “Governing file changed; dispatch halted.” | Review diff, accept/reseal or revert. | Constitution resealed; dispatch resumes. |
 | Content/authority/target denied | Precise gate + rule id (planned) and remediation hint. | Adjust policy, fix App provenance, or leave denied. | New signed/policy-compliant request passes. |
-| Runner install/register | CLI requires `--confirm=true`. | Confirm host/GitHub mutation. | Runner installed/registered or command aborts safely. |
+| Runner start/register | Foreground Nix command reports broker/registration state. | Unlock the broker and run the explicit start command. | Runner is online or the command fails closed. |
 
 ### Communication channels
 
 - **Desktop app**: primary human loop for approvals, re-arm, status timeline, and safe policy edits.
-- **CLI**: power-user and automation surface (`fxrun`, `fxrun-dispatch`, `fxrun-actions`).
+- **CLI**: power-user and automation surface (`fxrun`, `fxrun-dispatch`, and the Nix runner apps).
 - **GitHub**: external evidence plane: PR checks, comments, Actions runner registration, semantic PR
   title, CI status.
 - **Audit files**: machine-readable source of truth for event replay and support/debugging.

@@ -11,7 +11,7 @@ or clean-prefix install logs.
 | --- | --- | --- |
 | Quarantine manifest | Explains why the old pack is read-only context | `/home/flexnetos/FlexNetOS/_quarantine/20260630T234500Z/README.md` |
 | Quarantined pack | Historical execution map, not proof | `/home/flexnetos/FlexNetOS/artifacts/recovery/old-pack-context/flexnetos_production_execution_pack` |
-| Runner lane | Current release and provenance owner | `/home/flexnetos/FlexNetOS/src/flexnetos_runner` |
+| Runner lane | Current release and provenance owner | `/home/flexnetos/meta/flexnetos_runner` |
 | Workspace ledgers | Host-local proof and remaining gaps | `/home/flexnetos/FlexNetOS/WORKLOG.md`, `/home/flexnetos/FlexNetOS/LOCAL_WORKAROUNDS.md`, `/home/flexnetos/FlexNetOS/COMMAND_LEDGER.csv` |
 | Release output | Built artifacts, manifests, checksums, provenance | `/home/flexnetos/FlexNetOS/release` |
 
@@ -27,12 +27,12 @@ env -i HOME=/home/flexnetos USER=flexnetos LOGNAME=flexnetos PATH=/home/flexneto
 | --- | --- | --- | --- | --- |
 | Quarantine doctrine | Workspace root and runner docs | Surfaced here; pack remains read-only context | This doc plus quarantine README | Keep pack artifacts out of completion gates |
 | Meta project graph | `src/meta` | Healthy in clean shell | `git-kb verify --json`; `meta git status --short --sequential` | Preserve no-ahead/no-behind before release |
-| GitKB memory and tasks | `src/meta`, `src/flexnetos_runner` | Meta KB verifies; runner task `019f2942-b2c9-75d3-9165-fa064437f69e` tracks this matrix | GitKB task/document commits in runner; meta verify | Commit this matrix through runner GitKB and keep task state current |
+| GitKB memory and tasks | Meta root, `flexnetos_runner` | Meta KB verifies; runner task `019f2942-b2c9-75d3-9165-fa064437f69e` tracks this matrix | GitKB task/document commits in runner; meta verify | Commit this matrix through runner GitKB and keep task state current |
 | Yazelix foundation runtime | `src/yazelix` and installed Yazelix profile | Healthy in clean shell | `yzx status --json`; `yzx doctor` | Keep runtime doctor green after release staging |
 | Codex clean runtime | Active host Codex owner and Yazelix foundation package | Aligned: clean shell, compatibility link, standalone app-server pointer, and running daemon report `0.143.0-alpha.35` | `command -v codex`; `codex --version`; `codex app-server daemon version`; `codex doctor --all`; archive receipts | Watch for update-manager drift back to standalone stable |
 | envctl tables | `src/envctl` | Aligned: release binary is exposed at workspace `usr/bin/envctl`; clean-shell catalog tables and render pass | `command -v envctl`; `envctl catalog tables`; `envctl catalog render`; generated catalog output path | Keep this frontdoor until the runner bundle installs the packaged envctl binary |
 | RTK and raw logs | Workspace RTK policy and runner scripts | Policy surface exists; release failures must preserve raw logs | Raw log path in command ledger or runner provenance | Ensure runner release gates tee failing command output to raw logs |
-| Runner release gate | `src/flexnetos_runner` | Output root alignment fixed; dirty runner state classified and archived; full release still blocked by pre-existing generated state and partial release outputs | Runner git status snapshot; dirty inventory archive; `fxrun doctor`; local release build log | Decide owner handling for dirty source/service edits, then build the full catalog from a clean release surface |
+| Runner release gate | `flexnetos_runner` | Output root alignment fixed; dirty runner state classified and archived; full release still blocked by pre-existing generated state and partial release outputs | Runner git status snapshot; dirty inventory archive; `fxrun doctor`; local release build log | Decide owner handling for dirty source edits, then build the full catalog from a clean release surface |
 | Release manifest and checksums | Runner release pipeline | Partial artifacts exist; no complete v0.1 bundle is proven | Complete manifest, BOM/provenance, and checksum files under canonical release output | Build the full catalog into canonical release output and checksum every artifact |
 | Clean-prefix install | Runner installer | Not complete for the current release candidate | `PREFIX=<clean dir>` install log; command ledger entry; installed binary smoke tests | Install from the built bundle into a clean prefix and log every command |
 | Login/runtime smoke | Workspace host session | Not proven for the current release candidate | Clean login or session smoke transcript with active paths and versions | Run only after release bundle and clean-prefix gates pass |
@@ -40,9 +40,8 @@ env -i HOME=/home/flexnetos USER=flexnetos LOGNAME=flexnetos PATH=/home/flexneto
 
 ## Finish Queue
 
-1. Decide owner handling for pre-existing runner/service edits
-   (`.codex/hooks.json`, `scripts/install-runner-services.sh`,
-   `release/catalog.tsv`) without reverting user work.
+1. Decide owner handling for pre-existing runner edits
+   (`.codex/hooks.json` and `release/catalog.tsv`) without reverting user work.
 2. Build the full runner catalog, then generate release manifests, provenance,
    and checksums from the canonical output.
 3. Run a clean-prefix install from the release bundle and record the install log.

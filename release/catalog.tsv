@@ -10,7 +10,7 @@
 # source and manifest are relative to FLEXNETOS_ROOT unless absolute.
 #
 # Core release runner and control plane.
-flexnetos_runner	cargo	src/flexnetos_runner	src/flexnetos_runner/Cargo.toml	fxrun,fxrun-actions,fxrun-dispatch	-	Local release runner and GitHub/local execution plane.
+flexnetos_runner	cargo	flexnetos_runner	flexnetos_runner/Cargo.toml	fxrun,fxrun-dispatch	-	Meta-root dispatcher/control binaries; the GitHub runner substrate is the separate Nix closure under nix/gha-runner.
 meta	cargo	.	Cargo.toml	meta,meta-git,meta-mcp,meta-project,meta-rust,loop	-	Meta control plane workspace and loop CLI.
 meta-agent	cargo	agent	agent/Cargo.toml	agent	-	Meta agent binary excluded from the meta workspace.
 

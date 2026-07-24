@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Workspace-root-relative location of the local release script.
-const SCRIPT_REL: &str = "src/flexnetos_runner/scripts/build-local-ubuntu-release.sh";
+const SCRIPT_REL: &str = "flexnetos_runner/scripts/build-local-ubuntu-release.sh";
 
 #[derive(Subcommand)]
 pub enum ReleaseCommand {
@@ -196,7 +196,7 @@ fn resolve_cargo(root: &Path, explicit: Option<&Path>) -> Option<PathBuf> {
     }
     for slot in ["runner-home-02", "runner-home-01"] {
         let cargo = root.join(format!(
-            "src/flexnetos_runner/_work/{slot}/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo"
+            "flexnetos_runner/_work/{slot}/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo"
         ));
         if is_executable(&cargo) {
             return Some(cargo);

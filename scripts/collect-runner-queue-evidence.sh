@@ -19,7 +19,7 @@ default, fetches their job labels/runner assignment, and writes the combined JSO
   fxrun forge-loop runner-queue-audit --repo-jobs-json <FILE> --json
 
 The audit separates shared local FlexNetOS runner-label pressure
-(self-hosted, linux, x64, local, flexnetos) from GitHub-hosted or vendor queues. Extra orgs/repos
+(self-hosted, flexnetos, nix) from GitHub-hosted or vendor queues. Extra orgs/repos
 can be added for triage with --org/--repo, but the default scope is the whole FlexNetOS org.
 USAGE
 }

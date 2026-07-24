@@ -28,7 +28,7 @@ jobs:
   codex-forge-loop:
     if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Codex forge-loop action
-    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    runs-on: [self-hosted, flexnetos, nix]
     timeout-minutes: 60
     env:
       CODEX_HOME: /home/flexnetos/.codex

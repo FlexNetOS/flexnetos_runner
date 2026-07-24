@@ -14,9 +14,9 @@ const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
 const REQUIRED_CHECK_WORKFLOWS: &[&str] = &["ci.yml", "semantic-pr-title.yml"];
-const LOCAL_FLEXNETOS_RUNNER_LABELS: &[&str] =
-    &["self-hosted", "linux", "x64", "local", "flexnetos"];
-const LOCAL_FLEXNETOS_RUNNER_ROLE: &str = "execute GitHub Actions jobs that request the shared FlexNetOS local self-hosted label set: self-hosted, linux, x64, local, flexnetos";
+const LOCAL_FLEXNETOS_RUNNER_LABELS: &[&str] = &["self-hosted", "flexnetos", "nix"];
+const LOCAL_FLEXNETOS_RUNNER_ROLE: &str =
+    "execute GitHub Actions jobs that request the canonical FlexNetOS Nix label set: self-hosted, flexnetos, nix";
 const RUNNER_QUEUE_CONTROLLER_ROLE: &str = "collect active/queued job evidence across repos, separate local-runner pressure from GitHub-hosted or vendor queues, and fix/dispatch/yield work so PR checks and repo sessions do not wait blindly";
 const SEMANTIC_PR_TITLE_INPUT: &str = "pr_title";
 const CYCLE_MANIFEST_SCHEMA_VERSION: u8 = 1;
@@ -3657,11 +3657,11 @@ fn expected_target_mining_targets() -> Vec<TargetMiningTarget> {
                     "nickname_candidates",
                 ),
                 (
-                    ".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md",
+                    ".codex/hooks/forge-loop-hooks.manifest.json",
                     "SubagentStart",
                 ),
                 (
-                    ".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md",
+                    ".codex/hooks/forge-loop-hooks.manifest.json",
                     "SubagentStop",
                 ),
             ],
@@ -4050,12 +4050,6 @@ fn expected_loop_components() -> Vec<LoopComponent> {
             surface: "config",
             path: ".codex/config.toml",
             rationale: "Advanced Codex config supports trusted project-scoped .codex/config.toml layers for repo-local model, sandbox, agent, MCP, and skill defaults.",
-        },
-        LoopComponent {
-            id: "archived-hooks",
-            surface: "hooks",
-            path: ".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md",
-            rationale: "Advanced Codex config supports repo-local hooks.json for lifecycle hooks, while this repo now preserves the removed lifecycle wiring in an auditable archive instead of activating duplicate root hooks.",
         },
         LoopComponent {
             id: "permission-request-hook",
@@ -4991,15 +4985,13 @@ fn phase_validation_state() -> BTreeMap<String, String> {
 
 fn phase_validation_commands() -> BTreeMap<String, Vec<String>> {
     let mut commands: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    commands.insert(
-        cycle_phase_label(CyclePhase::Red).to_string(),
-        vec![
-            "rtk codex login status".to_string(),
-            format!("rtk proxy -- test -f {DEFAULT_CODEX_HOME}/auth.json"),
-            "rtk cargo test -p runner-cli --all-features <new_red_test_name> -- --nocapture"
-                .to_string(),
-        ],
+    let auth = codex_auth_readiness();
+    let mut red_commands = auth.verification_commands;
+    red_commands.push(
+        "rtk cargo test -p runner-cli --all-features <new_red_test_name> -- --nocapture"
+            .to_string(),
     );
+    commands.insert(cycle_phase_label(CyclePhase::Red).to_string(), red_commands);
     commands.insert(
         cycle_phase_label(CyclePhase::Implement).to_string(),
         vec![
@@ -5256,7 +5248,9 @@ mod tests {
 
     #[test]
     fn codex_invocation_exports_local_chatgpt_auth_environment() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous_codex_home = std::env::var("CODEX_HOME").ok();
         let previous_fxrun_codex = std::env::var("FXRUN_CODEX").ok();
         std::env::remove_var("CODEX_HOME");
@@ -5329,6 +5323,10 @@ mod tests {
 
     #[test]
     fn cycle_manifest_preserves_subscription_auth_readiness_contract() {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let expected_commands = codex_auth_readiness().verification_commands;
         let manifest = cycle_manifest(&RunArgs {
             goal: "scheduled subscription-auth Codex self-improvement".into(),
             out: PathBuf::from("_work/forge-loop"),
@@ -5339,19 +5337,14 @@ mod tests {
 
         assert_eq!(manifest.auth_mode, "local_chatgpt");
         assert_eq!(manifest.auth_status_command, "rtk codex login status");
-        assert!(manifest
-            .auth_verification_commands
-            .iter()
-            .any(|command| command == "rtk codex login status"));
-        assert!(manifest
-            .auth_verification_commands
-            .iter()
-            .any(|command| command == "rtk proxy -- test -f /home/flexnetos/.codex/auth.json"));
+        assert_eq!(manifest.auth_verification_commands, expected_commands);
     }
 
     #[test]
     fn compact_continuity_preserves_subscription_auth_verification_commands() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let expected_commands = codex_auth_readiness().verification_commands;
         let continuity = compact_continuity_artifact();
 
@@ -5368,6 +5361,9 @@ mod tests {
 
     #[test]
     fn compact_continuity_artifact_exports_subscription_auth_commands_under_red_phase() {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let expected_commands = codex_auth_readiness().verification_commands;
         let continuity = compact_continuity_artifact();
         let red_commands = continuity
@@ -5419,7 +5415,9 @@ mod tests {
 
     #[test]
     fn subscription_auth_readiness_defaults_to_scheduled_codex_home() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = std::env::var("CODEX_HOME").ok();
         std::env::remove_var("CODEX_HOME");
 
@@ -6114,7 +6112,9 @@ R  "docs/old note.md" -> "docs/new note.md"
 
     #[test]
     fn dry_run_writes_subscription_auth_readiness_artifact() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = std::env::var("CODEX_HOME").ok();
         std::env::remove_var("CODEX_HOME");
         let out = std::env::temp_dir().join(format!(
@@ -6164,7 +6164,9 @@ R  "docs/old note.md" -> "docs/new note.md"
 
     #[test]
     fn dry_run_auth_readiness_distinguishes_file_presence_from_login_status_check() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = std::env::var("CODEX_HOME").ok();
         let codex_home = std::env::temp_dir().join(format!(
             "fxrun-forge-loop-empty-codex-home-{}",
@@ -6911,7 +6913,7 @@ audit = "rtk cargo audit --deny warnings"
 
         let report = components_audit_report(&out);
 
-        assert_eq!(report.checked_components, 28);
+        assert_eq!(report.checked_components, 27);
         assert!(report
             .present_components
             .contains(&"codex-prompt".to_string()));
@@ -6921,7 +6923,7 @@ audit = "rtk cargo audit --deny warnings"
             .contains(&"project-config".to_string()));
         assert!(report
             .missing_components
-            .contains(&"archived-hooks".to_string()));
+            .contains(&"hook-manifest".to_string()));
 
         fs::remove_dir_all(out).ok();
     }
@@ -7878,7 +7880,7 @@ audit = "rtk cargo audit --deny warnings"
                 "displayTitle":"engine: add catalog diff and render projections",
                 "headBranch":"engine/catalog-diff",
                 "jobs":[
-                  {"name":"test","status":"in_progress","conclusion":null,"runner_name":"fxrun-drdave-TRX50-AI-TOP-flexnetos-01","runner_group_name":"default","labels":["self-hosted","linux","x64","local","flexnetos"]}
+                  {"name":"test","status":"in_progress","conclusion":null,"runner_name":"flexnetos-nix","runner_group_name":"default","labels":["self-hosted","flexnetos","nix"]}
                 ]
               },
               {
@@ -7890,7 +7892,7 @@ audit = "rtk cargo audit --deny warnings"
                 "displayTitle":"Codex Forge Loop",
                 "headBranch":"main",
                 "jobs":[
-                  {"name":"forge-loop","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","local","flexnetos"]}
+                  {"name":"forge-loop","status":"queued","conclusion":null,"labels":["self-hosted","flexnetos","nix"]}
                 ]
               },
               {
@@ -7902,7 +7904,7 @@ audit = "rtk cargo audit --deny warnings"
                 "displayTitle":"docs(recovery): prove phase 1.5 release infra",
                 "headBranch":"codex/phase1-5-release-infra-proof-20260629",
                 "jobs":[
-                  {"name":"Clippy","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","local","flexnetos"]}
+                  {"name":"Clippy","status":"queued","conclusion":null,"labels":["self-hosted","flexnetos","nix"]}
                 ]
               },
               {
@@ -7986,7 +7988,7 @@ audit = "rtk cargo audit --deny warnings"
                 "run_status":"in_progress",
                 "event":"push",
                 "jobs":[
-                  {"name":"Local Linux CI","status":"in_progress","runner_name":"fxrun-drdave-TRX50-AI-TOP-flexnetos-02","runner_group_name":"default","labels":["self-hosted","linux","x64","local","flexnetos"]}
+                  {"name":"Local Linux CI","status":"in_progress","runner_name":"flexnetos-nix","runner_group_name":"default","labels":["self-hosted","flexnetos","nix"]}
                 ]
               },
               {
@@ -9335,10 +9337,6 @@ audit = "rtk cargo audit --deny warnings"
             .expect("workspace root");
         let manifest = fs::read_to_string(root.join(".codex/hooks/forge-loop-hooks.manifest.json"))
             .expect("read hook manifest");
-        let hooks = fs::read_to_string(
-            root.join(".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md"),
-        )
-        .expect("read archived hooks");
 
         for required in [
             "SessionStart",
@@ -9367,7 +9365,6 @@ audit = "rtk cargo audit --deny warnings"
             "forge_loop_stop_summary.py",
         ] {
             assert!(manifest.contains(script), "hook manifest missing {script}");
-            assert!(hooks.contains(script), "archived hooks missing {script}");
         }
     }
 
@@ -9469,7 +9466,7 @@ audit = "rtk cargo audit --deny warnings"
         );
 
         for required in [
-            "runs-on: [self-hosted, linux, x64, local, flexnetos]",
+            "runs-on: [self-hosted, flexnetos, nix]",
             "prompt_file:",
             "model:",
             "effort:",
@@ -9737,10 +9734,8 @@ audit = "rtk cargo audit --deny warnings"
             .and_then(Path::parent)
             .expect("workspace root");
         let config = fs::read_to_string(root.join(".codex/config.toml")).expect("read config");
-        let hooks = fs::read_to_string(
-            root.join(".codex/archive/lifecycle-hooks-20260703T024950Z/hooks.json.md"),
-        )
-        .expect("read archived hooks");
+        let manifest = fs::read_to_string(root.join(".codex/hooks/forge-loop-hooks.manifest.json"))
+            .expect("read hook manifest");
         let permissions =
             fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
                 .expect("read permission blueprint");
@@ -9783,8 +9778,8 @@ audit = "rtk cargo audit --deny warnings"
             "forge_loop_subagent_summary.py",
         ] {
             assert!(
-                hooks.contains(required),
-                "archived hooks missing {required}"
+                manifest.contains(required),
+                "hook manifest missing {required}"
             );
         }
         for required in [
@@ -9913,241 +9908,6 @@ audit = "rtk cargo audit --deny warnings"
         assert!(target.contains("Bridge-duration sustain policy"));
         assert!(target.contains("self-refill replacement"));
         assert!(target.contains("12+ hour kclaw0 persistence target"));
-    }
-
-    #[test]
-    fn runner_retarget_workflow_installs_tracked_script_without_tmp_lock() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("workspace root");
-        let workflow = fs::read_to_string(root.join(".github/workflows/runner-retarget.yml"))
-            .expect("read runner retarget workflow");
-        let script = fs::read_to_string(root.join("scripts/retarget-local-runner-services.sh"))
-            .expect("read tracked runner retarget script");
-
-        assert!(
-            workflow.contains("actions/checkout"),
-            "retarget workflow must checkout the tracked retarget script"
-        );
-        assert!(
-            workflow.contains(
-                "sudo -n install -m 0755 scripts/retarget-local-runner-services.sh /usr/local/sbin/flexnetos-runner-retarget.sh"
-            ),
-            "retarget workflow must install the tracked retarget script"
-        );
-        assert!(
-            !workflow.contains("cat > /tmp/flexnetos-runner-retarget.sh"),
-            "retarget workflow must not write a fixed /tmp path"
-        );
-        for required in [
-            "repo=/home/flexnetos/meta/src/flexnetos_runner",
-            "User=flexnetos",
-            "CODEX_HOME=/home/flexnetos/.codex",
-            "GH_CONFIG_DIR=/home/flexnetos/.config/gh",
-            "systemctl restart",
-        ] {
-            assert!(
-                script.contains(required),
-                "retarget script missing {required}"
-            );
-        }
-    }
-
-    #[test]
-    fn portable_runner_installer_dry_runs_user_and_system_units_from_prefix() {
-        if cfg!(windows) {
-            return;
-        }
-
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("workspace root");
-        let script = root.join("scripts/install-runner-services.sh");
-        let prefix = "/tmp/fxrun-portable-prefix";
-        let portable_home = "/tmp/fxrun-portable-home";
-        let portable_codex_home = "/tmp/fxrun-portable-auth/codex";
-        let portable_gh_config_dir = "/tmp/fxrun-portable-auth/gh";
-        let portable_codex_bin_dir = "/tmp/fxrun-portable-auth/bin";
-        let portable_kache_wrapper = "/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper";
-        let ambient_runtime_dir = root.join("_work/fake-ci-runtime");
-        let ambient_dbus_address = format!("unix:path={}/bus", ambient_runtime_dir.display());
-        let ambient_xdg_config_home = root.join("_work/fake-ci-config");
-
-        let user_output = std::process::Command::new("bash")
-            .arg(&script)
-            .arg("--prefix")
-            .arg(prefix)
-            .arg("--mode")
-            .arg("user")
-            .arg("--dry-run")
-            .env("HOME", portable_home)
-            .env("CODEX_HOME", portable_codex_home)
-            .env("GH_CONFIG_DIR", portable_gh_config_dir)
-            .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
-            .env("FXRUN_KACHE_RUSTC_WRAPPER", portable_kache_wrapper)
-            .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
-            .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
-            .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
-            .output()
-            .expect("dry-run user installer");
-        assert!(
-            user_output.status.success(),
-            "user dry-run failed: {}",
-            String::from_utf8_lossy(&user_output.stderr)
-        );
-        let user_stdout = String::from_utf8_lossy(&user_output.stdout);
-        assert!(user_stdout.contains(".config/systemd/user/flexnetos-runner@.service"));
-        assert!(user_stdout.contains(
-            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/flexnetos-runner-entrypoint.sh"
-        ));
-        assert!(user_stdout
-            .contains("WorkingDirectory=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i"));
-        assert!(
-            user_stdout.contains(
-                "Environment=RUNNER_WORKSPACE=/tmp/fxrun-portable-prefix/_work/actions-runner-%i-work"
-            ),
-            "user unit must keep RUNNER_WORKSPACE under the prefix"
-        );
-        assert!(user_stdout.contains("Environment=CODEX_HOME=/tmp/fxrun-portable-auth/codex"));
-        assert!(user_stdout.contains("Environment=GH_CONFIG_DIR=/tmp/fxrun-portable-auth/gh"));
-        assert!(user_stdout.contains(
-            "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
-        ));
-        assert!(user_stdout.contains(
-            "ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/fxrun-portable-prefix/scripts/runner-repo-guard.sh"
-        ));
-        assert!(user_stdout.contains(
-            "FXRUN_REPO_BLOCKLIST=/tmp/fxrun-portable-prefix/_work/config/runner-blocklist.txt"
-        ));
-        assert!(user_stdout
-            .contains("kache_rustc_wrapper=/tmp/fxrun-portable-auth/bin/kache-rustc-wrapper"));
-        assert!(user_stdout
-            .contains("systemctl --user enable --now flexnetos-runner@01 flexnetos-runner@02"));
-        assert!(!user_stdout.contains("sudo systemctl"));
-        assert!(!user_stdout.contains("/home/drdave"));
-        assert!(!user_stdout.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"));
-
-        let system_output = std::process::Command::new("bash")
-            .arg(&script)
-            .arg("--prefix")
-            .arg(prefix)
-            .arg("--mode")
-            .arg("system")
-            .arg("--dry-run")
-            .env("HOME", portable_home)
-            .env("CODEX_HOME", portable_codex_home)
-            .env("GH_CONFIG_DIR", portable_gh_config_dir)
-            .env("FXRUN_RUNNER_CODEX_BIN_DIR", portable_codex_bin_dir)
-            .env("FXRUN_KACHE_RUSTC_WRAPPER", portable_kache_wrapper)
-            .env("XDG_RUNTIME_DIR", &ambient_runtime_dir)
-            .env("XDG_CONFIG_HOME", &ambient_xdg_config_home)
-            .env("DBUS_SESSION_BUS_ADDRESS", &ambient_dbus_address)
-            .output()
-            .expect("dry-run system installer");
-        assert!(
-            system_output.status.success(),
-            "system dry-run failed: {}",
-            String::from_utf8_lossy(&system_output.stderr)
-        );
-        let system_stdout = String::from_utf8_lossy(&system_output.stdout);
-        assert!(system_stdout.contains("/etc/systemd/system/flexnetos-runner@.service"));
-        assert!(system_stdout.contains("User=flexnetos"));
-        assert!(system_stdout.contains(
-            "ExecStart=/tmp/fxrun-portable-prefix/_work/repos/actions-runner-%i/flexnetos-runner-entrypoint.sh"
-        ));
-        assert!(
-            system_stdout.contains(
-                "Environment=RUNNER_WORKSPACE=/tmp/fxrun-portable-prefix/_work/actions-runner-%i-work"
-            ),
-            "system unit must keep RUNNER_WORKSPACE under the prefix"
-        );
-        assert!(system_stdout.contains("Environment=CODEX_HOME=/tmp/fxrun-portable-auth/codex"));
-        assert!(system_stdout.contains("Environment=GH_CONFIG_DIR=/tmp/fxrun-portable-auth/gh"));
-        assert!(system_stdout.contains(
-            "Environment=GIT_CONFIG_GLOBAL=/tmp/fxrun-portable-prefix/_work/runner-home-%i/.gitconfig"
-        ));
-        assert!(system_stdout.contains(
-            "ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/fxrun-portable-prefix/scripts/runner-repo-guard.sh"
-        ));
-        assert!(system_stdout
-            .contains("systemctl enable --now flexnetos-runner@01 flexnetos-runner@02"));
-        assert!(!system_stdout.contains("/home/drdave"));
-        assert!(!system_stdout.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"));
-    }
-
-    #[test]
-    fn portable_runner_installer_keeps_runner_state_and_path_under_prefix() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("workspace root");
-        let script = fs::read_to_string(root.join("scripts/install-runner-services.sh"))
-            .expect("read portable runner installer");
-
-        for required in [
-            "_work/repos/actions-runner-01",
-            "_work/repos/actions-runner-02",
-            "_work/actions-runner-01-work",
-            "_work/actions-runner-02-work",
-            "_work/runner-home-01",
-            "_work/runner-home-02",
-            "CODEX_HOME",
-            "GH_CONFIG_DIR",
-            "GIT_CONFIG_GLOBAL",
-            "RUNNER_WORKSPACE",
-            "loginctl enable-linger",
-            "--enable-linger",
-            "--kache-wrapper",
-            "ACTIONS_RUNNER_HOOK_JOB_STARTED",
-            "FXRUN_REPO_BLOCKLIST",
-        ] {
-            assert!(script.contains(required), "installer missing {required}");
-        }
-        assert!(
-            !script.contains("/home/drdave"),
-            "portable installer must not reference the old host"
-        );
-        assert!(
-            !script.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"),
-            "portable installer must not require the current checkout path"
-        );
-        assert!(
-            !script.contains("/home/flexnetos/FlexNetOS/usr/bin"),
-            "portable installer must not use retired workspace usr/bin shims"
-        );
-        assert!(
-            !script.contains("/home/flexnetos/lifeos"),
-            "portable installer must not recreate the retired lifeos root"
-        );
-    }
-
-    #[test]
-    fn portable_runner_active_surfaces_do_not_require_fixed_checkout_paths() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("workspace root");
-
-        for path in [
-            "scripts/install-runner-services.sh",
-            "scripts/eval-runners.sh",
-            ".github/workflows/ci.yml",
-            ".github/workflows/runner-sustain.yml",
-            ".github/workflows/runner-smoke.yml",
-        ] {
-            let contents = fs::read_to_string(root.join(path))
-                .unwrap_or_else(|err| panic!("read portable runner active surface {path}: {err}"));
-            assert!(
-                !contents.contains("/home/drdave"),
-                "{path} must not require the old host"
-            );
-            assert!(
-                !contents.contains("/home/flexnetos/FlexNetOS/src/flexnetos_runner"),
-                "{path} must not require the current fixed source checkout"
-            );
-        }
     }
 
     #[test]
@@ -10284,7 +10044,7 @@ audit = "rtk cargo audit --deny warnings"
         for required in [
             "workflow_dispatch:",
             "*/5 * * * *",
-            "runs-on: [self-hosted, linux, x64, local, flexnetos]",
+            "runs-on: [self-hosted, flexnetos, nix]",
             "lane_slot",
             "Runner sustain slot ${{ inputs.lane_slot || '1' }}",
             "pull-requests: read",

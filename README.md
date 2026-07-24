@@ -8,9 +8,9 @@ to the existing kernels rather than reimplementing them. It is the muscle paired
 Design: **ADR-0008** (`handoff/docs/adr-0008-flexnetos-app-runner.md`).
 
 Two shapes, by design:
-1. **Self-hosted GitHub Actions runner** — JIT/ephemeral (`generate-jitconfig`, single-job-then-
-   removed), with safety rails (non-root, no Docker socket, `_work` on tmpfs, **fork-PR isolation**).
-   Productizes the shell scripts extracted from `.github_org/runner/`.
+1. **Self-hosted GitHub Actions runner** — the canonical hermetic flake under
+   [`nix/gha-runner`](nix/gha-runner/), with a pinned `github-runner` substrate, brokered
+   registration, volatile profile-runtime state, and an explicit foreground session.
 2. **Meta-native dispatcher** — a UDS server receiving **signed** job specs from the App and
    **routing** them to the right kernel: `build/test → loop_lib`, `agent-task/review → atc`,
    `loop-cycle → handoff hf`, `lease/a2a → weave`, `worktrees → meta_git_lib`. It never reimplements
@@ -71,9 +71,9 @@ inventory, data-flow diagrams, fresh backlog, agent automation story, and user c
 | Crate | Bin | Role |
 |-------|-----|------|
 | `runner-core` | — | Pure core: signed job-spec type, kernel router (delegate-only), fork-PR isolation policy, JIT lifecycle state. Fully unit-tested. |
-| `runner-actions` | `fxrun-actions` | Self-hosted Actions runner supervisor (JIT register → run one → deregister). P1. |
 | `runner-dispatch` | `fxrun-dispatch` | UDS server: verify signed job spec → route → invoke kernel. P2. |
 | `runner-cli` | `fxrun` | Operator CLI: `route`, `agents`, `release`, `doctor`. |
+| `nix/gha-runner` | `nix run .#start` | Canonical GitHub Actions substrate and Metaharness layer. |
 
 ## Agent backends (any agent — Claude right now)
 
@@ -107,35 +107,19 @@ integrity-protected end to end.
 ## Status
 
 Implemented and tested: the signed job-spec contract + signature verification (S7), the kernel
-router (delegate map), the fork-PR isolation policy, and the JIT lifecycle state machine.
+router (delegate map), fork-PR isolation policy, UDS dispatch, bounded kernel invocation, and the
+canonical Nix GitHub runner composition.
 
-The Actions supervisor is live: `fxrun-actions` can install the upstream GitHub Actions runner,
-mint short-lived registration tokens with `gh`, register the canonical FlexNetOS org-scoped runner
-by default, run one ephemeral job, or install a persistent service. Repo-scoped runner registration
-is an explicit sandbox/exception only — never the default for `envctl`, `meta`, or any other peer.
-Install enforces GitHub's mandated minimum runner version (`≥ 2.329.0`, changelog 2026-06-12) —
-below it GitHub refuses registration / pauses job queuing and the runner is exposed to the
-Runner-Escape host-secret leak, so the supervisor fails closed on a stale pin. The UDS dispatch +
-kernel invocation, envctl-style secret injection, and provenance gates are wired seams. Current
-hardening adds full-envelope authority signatures, private UDS socket binding, nonce-based fresh
-workspaces, pre-extract runner SHA-256 verification, and CI `cargo audit`; the remaining backlog
-covers registration-token argv removal, rate-limit clock freshness, structured kernel result/status,
-and desktop approval/re-entry. The confirmed P3 recipe for first-party artifacts remains GitHub
-Artifact Attestations (`actions/attest-build-provenance@v3`, SLSA Build L2 via OIDC + Sigstore),
-verified with `cosign verify-attestation` / `slsa-verifier`.
+The Actions worker is `nix/gha-runner`: nixpkgs supplies the pinned upstream runner, envctl is the
+sole secret/token minter, and the launcher registers one org-scoped runner named `flexnetos-nix`
+with labels `self-hosted,flexnetos,nix`. Mutable runner state lives only under
+`$XDG_RUNTIME_DIR/yazelix/profile-runtime/gha-runner`.
 
-Canonical operation is one org-scoped FlexNetOS runner, shared by meta peer repositories through the
-labels `self-hosted,linux,x64,local,flexnetos`. A local `.runner` that points at
-`https://github.com/FlexNetOS/<repo>` is scope drift, not a new default. Strict upgrade path: stand
-up the org-scoped runner in a clean `RUNNER_HOME`, verify the shared labels service the required
-meta peers, then retire the old repo-scoped service/config. Do not mutate a live repo-scoped runner
-home in place, and do not create a repo-scoped `envctl`/`meta` runner as a special-case fix.
-
-On this workstation the FlexNetOS org runners use a disposable repo-local runtime root, `_work/`.
-It is ignored in full: runner homes, credentials, checkouts, logs, caches, archives, and evaluator
-output are never repository truth. The Yazelix/Nix profile owns the runner configuration and
-recreates the required runtime shape. The default paths target slot `actions-runner-01`; the second
-parallel slot uses the same layout with suffix `-02`.
+`NO_SYSTEM_DEPTHS` is a hard rule. The Nix store is passive, so this repo deliberately provides no
+unattended reboot activation. Operators explicitly run `nix run .#start` from `nix/gha-runner`;
+the listener stays in the foreground, reuses valid state in the current boot, and re-mints plus
+re-registers after volatile state disappears. See
+[`nix/gha-runner/RUNBOOK.md`](nix/gha-runner/RUNBOOK.md).
 
 ### Org runner-group dispatch repair
 
@@ -217,32 +201,13 @@ See
 
 ## Live runner evaluation
 
-Use `scripts/eval-runners.sh` to evaluate both repo-local FlexNetOS org runner slots in real time.
-The tool dispatches the committed `runner-smoke.yml` workflow once per slot, isolates the target by
-stopping its peer by default, streams run status while it waits, and restores both services on exit.
-
-```bash
-scripts/eval-runners.sh
-# optional: scripts/eval-runners.sh --no-isolate --poll-secs 2 --timeout-secs 600
-```
-
-The evaluator writes a timestamped proof bundle under `_work/evals/<timestamp>/`:
-
-| Artifact | Purpose |
-|---|---|
-| `summary.md` | Human scorecard with per-runner conclusion, accuracy, timing table, task output, failures, and lessons learned. |
-| `metrics.jsonl` | Machine-readable one-record-per-runner metrics including dispatch-to-visible, dispatch-to-created, pickup latency, execution time, total turnaround, step durations, assertions, output, failures, and lessons. |
-| `api-*.json` | Before/after GitHub org runner API snapshots for online/busy/label state. |
-| `run-*.json` / `run-*.log` | GitHub run metadata plus raw job log output used for accuracy checks. |
-| `journal-*.log` / `diag-*.log` | Local systemd and runner diagnostic tails around the probe. |
-
-A result is accurate only when the workflow succeeds, the log reports the expected runner name, and
-`RUNNER_WORKSPACE` is under that slot's repo-local `_work/actions-runner-0N-work/` directory. The
-pickup-latency metric is the GitHub run creation time to job start time; total turnaround is local
-dispatch to job completion.
+Start the canonical foreground listener, then dispatch `.github/workflows/runner-smoke.yml` at the
+branch under test. Completion evidence is the GitHub run ID/URL, head SHA, successful conclusion,
+runner name, and the 33/33 offline composition gate. Exact commands are in the Nix runbook.
 
 ## Safety posture
 
-Untrusted **fork PRs never run on self-hosted hardware** (routed to GitHub-hosted/sandboxed);
-ephemeral JIT runners (one job, then destroyed); non-root, no Docker socket; secrets reach a child
-only via an envctl relay-bearer (the real key never enters the child env). See ADR-0008 §2/§6.
+Untrusted **fork PRs never run on self-hosted hardware** (routed to GitHub-hosted/sandboxed).
+The local listener is non-root, has no Docker socket, runs from an immutable Nix closure, and keeps
+mutable state in volatile profile runtime. The App private key remains inside envctl; only
+short-lived opaque tokens cross the broker boundary. See ADR-0008 §2/§6.

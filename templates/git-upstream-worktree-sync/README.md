@@ -36,16 +36,16 @@ From the target repo:
 
 ```bash
 mkdir -p scripts .claude/commands
-cp /home/flexnetos/FlexNetOS/src/flexnetos_runner/templates/git-upstream-worktree-sync/scripts/sync-upstream-worktree.sh scripts/
-cp /home/flexnetos/FlexNetOS/src/flexnetos_runner/templates/git-upstream-worktree-sync/claude/commands/*.md .claude/commands/
-cat /home/flexnetos/FlexNetOS/src/flexnetos_runner/templates/git-upstream-worktree-sync/.gitignore.append >> .gitignore
+cp /home/flexnetos/meta/flexnetos_runner/templates/git-upstream-worktree-sync/scripts/sync-upstream-worktree.sh scripts/
+cp /home/flexnetos/meta/flexnetos_runner/templates/git-upstream-worktree-sync/claude/commands/*.md .claude/commands/
+cat /home/flexnetos/meta/flexnetos_runner/templates/git-upstream-worktree-sync/.gitignore.append >> .gitignore
 chmod +x scripts/sync-upstream-worktree.sh
 ```
 
 Optional per-repo secret/config copy list:
 
 ```bash
-cp /home/flexnetos/FlexNetOS/src/flexnetos_runner/templates/git-upstream-worktree-sync/.worktreeinclude.example .worktreeinclude
+cp /home/flexnetos/meta/flexnetos_runner/templates/git-upstream-worktree-sync/.worktreeinclude.example .worktreeinclude
 ```
 
 Edit `.worktreeinclude` before committing it. Do not list raw secrets in a
