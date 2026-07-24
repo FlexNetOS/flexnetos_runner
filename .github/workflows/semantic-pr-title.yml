@@ -22,7 +22,7 @@ jobs:
   validate:
     if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Semantic PR Title
-    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    runs-on: [self-hosted, flexnetos, nix]
     env:
       PR_TITLE: ${{ github.event.pull_request.title || inputs.pr_title }}
     steps:

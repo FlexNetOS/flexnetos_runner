@@ -15,7 +15,7 @@ jobs:
   local-linux:
     if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Local Linux CI
-    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    runs-on: [self-hosted, flexnetos, nix]
     steps:
       - uses: actions/checkout@v6
       - name: Prefer runner-provided Rust toolchain

@@ -29,7 +29,7 @@ set -euo pipefail
 if [ ! -x scripts/sync-upstream-worktree.sh ]; then
   echo "Missing scripts/sync-upstream-worktree.sh"
   echo "Install it from the FlexNetOS template:"
-  echo "  /home/flexnetos/FlexNetOS/src/flexnetos_runner/templates/git-upstream-worktree-sync/scripts/sync-upstream-worktree.sh"
+  echo "  /home/flexnetos/meta/flexnetos_runner/templates/git-upstream-worktree-sync/scripts/sync-upstream-worktree.sh"
   exit 1
 fi
 

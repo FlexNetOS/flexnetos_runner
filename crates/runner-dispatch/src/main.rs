@@ -3739,7 +3739,10 @@ mod tests {
                 let root = std::env::temp_dir()
                     .join(format!("fxrun-wstest-{}-{label}", std::process::id()));
                 std::fs::create_dir_all(&root).unwrap();
-                self.created.lock().unwrap().push(root.clone());
+                self.created
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(root.clone());
                 let cleanup_root = root.clone();
                 Ok(JobWorkspace::new(root, move || {
                     std::fs::remove_dir_all(&cleanup_root).map_err(|e| e.to_string())

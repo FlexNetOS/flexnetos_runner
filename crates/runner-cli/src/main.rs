@@ -236,7 +236,7 @@ fn main() -> anyhow::Result<()> {
                 "  workspace teardown : guaranteed on every exit path incl. failure (Archon \
                  zero-residue); tmpfs worktree in P3"
             );
-            println!("  actions supervisor : WIRED (fxrun-actions install/register/run-once)");
+            println!("  actions substrate  : NIX-OWNED (nix/gha-runner; manual per-session start)");
             println!("  uds dispatch       : WIRED (P2 — fxrun-dispatch --socket; signed frame → router → delegate)");
             println!(
                 "  kernel execution   : WIRED (P3 — fxrun-dispatch spawns the kernel in the job \

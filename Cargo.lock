@@ -229,18 +229,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "runner-actions"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "hex",
- "runner-core",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "runner-cli"
 version = "0.1.0"
 dependencies = [

@@ -3,20 +3,20 @@
 set -euo pipefail
 
 # Resolve the workspace root deterministically and symlink-independently.
-# The script lives at <ROOT>/src/flexnetos_runner/scripts/build-local-ubuntu-release.sh,
+# The script lives at <ROOT>/flexnetos_runner/scripts/build-local-ubuntu-release.sh,
 # so its own on-disk location (with symlinks resolved by cd -P) yields ROOT even when the
 # historical /home/flexnetos/FlexNetOS symlink is absent. Explicit env overrides still win.
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-DERIVED_ROOT="$(cd -P "$SCRIPT_DIR/../../.." >/dev/null 2>&1 && pwd)"
-ROOT="${FXRUN_WORKSPACE_ROOT:-${FLEXNETOS_ROOT:-${DERIVED_ROOT:-/home/flexnetos/FlexNetOS}}}"
+DERIVED_ROOT="$(cd -P "$SCRIPT_DIR/../.." >/dev/null 2>&1 && pwd)"
+ROOT="${FXRUN_WORKSPACE_ROOT:-${FLEXNETOS_ROOT:-${DERIVED_ROOT:-/home/flexnetos/meta}}}"
 OUT_ROOT="${FXRUN_RELEASE_DIR:-$ROOT/release}"
 TARGET_OS_ID="ubuntu"
 TARGET_OS_VERSION="26.04"
 TARGET_ARCH="x86_64"
 RELEASE_PREFIX="flexnetos-ubuntu-${TARGET_OS_VERSION}-${TARGET_ARCH}"
-CATALOG="${FXRUN_RELEASE_CATALOG:-$ROOT/src/flexnetos_runner/release/catalog.tsv}"
+CATALOG="${FXRUN_RELEASE_CATALOG:-$ROOT/flexnetos_runner/release/catalog.tsv}"
 COMPONENTS="${FXRUN_RELEASE_COMPONENTS:-}"
-RUNNER_HOME="${FXRUN_RUNNER_HOME:-$ROOT/src/flexnetos_runner/_work/runner-home-01}"
+RUNNER_HOME="${FXRUN_RUNNER_HOME:-$ROOT/flexnetos_runner/_work/runner-home-01}"
 TAURI_BUNDLES="${FXRUN_TAURI_BUNDLES:-deb}"
 BUN_INSTALL_ROOT="${FXRUN_BUN_INSTALL:-$RUNNER_HOME/.bun}"
 BUN_TMPDIR_ROOT="${FXRUN_BUN_TMPDIR:-$RUNNER_HOME/.cache/bun/tmp}"
@@ -32,7 +32,7 @@ PROOF_CODEDB="${FXRUN_CODEDB:-}"
 PROOF_REPO_ID="${FXRUN_PROOF_REPO_ID:-flexnetos_runner}"
 # Scan the runner's Rust source tree, not the repo root: the committed _work/ tree carries
 # vendored rustup toolchain sources that CodeDB's parser rejects, which would crash the gate.
-PROOF_REPO_PATH="${FXRUN_PROOF_REPO_PATH:-$ROOT/src/flexnetos_runner/crates}"
+PROOF_REPO_PATH="${FXRUN_PROOF_REPO_PATH:-$ROOT/flexnetos_runner/crates}"
 PROOF_STORE="${FXRUN_PROOF_STORE:-}"
 # Documented exceptions. The current runner_proof_manifest emits permanent, owned deferrals:
 #   release_readiness              pending  runner_owner=true  (closed by this build's staged receipt)

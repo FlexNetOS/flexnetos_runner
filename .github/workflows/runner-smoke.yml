@@ -1,16 +1,12 @@
 name: Runner Smoke
-# OWNER_BREAK_GLASS_ONLY: disabled until every run step is Nushell.
 
 on:
   workflow_dispatch:
     inputs:
       expected_runner:
-        description: Expected GitHub Actions runner name
-        required: true
-        type: string
-      expected_slot:
-        description: Expected repo-local runner slot suffix, for example 01 or 02
-        required: true
+        description: Expected canonical runner name
+        required: false
+        default: flexnetos-nix
         type: string
 
 permissions:
@@ -18,30 +14,48 @@ permissions:
 
 jobs:
   smoke:
-    if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
-    name: Runner smoke
-    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    name: Canonical Nix runner smoke
+    runs-on: [self-hosted, flexnetos, nix]
+    timeout-minutes: 20
     steps:
-      - name: Verify runner identity and repo-local paths
-        shell: bash
+      - uses: actions/checkout@v6
+
+      - name: Verify canonical runner identity and volatile workspace
+        shell: nu {0}
+        env:
+          EXPECTED_RUNNER: ${{ inputs.expected_runner || 'flexnetos-nix' }}
         run: |
-          set -euo pipefail
-          echo "expected_runner=${{ inputs.expected_runner }}"
-          echo "actual_runner=${RUNNER_NAME}"
-          echo "expected_slot=${{ inputs.expected_slot }}"
-          echo "runner_os=${RUNNER_OS}"
-          echo "runner_arch=${RUNNER_ARCH}"
-          echo "runner_tracking_id=${RUNNER_TRACKING_ID:-unset}"
-          echo "runner_workspace=${RUNNER_WORKSPACE}"
-          echo "pwd=$(pwd)"
-          echo "hostname=$(hostname)"
-          echo "whoami=$(whoami)"
-          echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          test "${RUNNER_NAME}" = "${{ inputs.expected_runner }}"
-          case "${RUNNER_WORKSPACE}" in
-            */_work/actions-runner-${{ inputs.expected_slot }}-work/*) ;;
-            *)
-              echo "RUNNER_WORKSPACE is not under the expected prefix-local slot" >&2
-              exit 1
-              ;;
-          esac
+          if $env.RUNNER_NAME != $env.EXPECTED_RUNNER {
+            error make {msg: $"unexpected runner: ($env.RUNNER_NAME)"}
+          }
+          let runtime_root = ($env.XDG_RUNTIME_DIR? | default "/run/user/1001")
+          if not ($env.RUNNER_WORKSPACE | str starts-with $runtime_root) {
+            error make {msg: $"runner workspace escaped volatile runtime: ($env.RUNNER_WORKSPACE)"}
+          }
+          {
+            runner: $env.RUNNER_NAME
+            os: $env.RUNNER_OS
+            arch: $env.RUNNER_ARCH
+            workspace: $env.RUNNER_WORKSPACE
+            sha: $env.GITHUB_SHA
+          } | to json
+
+      - name: Run 33-gate offline runner contract
+        shell: nu {0}
+        run: |
+          ^bun run nix/gha-runner/verify.mjs
+          if $env.LAST_EXIT_CODE != 0 { exit $env.LAST_EXIT_CODE }
+
+      - name: Resolve the canonical Nix closure
+        shell: nu {0}
+        run: |
+          ^nix run "./nix/gha-runner#runner" -- doctor
+          if $env.LAST_EXIT_CODE != 0 { exit $env.LAST_EXIT_CODE }
+
+      - name: Test dispatcher and control-plane workspace
+        shell: nu {0}
+        run: |
+          with-env { RUSTC_WRAPPER: "", CARGO_BUILD_RUSTC_WRAPPER: "" } {
+            ^cargo test --workspace --locked
+          }
+          if $env.LAST_EXIT_CODE != 0 { exit $env.LAST_EXIT_CODE }

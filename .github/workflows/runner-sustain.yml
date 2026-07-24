@@ -32,7 +32,7 @@ jobs:
   local-runner-sustain:
     if: ${{ vars.FLEXNETOS_OWNER_BREAK_GLASS_NON_NUSHELL == 'I_ACCEPT_NON_NUSHELL' }}
     name: Runner sustain slot ${{ inputs.lane_slot || '1' }}
-    runs-on: [self-hosted, linux, x64, local, flexnetos]
+    runs-on: [self-hosted, flexnetos, nix]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6

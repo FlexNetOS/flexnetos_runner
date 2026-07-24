@@ -44,7 +44,7 @@ FXRUN_CARGO=.../stable-x86_64-unknown-linux-gnu/bin/cargo \
 
 Before the tarball is written, `fxrun release build` runs
 `codedb export runner_proof_manifest --repo-id flexnetos_runner --repo-path
-<root>/src/flexnetos_runner/crates --format json` and enforces:
+<root>/flexnetos_runner/crates --format json` and enforces:
 
 - `status == failed` → always blocks the build.
 - `status == pending` → blocks unless the `gate_id` is in `FXRUN_PROOF_PENDING_ALLOW`.

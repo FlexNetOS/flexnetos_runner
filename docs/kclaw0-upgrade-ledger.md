@@ -341,13 +341,11 @@ failing tests first, implement, run local gates, open/merge a PR, then update th
      cooldown/window decisions.
    - Acceptance: a cooldown/window can expire while the server is idle before the next connection.
 
-5. **Actions runner artifact verification** — APPLIED (current branch)
-   - Gap: `fxrun-actions install` downloads and extracts the upstream runner tarball without checksum
-     or attestation verification.
-   - Upgrade: verify GitHub-published SHA256 and/or artifact attestation before extraction.
-   - Applied: `fxrun-actions install` accepts `--sha256`/`RUNNER_SHA256`, otherwise downloads the
-     release `.sha256` asset, verifies SHA-256 before extraction, and fails closed on mismatch.
-   - Acceptance: bad digest refuses before `tar`; latest-version install verifies automatically.
+5. **Actions runner artifact verification** — SUPERSEDED BY CANONICAL NIX RUNNER
+   - The mutable host installer was retired.
+   - `nix/gha-runner` pins nixpkgs and realizes `pkgs.github-runner` through the content-addressed
+     Nix store; its source/closure gates replace tar extraction.
+   - Acceptance: pinned flake input, successful closure build, and offline composition gates.
 
 6. **Actions registration token non-argv path**
    - Gap: `config.sh --token <token>` exposes the short-lived registration token in process argv.

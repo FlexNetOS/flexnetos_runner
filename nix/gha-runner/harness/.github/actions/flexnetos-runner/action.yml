@@ -1,0 +1,10 @@
+name: flexnetos-runner
+description: "FlexNetOS composed-runner agent harness (github-actions host)"
+inputs:
+  task: { description: The task for the harness., required: true }
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "Running flexnetos-runner (non-interactive)…"
+      env: { TASK: "${{ inputs.task }}" }

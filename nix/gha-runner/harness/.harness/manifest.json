@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "generator": "0.1.0",
+  "template": "minimal",
+  "template_version": "0.0.0",
+  "vars": {
+    "name": "flexnetos-runner",
+    "description": "FlexNetOS composed-runner agent harness (github-actions host)",
+    "host": "github-actions"
+  },
+  "hosts": [
+    "github-actions"
+  ],
+  "files": {
+    "CLAUDE.md": "573615bb6791a55312a18d08b18e53a4c4709add93730ded4ce8e6f398bef7d2",
+    "README.md": "7d9e2259811ca81df0d0274ac659aa4dd3a5341f235b382654a91d8b7e4079ef",
+    "__tests__/smoke.test.ts": "d1829c2b20bed091811307bcc81c757696f745fa7580dbcc047dc94907e4d96e",
+    "bin/cli.js": "0ca903185b6fe54de13c0e686656bfe25efad080743a8ac7bd0e4530526be81b",
+    "package.json": "d142fb3a603f740955222c74ce360adba641200770e4f0c1ac098be3936f4931",
+    "src/init.ts": "950ebf67ae2839b47af6ad61edf9b82b8e7c967ed80065477ac9f68d77950c16",
+    "tsconfig.json": "8b4e730a1aa39162ac574455d7a98e1881f5313ca80ffe503b9652dcf0c76b9d",
+    "vitest.config.ts": "e9e94875611ab1cd602c1f6923902c2dab7953a75ac022962973639d1937587a",
+    ".github/workflows/flexnetos-runner.yml": "c763521699fe536e8c29d5aedf54c0e0d3132656e8e6d85672bfa3c51e6da20d",
+    ".github/actions/flexnetos-runner/action.yml": "b553892a5a4ccc2c5e9660a398c4c2a348361c9e9b7d7282efa58f03710787a2",
+    "install.md": "75381affcc2dc65d4c59c6df59bc3ed4fa722914325da84836f56f70fd524d9d",
+    "LICENSE": "07f38b4fe1e08e5b121b683e315ffceb645b35eb360f27137c70188549ea3e4b"
+  },
+  "generated_at": "2026-07-23T13:21:45.737Z",
+  "meta": {
+    "surface": "cli"
+  }
+}
