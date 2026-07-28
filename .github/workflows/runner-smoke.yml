@@ -18,7 +18,7 @@ jobs:
     runs-on: [self-hosted, flexnetos, nix]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4, repo allowlist
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6, repo allowlist
 
       - name: Verify canonical runner identity and volatile workspace
         shell: nu {0}
