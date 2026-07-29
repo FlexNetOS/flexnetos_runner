@@ -331,7 +331,7 @@ build_bun_tauri_component() {
     cd "$repo"
     env -i \
       HOME="$RUNNER_HOME" \
-      PATH="$rust_bin_dir:/home/flexnetos/.local/bin:/usr/bin:/bin" \
+      PATH="$rust_bin_dir:/home/flexnetos/.nix-profile/bin:/usr/bin:/bin" \
       CARGO_HOME="$CARGO_HOME_ROOT" \
       CARGO_BUILD_RUSTC_WRAPPER="$KACHE_WRAPPER_SHIM" \
       RUSTUP_HOME="$RUSTUP_HOME_ROOT" \
@@ -344,7 +344,7 @@ build_bun_tauri_component() {
       "$bun" install --frozen-lockfile
     env -i \
       HOME="$RUNNER_HOME" \
-      PATH="$rust_bin_dir:/home/flexnetos/.local/bin:/usr/bin:/bin" \
+      PATH="$rust_bin_dir:/home/flexnetos/.nix-profile/bin:/usr/bin:/bin" \
       CARGO_HOME="$CARGO_HOME_ROOT" \
       CARGO_BUILD_RUSTC_WRAPPER="$KACHE_WRAPPER_SHIM" \
       RUSTUP_HOME="$RUSTUP_HOME_ROOT" \

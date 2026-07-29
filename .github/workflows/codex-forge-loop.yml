@@ -31,7 +31,7 @@ jobs:
     runs-on: [self-hosted, flexnetos, nix]
     timeout-minutes: 60
     env:
-      CODEX_HOME: /home/flexnetos/.codex
+      CODEX_HOME: /home/flexnetos/meta/var/lib/codex
       CODEX_BIN: /home/flexnetos/.nix-profile/bin/codex
       GH_CONFIG_DIR: /home/flexnetos/.config/gh
       MODEL_INPUT: ${{ inputs.model }}

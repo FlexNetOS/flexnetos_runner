@@ -9,7 +9,12 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_CODEX: &str = "/home/flexnetos/.nix-profile/bin/codex";
-const DEFAULT_CODEX_HOME: &str = "/home/flexnetos/.codex";
+// Durable Codex home under the Meta payload, matching the Claude tier at
+// /home/flexnetos/meta/var/lib/claude. This must stay BYTE-IDENTICAL to STATE_HOME
+// in yazelix's nushell/agent/profile_frontdoor.nu: that frontdoor's
+// `reject-competing-owner` compares CODEX_HOME as a raw string, not via realpath,
+// and hard-exits on any mismatch. See codex_home_default_matches_profile_frontdoor_state_home.
+const DEFAULT_CODEX_HOME: &str = "/home/flexnetos/meta/var/lib/codex";
 const DEFAULT_ARTIFACT_ROOT: &str = "_work/forge-loop";
 const MAX_EVAL_RETRY_COUNT: u8 = 10;
 const REQUIRED_LOCAL_CHECKS: &[&str] = &["Local Linux CI", "Semantic PR Title"];
@@ -25,6 +30,35 @@ const TOOL_OUTPUT_TOKEN_LIMIT: u32 = 12_000;
 const COMPACT_PROMPT_PATH: &str = ".codex/prompts/compact-forge-loop.md";
 const CODEX_OUTPUT_SCHEMA_PATH: &str = ".github/codex/schemas/forge-loop-output.schema.json";
 const CODEX_FORGE_LOOP_OUTPUT: &str = "codex-forge-loop-output.md";
+/// Rules the forge-loop permission profile must grant, asserted against both
+/// `.codex/config.toml` and its byte-identical mirror
+/// `.codex/permissions/forge-loop-workspace.toml`.
+///
+/// Single source of truth: `permission_profile_readiness` enforces it at runtime and
+/// the tests assert against this same slice, so the two cannot drift apart.
+/// No `/home/flexnetos/.local/**` entry belongs here — the Nix profile is the sole
+/// installed binary, config, state and launcher frontdoor.
+const FORGE_LOOP_PERMISSION_RULES: &[&str] = &[
+    "[permissions.forge-loop-workspace.filesystem]",
+    "\":minimal\" = \"read\"",
+    "\":tmpdir\" = \"write\"",
+    "\":slash_tmp\" = \"write\"",
+    "[permissions.forge-loop-workspace.filesystem.\":workspace_roots\"]",
+    "\".\" = \"write\"",
+    "\".git\" = \"write\"",
+    "\"/home/flexnetos/meta\" = \"write\"",
+    "\"/home/flexnetos/meta/.worktrees\" = \"write\"",
+    "\"/home/flexnetos/Downloads\" = \"read\"",
+    "\"/home/flexnetos/.nix-profile\" = \"read\"",
+    "\"/home/flexnetos/.config/yazelix\" = \"write\"",
+    "\"**/*.env\" = \"deny\"",
+    "\"**/*secret*\" = \"deny\"",
+    "\"**/*token*\" = \"deny\"",
+    "[permissions.forge-loop-workspace.network.domains]",
+    "\"developers.openai.com\" = \"allow\"",
+    "\"github.com\" = \"allow\"",
+    "\"crates.io\" = \"allow\"",
+];
 const REQUIRED_GATE_COMMANDS: &[&str] = &[
     "rtk cargo fmt --all -- --check",
     "rtk cargo test -p runner-cli --all-features forge_loop::tests",
@@ -3958,31 +3992,9 @@ fn permission_profile_readiness(root: &Path) -> PermissionProfileReadiness {
     let active_default_permissions = extract_quoted_toml_value(&config, "default_permissions");
     let active_sandbox_mode = extract_quoted_toml_value(&config, "sandbox_mode");
     let mirror_default_permissions = extract_quoted_toml_value(&mirror, "default_permissions");
-    let profile_rules_present = [
-        "[permissions.forge-loop-workspace.filesystem]",
-        "\":minimal\" = \"read\"",
-        "\":tmpdir\" = \"write\"",
-        "\":slash_tmp\" = \"write\"",
-        "[permissions.forge-loop-workspace.filesystem.\":workspace_roots\"]",
-        "\".\" = \"write\"",
-        "\".git\" = \"write\"",
-        "\"/home/flexnetos/meta\" = \"write\"",
-        "\"/home/flexnetos/meta/.worktrees\" = \"write\"",
-        "\"/home/flexnetos/Downloads\" = \"read\"",
-        "\"/home/flexnetos/.nix-profile\" = \"read\"",
-        "\"/home/flexnetos/.config/yazelix\" = \"write\"",
-        "\"/home/flexnetos/.local/bin\" = \"write\"",
-        "\"/home/flexnetos/.local/share/applications\" = \"write\"",
-        "\"**/*.env\" = \"deny\"",
-        "\"**/*secret*\" = \"deny\"",
-        "\"**/*token*\" = \"deny\"",
-        "[permissions.forge-loop-workspace.network.domains]",
-        "\"developers.openai.com\" = \"allow\"",
-        "\"github.com\" = \"allow\"",
-        "\"crates.io\" = \"allow\"",
-    ]
-    .iter()
-    .all(|required| config.contains(required) || mirror.contains(required));
+    let profile_rules_present = FORGE_LOOP_PERMISSION_RULES
+        .iter()
+        .all(|required| config.contains(required) || mirror.contains(required));
 
     let mut blockers = Vec::new();
     if active_default_permissions.as_deref() != Some("forge-loop-workspace") {
@@ -4609,9 +4621,16 @@ impl EvalInput {
 }
 
 fn cycle_prompt(goal: &str, auto_merge: bool) -> String {
+    cycle_prompt_with_auth(goal, auto_merge, &codex_auth_readiness().auth_json)
+}
+
+/// Pure prompt builder. `auth_json` is injected rather than hardcoded so the prompt
+/// follows CODEX_HOME like every other auth surface; the impurity stays in the
+/// `cycle_prompt` wrapper, which gives tests a pinnable input for `prompt_sha256`.
+fn cycle_prompt_with_auth(goal: &str, auto_merge: bool, auth_json: &str) -> String {
     let pr_title = cycle_pr_title(goal);
     format!(
-        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Verify local ChatGPT subscription auth before implementation with `rtk codex login status` and `rtk proxy -- test -f /home/flexnetos/.codex/auth.json`. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy -- find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates.",
+        "Run a Codex TDD forge-loop cycle for this Rust repo. Goal: {goal}. Do not start another cycle. Verify local ChatGPT subscription auth before implementation with `rtk codex login status` and `rtk proxy -- test -f {auth_json}`. Keep auto-compaction enabled and preserve phase/source/validation/next-action continuity in compact summaries. Required phases: write/verify a red test first, implement the smallest passing change, run fmt/clippy/tests/audit, evaluate the run, and research one reliability/accuracy/speed improvement. If a self-upgrade is warranted, leave the intended repository changes in the working tree; do not run git commit, git push, or gh pr from inside Codex. The outer forge-loop engine will commit, push, open a PR with PR title '{pr_title}', and {}. Strict upgrade only: no downgrades or removals without installed replacement and parity proof. Shell discipline: prefix every shell command with `rtk`; for Unix `find` with compound predicates or actions, use `rtk proxy -- find ...` instead of `rtk find ...` because `rtk find` rejects compound predicates.",
         if auto_merge { "auto-merge once green when repository settings allow" } else { "leave the PR ready for review" }
     )
 }
@@ -5202,23 +5221,77 @@ mod tests {
         let mirror = fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
             .expect("read permission mirror");
 
+        // Assert against the same slice permission_profile_readiness enforces, so a
+        // rule can never satisfy this test while still blocking the runtime check.
         for text in [&config, &mirror] {
-            for required in [
-                "\".git\" = \"write\"",
-                "\"/home/flexnetos/meta\" = \"write\"",
-                "\"/home/flexnetos/meta/.worktrees\" = \"write\"",
-                "\"/home/flexnetos/Downloads\" = \"read\"",
-                "\"/home/flexnetos/.nix-profile\" = \"read\"",
-                "\"/home/flexnetos/.config/yazelix\" = \"write\"",
-                "\"/home/flexnetos/.local/bin\" = \"write\"",
-                "\"/home/flexnetos/.local/share/applications\" = \"write\"",
-            ] {
+            for required in FORGE_LOOP_PERMISSION_RULES {
                 assert!(
                     text.contains(required),
                     "permission config missing {required}"
                 );
             }
         }
+    }
+
+    #[test]
+    fn permission_profile_grants_no_dot_local_path() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let config =
+            fs::read_to_string(root.join(".codex/config.toml")).expect("read active Codex config");
+        let mirror = fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
+            .expect("read permission mirror");
+
+        for rule in FORGE_LOOP_PERMISSION_RULES {
+            assert!(
+                !rule.contains("/home/flexnetos/.local"),
+                "forge-loop permission rules must not require a .local grant: {rule}"
+            );
+        }
+        // Inspect grants only: a comment may legitimately name the path it forbids.
+        for (label, text) in [("config", &config), ("mirror", &mirror)] {
+            for (index, line) in text.lines().enumerate() {
+                let statement = line.trim();
+                if statement.starts_with('#') {
+                    continue;
+                }
+                assert!(
+                    !statement.contains("/home/flexnetos/.local"),
+                    "{label}:{} still grants a /home/flexnetos/.local path; the Nix profile is \
+                     the sole installed binary, config, state, and launcher owner: {statement}",
+                    index + 1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn permission_profile_sections_are_identical_in_config_and_mirror() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let config =
+            fs::read_to_string(root.join(".codex/config.toml")).expect("read active Codex config");
+        let mirror = fs::read_to_string(root.join(".codex/permissions/forge-loop-workspace.toml"))
+            .expect("read permission mirror");
+
+        const MARKER: &str = "[permissions.forge-loop-workspace.filesystem]";
+        let config_tail = config
+            .split_once(MARKER)
+            .map(|(_, tail)| tail.trim_end())
+            .expect("active config declares the permission profile");
+        let mirror_tail = mirror
+            .split_once(MARKER)
+            .map(|(_, tail)| tail.trim_end())
+            .expect("mirror declares the permission profile");
+
+        assert_eq!(
+            config_tail, mirror_tail,
+            "the active Codex config and its permission mirror have drifted apart"
+        );
     }
 
     #[test]
@@ -5427,8 +5500,26 @@ mod tests {
             std::env::set_var("CODEX_HOME", previous);
         }
 
-        assert_eq!(auth.codex_home, "/home/flexnetos/.codex");
-        assert_eq!(auth.auth_json, "/home/flexnetos/.codex/auth.json");
+        assert_eq!(auth.codex_home, DEFAULT_CODEX_HOME);
+        assert_eq!(auth.auth_json, format!("{DEFAULT_CODEX_HOME}/auth.json"));
+    }
+
+    #[test]
+    fn codex_home_default_matches_profile_frontdoor_state_home() {
+        // yazelix nushell/agent/profile_frontdoor.nu rejects a competing owner by
+        // comparing CODEX_HOME as a raw string, so this default must be the durable
+        // Meta-payload home byte for byte -- no trailing slash, no symlink alias.
+        assert_eq!(DEFAULT_CODEX_HOME, "/home/flexnetos/meta/var/lib/codex");
+        assert!(
+            !DEFAULT_CODEX_HOME.ends_with('/'),
+            "a trailing slash would fail the frontdoor's byte-for-byte comparison"
+        );
+        assert!(
+            !DEFAULT_CODEX_HOME.starts_with("/home/flexnetos/.codex")
+                && !DEFAULT_CODEX_HOME.contains("/.local/")
+                && !DEFAULT_CODEX_HOME.starts_with("/run/"),
+            "the Codex home must be a durable Meta-payload path, not a home shadow or tmpfs"
+        );
     }
 
     #[test]
@@ -5506,6 +5597,10 @@ mod tests {
 
     #[test]
     fn eval_manifest_rejects_metrics_from_different_cycle_prompt() {
+        // cycle_prompt reads CODEX_HOME, so every computation here must observe one env.
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let manifest = cycle_manifest(&RunArgs {
             goal: "scheduled subscription-auth Codex self-improvement".into(),
             out: PathBuf::from("_work/forge-loop"),
@@ -5652,6 +5747,10 @@ mod tests {
 
     #[test]
     fn cycle_manifest_records_prompt_hash_witness() {
+        // cycle_prompt reads CODEX_HOME, so both computations must observe one env.
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let args = RunArgs {
             goal: "Resume the interrupted 10-cycle objective: execute isolated cycle 09 of 10"
                 .into(),
@@ -5779,11 +5878,38 @@ mod tests {
 
     #[test]
     fn cycle_prompt_requires_subscription_auth_verification_before_implementation() {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let auth = codex_auth_readiness();
         let prompt = cycle_prompt("scheduled subscription-auth Codex self-improvement", true);
 
         assert!(prompt.contains("Verify local ChatGPT subscription auth before implementation"));
         assert!(prompt.contains("rtk codex login status"));
-        assert!(prompt.contains("rtk proxy -- test -f /home/flexnetos/.codex/auth.json"));
+        assert!(prompt.contains(&format!("rtk proxy -- test -f {}", auth.auth_json)));
+    }
+
+    #[test]
+    fn cycle_prompt_carries_no_hardcoded_codex_home() {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        // The prompt is the one auth surface that used to ignore CODEX_HOME entirely.
+        let pinned = cycle_prompt_with_auth("goal", true, "/tmp/pinned-codex-home/auth.json");
+        assert!(pinned.contains("rtk proxy -- test -f /tmp/pinned-codex-home/auth.json"));
+        assert!(!pinned.contains("/home/flexnetos/.codex"));
+
+        let previous = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("CODEX_HOME", "/tmp/override-codex-home");
+        let overridden = cycle_prompt("goal", true);
+        match previous {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+
+        assert!(overridden.contains("rtk proxy -- test -f /tmp/override-codex-home/auth.json"));
+        assert!(!overridden.contains("/home/flexnetos/.codex"));
     }
 
     #[test]

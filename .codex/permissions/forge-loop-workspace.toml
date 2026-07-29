@@ -22,16 +22,13 @@ glob_scan_max_depth = 3
 # sibling worktree roots, while preserving denied secret/env globs below.
 "/home/flexnetos/meta" = "write"
 "/home/flexnetos/meta/.worktrees" = "write"
-"/home/flexnetos/meta/src/flexnetos_runner" = "write"
 
-# Runtime proof and stale-shadow cleanup surfaces. The Nix profile is the
-# read-only active frontdoor; .local paths are writable only so stale shadows
-# can be archived/removed rather than treated as active runtime authority.
+# Runtime proof surfaces. The Nix profile is the read-only active frontdoor and the
+# sole installed binary, config, state, and launcher owner, so no /home/flexnetos/.local
+# path is granted here.
 "/home/flexnetos/Downloads" = "read"
 "/home/flexnetos/.nix-profile" = "read"
 "/home/flexnetos/.config/yazelix" = "write"
-"/home/flexnetos/.local/bin" = "write"
-"/home/flexnetos/.local/share/applications" = "write"
 "**/*.env" = "deny"
 "**/*secret*" = "deny"
 "**/*token*" = "deny"

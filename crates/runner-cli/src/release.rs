@@ -166,11 +166,13 @@ fn resolve_root(explicit: Option<&Path>) -> Result<PathBuf> {
             return Ok(root);
         }
     }
-    for candidate in ["/home/flexnetos/meta", "/home/flexnetos/FlexNetOS"] {
-        let path = Path::new(candidate);
-        if path.join(SCRIPT_REL).is_file() {
-            return Ok(canonical_or_owned(path));
-        }
+    // Last-resort workspace roots only. These are workspace trees, not agent homes, and
+    // every earlier branch (explicit --root, FXRUN_WORKSPACE_ROOT, FLEXNETOS_ROOT, exe
+    // walk, cwd walk) takes precedence. Do not derive from $HOME: the runner and the
+    // profile frontdoors execute with a rewritten HOME.
+    let workspace_root = Path::new("/home/flexnetos/meta");
+    if workspace_root.join(SCRIPT_REL).is_file() {
+        return Ok(canonical_or_owned(workspace_root));
     }
     bail!("could not resolve the workspace root; pass --root or set FXRUN_WORKSPACE_ROOT")
 }
