@@ -18,8 +18,9 @@ foreground session; after a reboot, unlock the broker and start it again.
 | `nixpkgs#github-runner` | Real GitHub `actions/runner` substrate for all workflows selecting `[self-hosted, flexnetos, nix]`. |
 | Metaharness | `@metaharness/kernel`, `@metaharness/host-github-actions`, and `agentic-flow`, invoked by workflows as a step on that substrate. |
 
-Mutable `.runner`, `.credentials`, diagnostics, and work state live below
-`$XDG_RUNTIME_DIR/yazelix/profile-runtime/gha-runner`; no credentials are repository or home
+Mutable `.runner`, `.credentials`, diagnostics, and work state live below the durable
+Meta payload `/home/flexnetos/meta/var/lib/gha-runner`; no credentials are repository,
+home-dotdir, or volatile runtime state.
 state. The pinned runner is launched with self-update disabled because upgrades come through Nix.
 
 ## Registration authority
@@ -51,7 +52,8 @@ nix run .#runner -- agent doctor
 ```
 
 `Ctrl-C` stops the foreground listener. After a crash or reboot, rerun `nix run .#start`; valid
-profile-runtime registration state is reused within the same boot and recreated when absent.
+Durable registration state is reused across boots; Yazelix starts the runner only after
+the USB-backed envctl vault and databases are ready.
 
 ## Layout
 

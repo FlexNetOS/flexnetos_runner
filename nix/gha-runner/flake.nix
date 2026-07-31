@@ -8,7 +8,7 @@
   #      to the FlexNetOS org with labels [self-hosted, flexnetos, nix]; executes
   #      ALL GitHub workflows/actions, including the archbp-* environment tests.
   #      nixpkgs patches it to resolve mutable state from env vars, so it runs
-  #      from the immutable store with state under the profile-runtime link.
+  #      from the immutable store with durable state under the Meta payload.
   #
   #   2. rUv AGENT LAYER — a metaharness harness (@metaharness/kernel +
   #      @metaharness/host-github-actions + agentic-flow) that workflows invoke
@@ -49,16 +49,16 @@
           nu = "${pkgs.nushell}/bin/nu";
           launch = mkRunnerLaunch system pkgs;
           start = pkgs.writeShellScriptBin "flexnetos-runner-start" ''
-            export PATH="$HOME/.nix-profile/toolbin:$HOME/.nix-profile/bin:${pkgs.coreutils}/bin"
+            export PATH=${nixpkgs.lib.makeBinPath [ pkgs.coreutils ]}
             export GHA_NU=${nu}
             export GHA_MINT_SCRIPT=${./scripts/mint-runner-token.nu}
             export GHA_RUNNER_LAUNCH=${launch}
             exec ${nu} ${./scripts/runner-start.nu} "$@"
           '';
         in
-        # NO_SYSTEM_DEPTHS: this is a foreground, per-session Nix-store
-        # entrypoint. Unattended reboot activation is deliberately unsupported
-        # because it requires an external supervisor.
+        # Foreground closure entrypoint. Yazelix supplies SECRETCTL_BIN when it
+        # launches the complete managed runtime; standalone callers must do so
+        # explicitly rather than falling through to a mutable host PATH.
         start;
     in
     {

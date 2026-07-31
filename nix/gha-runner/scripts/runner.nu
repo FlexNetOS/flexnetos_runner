@@ -5,7 +5,8 @@
 #   GHA_SUBSTRATE — nix store path of nixpkgs github-runner (the real actions/runner)
 #   GHA_BUN       — nix store path of bun (runs the metaharness agent harness)
 #
-# Path law: all mutable state lives under the profile-runtime link, never a home dot-local dir.
+# Path law: all mutable state lives under the durable Meta payload, never a home
+# dot-local dir and never the volatile Yazelix runtime.
 # Secret law: the registration token is minted by envctl and read from the
 #   environment as GHA_RUNNER_TOKEN; never hardcoded, logged, or persisted here.
 # Runtime law: the harness runs via `bun run`, never bare node/npx.
@@ -20,20 +21,14 @@
 const ORG_URL = "https://github.com/FlexNetOS"
 const LABELS = "flexnetos,nix"
 
-def profile-runtime [] {
-    let base = ($env.XDG_RUNTIME_DIR? | default "/run/user/1001")
-    $"($base)/yazelix/profile-runtime"
-}
-
-# Mutable runner state (config + credentials + work) — profile-runtime, per path law.
 def state-dir [] {
-    let d = $"(profile-runtime)/gha-runner/state"
+    let d = ($env.FLEXNETOS_RUNNER_STATE_DIR? | default "/home/flexnetos/meta/var/lib/gha-runner/state")
     mkdir $d
     $d
 }
 
 def work-dir [] {
-    let d = $"(profile-runtime)/gha-runner/work"
+    let d = ($env.FLEXNETOS_RUNNER_WORK_DIR? | default "/home/flexnetos/meta/var/lib/gha-runner/work")
     mkdir $d
     $d
 }

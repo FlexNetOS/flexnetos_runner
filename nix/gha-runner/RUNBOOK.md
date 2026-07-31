@@ -29,7 +29,7 @@ nix run .#start
 
 The start closure:
 
-1. Reuses valid `.runner` plus `.credentials` state from the current profile runtime.
+1. Reuses valid `.runner` plus `.credentials` state from `/home/flexnetos/meta/var/lib/gha-runner`.
 2. Otherwise asks envctl for an App installation token and exchanges it for a runner
    registration token.
 3. Registers `flexnetos-nix` at the FlexNetOS organization with custom labels
@@ -63,7 +63,7 @@ Record only the run URL/ID, conclusion, commit SHA, and gate counts.
 `Ctrl-C` stops the listener. The Nix store performs no background activation.
 
 After a crash in the same boot, rerun `nix run .#start`; existing valid registration state is
-reused. After reboot, profile-runtime state is gone: unlock the vault and rerun the same command.
+reused across reboot. Yazelix unlocks the vault and starts the same closure automatically.
 The closure re-mints and re-registers idempotently. If the broker remains locked, the command exits
 non-zero and must stay stopped.
 
