@@ -74,7 +74,7 @@
           # dontNpmBuild: the harness bin/cli.js is plain ESM — no tsc build step.
           dontNpmBuild = true;
           # Computed with prefetch-npm-deps over harness/package-lock.json.
-          npmDepsHash = "sha256-oOFpGJYI8NSSinLyAhLCghuadNla3v39vgYU5YDucso=";
+          npmDepsHash = "sha256-us3piiQ3bVOoeAfoI/F+BFp4E7/dgbNRp0KJqTuVsq8=";
           # Hermetic: no postinstall network (sharp/libvips); kernel runs on its wasm backend.
           npmFlags = [ "--ignore-scripts" ];
           nativeBuildInputs = [ pkgs.nodejs ];
