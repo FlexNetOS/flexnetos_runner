@@ -83,6 +83,12 @@ check('start runs mint then register then listener from closure paths',
     && /\^?\$runner_launch run/.test(startCode));
 check('start never depends on a mutable source checkout',
   startCode && !/GHA_FLAKE_DIR|nix run|cd \$dir/.test(startCode));
+check('start closure carries checkout transport tools',
+  flakeCode
+    && /pkgs\.git/.test(flakeCode)
+    && /pkgs\.gnutar/.test(flakeCode)
+    && /pkgs\.gzip/.test(flakeCode)
+    && /pkgs\.xz/.test(flakeCode));
 
 // rUv-native harness deps (grounded: ADR-033, host-github-actions v0.1.2)
 const deps = pkg ? (JSON.parse(pkg).dependencies || {}) : {};

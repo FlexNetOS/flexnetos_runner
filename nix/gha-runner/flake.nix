@@ -49,7 +49,14 @@
           nu = "${pkgs.nushell}/bin/nu";
           launch = mkRunnerLaunch system pkgs;
           start = pkgs.writeShellScriptBin "flexnetos-runner-start" ''
-            export PATH=${nixpkgs.lib.makeBinPath [ pkgs.coreutils ]}
+            export PATH=${nixpkgs.lib.makeBinPath [
+              pkgs.bash
+              pkgs.coreutils
+              pkgs.git
+              pkgs.gnutar
+              pkgs.gzip
+              pkgs.xz
+            ]}
             export GHA_NU=${nu}
             export GHA_MINT_SCRIPT=${./scripts/mint-runner-token.nu}
             export GHA_RUNNER_LAUNCH=${launch}
