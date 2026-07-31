@@ -1,8 +1,8 @@
 #!/usr/bin/env nu
 # FlexNetOS runner per-session start — idempotent mint → register → run.
 #
-# The runner's mutable state (.runner/.credentials) is durable Meta payload state.
-# Yazelix owns this start boundary and supplies the unlocked vault before invoking it.
+# The runner's mutable state (.runner/.credentials) is Yazelix-owned runtime state.
+# Yazelix supplies the unlocked vault before invoking it.
 #
 # The flake packages this as `flexnetos-runner-start` (`nix run .#start`). The
 # runner launcher and mint script are exact store paths injected by the wrapper,
@@ -26,7 +26,7 @@ def main [] {
 
     let registration = (do { ^$runner_launch is-registered } | complete)
     if $registration.exit_code == 0 {
-        print "[runner-start] reusing registered durable Meta state."
+        print "[runner-start] reusing registered Yazelix runtime state."
     } else {
         print "[runner-start] minting registration token via envctl (never logged)…"
         let token = (^$nu_bin $mint_script | str trim)

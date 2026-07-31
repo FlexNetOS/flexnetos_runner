@@ -7,9 +7,9 @@ second copy.
 ## Hard boundary
 
 `NO_SYSTEM_DEPTHS` is absolute. The only sanctioned depth is the Nix store. The runner installs
-no host or user unit, writes no `/etc` state, and never enables linger. A Nix store path is passive,
-so unattended reboot activation is deliberately unsupported. Start the listener explicitly in a
-foreground session; after a reboot, unlock the broker and start it again.
+no host or user unit, writes no `/etc` state, and never enables linger. Yazelix owns activation:
+`yzx enter` and `yzx launch` open the USB-backed vault and start the listener from the composed
+profile closure.
 
 ## One closure, two layers
 
@@ -18,10 +18,10 @@ foreground session; after a reboot, unlock the broker and start it again.
 | `nixpkgs#github-runner` | Real GitHub `actions/runner` substrate for all workflows selecting `[self-hosted, flexnetos, nix]`. |
 | Metaharness | `@metaharness/kernel`, `@metaharness/host-github-actions`, and `agentic-flow`, invoked by workflows as a step on that substrate. |
 
-Mutable `.runner`, `.credentials`, diagnostics, and work state live below the durable
-Meta payload `/home/flexnetos/meta/var/lib/gha-runner`; no credentials are repository,
-home-dotdir, or volatile runtime state.
-state. The pinned runner is launched with self-update disabled because upgrades come through Nix.
+Mutable `.runner`, `.credentials`, diagnostics, and work state live below the persistent
+Yazelix runtime `/home/flexnetos/meta/var/lib/yazelix/runtime/runner`; no credentials are
+repository, home-dotdir, or host runtime state. The pinned runner is launched with self-update
+disabled because upgrades come through Nix.
 
 ## Registration authority
 
@@ -44,16 +44,16 @@ nix run .#runner -- doctor
 # Describe the broker exchange without minting.
 nu scripts/mint-runner-token.nu --dry-run
 
-# Explicit foreground session: mint if needed → register --replace → listen.
+# Direct diagnostic entrypoint; normal activation is `yzx enter` or `yzx launch`.
 nix run .#start
 
 # Agent-layer proof on the same closure.
 nix run .#runner -- agent doctor
 ```
 
-`Ctrl-C` stops the foreground listener. After a crash or reboot, rerun `nix run .#start`; valid
-Durable registration state is reused across boots; Yazelix starts the runner only after
-the USB-backed envctl vault and databases are ready.
+`Ctrl-C` stops a directly invoked listener. Normal recovery is a Yazelix launch; durable
+registration state is reused across boots, and Yazelix starts the runner only after the
+USB-backed envctl vault and databases are ready.
 
 ## Layout
 

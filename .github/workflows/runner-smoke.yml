@@ -28,9 +28,9 @@ jobs:
           if $env.RUNNER_NAME != $env.EXPECTED_RUNNER {
             error make {msg: $"unexpected runner: ($env.RUNNER_NAME)"}
           }
-          let runtime_root = ($env.XDG_RUNTIME_DIR? | default "/run/user/1001")
+          let runtime_root = "/home/flexnetos/meta/var/lib/yazelix/runtime/runner"
           if not ($env.RUNNER_WORKSPACE | str starts-with $runtime_root) {
-            error make {msg: $"runner workspace escaped volatile runtime: ($env.RUNNER_WORKSPACE)"}
+            error make {msg: $"runner workspace escaped Yazelix runtime: ($env.RUNNER_WORKSPACE)"}
           }
           {
             runner: $env.RUNNER_NAME

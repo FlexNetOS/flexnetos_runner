@@ -96,4 +96,4 @@ without violating the merge-before-next-cycle invariant.
 
 ## Runner state settle gate
 
-`fxrun runner-state audit --strict --format json` is the transition gate for legacy repo-local runner churn. It classifies `_work` dirty state instead of hiding it and dedupes runner-home `safe.directory` churn through `fxrun runner-state normalize`. New runner jobs use volatile `/run/user/$UID/yazelix/runners` state; Kache is the only persistent cache owner, so generic compression or restore is not part of runner state settlement.
+`fxrun runner-state audit --strict --format json` is the transition gate for legacy repo-local runner churn. It classifies `_work` dirty state instead of hiding it and dedupes runner-home `safe.directory` churn through `fxrun runner-state normalize`. New runner jobs use `/home/flexnetos/meta/var/lib/yazelix/runtime/runner`; Kache is the only separate persistent cache owner, so generic compression or restore is not part of runner state settlement.

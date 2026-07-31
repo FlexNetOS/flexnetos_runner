@@ -44,9 +44,9 @@ check('flake has NO system-depth deps', flakeCode && !SYSTEM_DEPTH_DEP.test(flak
 check('runner has NO system-depth deps', runnerCode && !SYSTEM_DEPTH_DEP.test(runnerCode));
 check('runner-start has NO system-depth deps', startCode && !SYSTEM_DEPTH_DEP.test(startCode));
 
-// Path law: durable Meta payload, never ~/.local or volatile /run state.
-check('runner uses durable Meta state', runner && runner.includes('/home/flexnetos/meta/var/lib/gha-runner'));
-check('runner has no volatile state path', [runner, start].every((s) => s && !/profile-runtime|XDG_RUNTIME_DIR/.test(s)));
+// Path law: persistent Yazelix runtime payload, never ~/.local or host /run state.
+check('runner uses Yazelix-owned runtime state', runner && runner.includes('/home/flexnetos/meta/var/lib/yazelix/runtime/runner'));
+check('runner has no host runtime path', [runner, start].every((s) => s && !/profile-runtime|XDG_RUNTIME_DIR|\/run\/user/.test(s)));
 check('no ~/.local path', [flake, runner].every((s) => s && !/\.local\//.test(s)));
 
 // SUBSTRATE: the real actions/runner from nixpkgs, wired into the launcher.
