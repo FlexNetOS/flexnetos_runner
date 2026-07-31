@@ -26,7 +26,7 @@
 # Env overrides (all optional):
 #   ENVCTL_INSTALLATION_ID   default 140063898
 #   ENVCTL_ORG               default FlexNetOS
-#   SECRETCTL_BIN            default `secretctl` on PATH
+#   SECRETCTL_BIN            required closure-owned secretctl path
 #   GITHUB_API_BASE          default https://api.github.com
 
 const DEFAULT_INSTALLATION_ID = "140063898"
@@ -34,14 +34,11 @@ const DEFAULT_ORG = "FlexNetOS"
 
 def secretctl-bin [] {
     let override = ($env.SECRETCTL_BIN? | default "")
-    if not ($override | is-empty) { return $override }
-    let which = (which secretctl | get path? | get 0? | default "")
-    if ($which | is-empty) {
-        print -e "[mint] secretctl not found on PATH. Set SECRETCTL_BIN or install it into the nix profile."
-        print -e "[mint] owner fence: secretctl+secretd must be profile-installed and the vault unlocked (USB-gated)."
+    if ($override | is-empty) {
+        print -e "[mint] SECRETCTL_BIN is required; Yazelix must inject the closure-owned envctl client."
         exit 2
     }
-    $which
+    $override
 }
 
 def main [

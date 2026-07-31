@@ -1,20 +1,18 @@
 #!/usr/bin/env nu
 # FlexNetOS runner per-session start — idempotent mint → register → run.
 #
-# Why not just `run`: the runner's mutable state (.runner/.credentials) lives under
-# profile-runtime, which is on /run (tmpfs) and is wiped on reboot. A new session must
-# re-register from a fresh token when that state is absent. `config.sh --replace` makes
-# re-registration idempotent against GitHub's view of the runner.
+# The runner's mutable state (.runner/.credentials) is durable Meta payload state.
+# Yazelix owns this start boundary and supplies the unlocked vault before invoking it.
 #
 # The flake packages this as `flexnetos-runner-start` (`nix run .#start`). The
 # runner launcher and mint script are exact store paths injected by the wrapper,
 # so start never depends on a mutable or tmpfs-backed source checkout. It is
-# intentionally foreground-only: the Nix store is passive and cannot promise
-# unattended reboot activation without an external supervisor.
+# intentionally foreground-only: Yazelix is the runtime supervisor and starts
+# this closure entrypoint after its USB-only vault unlock barrier.
 #
 # Owner fence: minting requires the envctl vault unlocked (USB-gated). If the
-# vault is locked, mint fails closed and this wrapper exits non-zero. Re-run
-# `nix run .#start` after unlock; never fall back to another token path.
+# vault is locked, mint fails closed and this wrapper exits non-zero. Yazelix
+# owns retry on the next managed launch; never fall back to another token path.
 
 def main [] {
     let nu_bin = ($env.GHA_NU? | default "")
@@ -28,7 +26,7 @@ def main [] {
 
     let registration = (do { ^$runner_launch is-registered } | complete)
     if $registration.exit_code == 0 {
-        print "[runner-start] reusing registered profile-runtime state."
+        print "[runner-start] reusing registered durable Meta state."
     } else {
         print "[runner-start] minting registration token via envctl (never logged)…"
         let token = (^$nu_bin $mint_script | str trim)
